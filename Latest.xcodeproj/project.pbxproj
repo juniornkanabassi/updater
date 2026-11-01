@@ -198,6 +198,11 @@
 		36859CA69E05436092D93AD3 /* UpdateHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10C0753E2494FF989086B15 /* UpdateHistoryStore.swift */; };
 		9908B350C9C84CF8BA24C0B0 /* UpdateHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10C0753E2494FF989086B15 /* UpdateHistoryStore.swift */; };
 		81F85B58314F425186C7EA2E /* UpdateHistoryStoreTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09EDB41B76744E9F9F3B8074 /* UpdateHistoryStoreTest.swift */; };
+		07E28A1F4BCC4BB1AE8D4DBE /* ReplacementTransaction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47729FF2A33A45B3ACBE39BF /* ReplacementTransaction.swift */; };
+		A38D25A2FCF44A878563F70D /* ReplacementTransaction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47729FF2A33A45B3ACBE39BF /* ReplacementTransaction.swift */; };
+		6B0A1C9393C84D7B8758BEF8 /* AppLifecycle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AB14676CE854DE4B96BC291 /* AppLifecycle.swift */; };
+		4229D2F7DED340118F0AE70F /* FixtureApps.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD8739B0760E41C78D5C8BE6 /* FixtureApps.swift */; };
+		A69D6B85C876481CB8A30AEB /* ReplacementTransactionTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A137AF0D85145869D5B1A70 /* ReplacementTransactionTest.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -517,6 +522,10 @@
 		40D9D04B4C9A44088BC23049 /* UpdateOutcome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateOutcome.swift; sourceTree = "<group>"; };
 		F10C0753E2494FF989086B15 /* UpdateHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateHistoryStore.swift; sourceTree = "<group>"; };
 		09EDB41B76744E9F9F3B8074 /* UpdateHistoryStoreTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateHistoryStoreTest.swift; sourceTree = "<group>"; };
+		47729FF2A33A45B3ACBE39BF /* ReplacementTransaction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplacementTransaction.swift; sourceTree = "<group>"; };
+		4AB14676CE854DE4B96BC291 /* AppLifecycle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLifecycle.swift; sourceTree = "<group>"; };
+		BD8739B0760E41C78D5C8BE6 /* FixtureApps.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixtureApps.swift; sourceTree = "<group>"; };
+		2A137AF0D85145869D5B1A70 /* ReplacementTransactionTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplacementTransactionTest.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -869,6 +878,7 @@
 			children = (
 				E45390A9AC334B3F99000103 /* ReleaseNotesLegacyBridge.swift */,
 				52E000012FE1000000000001 /* ApplicationWorkspace.swift */,
+				4AB14676CE854DE4B96BC291 /* AppLifecycle.swift */,
 				5058BA3921202BA7003F332B /* IconCache.swift */,
 				52F000032FE2000000000001 /* SidebarScrollConfiguration.swift */,
 			);
@@ -976,6 +986,8 @@
 				09EDB41B76744E9F9F3B8074 /* UpdateHistoryStoreTest.swift */,
 				508D4E6B2FC000000000001 /* UpdateQueueTest.swift */,
 				A10300000000000000000001 /* SparkleUpdateOperationTest.swift */,
+				2A137AF0D85145869D5B1A70 /* ReplacementTransactionTest.swift */,
+				BD8739B0760E41C78D5C8BE6 /* FixtureApps.swift */,
 				A0310000000000000000000E /* AppDownloadUpdateTest.swift */,
 			);
 			path = Updating;
@@ -1085,6 +1097,7 @@
 				A03100000000000000000005 /* AppDownloadUpdateOperation.swift */,
 				A03100000000000000000003 /* AppDownloadSource.swift */,
 				A03100000000000000000009 /* DownloadUpdateOperation.swift */,
+				47729FF2A33A45B3ACBE39BF /* ReplacementTransaction.swift */,
 				A0310000000000000000000B /* InstallerCommand.swift */,
 			);
 			path = Download;
@@ -1301,6 +1314,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				6B0A1C9393C84D7B8758BEF8 /* AppLifecycle.swift in Sources */,
+				07E28A1F4BCC4BB1AE8D4DBE /* ReplacementTransaction.swift in Sources */,
 				36859CA69E05436092D93AD3 /* UpdateHistoryStore.swift in Sources */,
 				26822C2AA0E24008AF84C99B /* UpdateOutcome.swift in Sources */,
 				FC11D0411459214F0127D12C /* UpdateProgressState.swift in Sources */,
@@ -1412,6 +1427,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A38D25A2FCF44A878563F70D /* ReplacementTransaction.swift in Sources */,
 				505062232F0DBECC00998F84 /* UpdateInstallerProtocol.swift in Sources */,
 				505062242F0DBECC00998F84 /* main.swift in Sources */,
 				505062252F0DBECC00998F84 /* UpdateInstaller.swift in Sources */,
@@ -1422,6 +1438,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A69D6B85C876481CB8A30AEB /* ReplacementTransactionTest.swift in Sources */,
+				4229D2F7DED340118F0AE70F /* FixtureApps.swift in Sources */,
 				4E11C49C4BE60DDE76E06767 /* ModelFixtures.swift in Sources */,
 				D5D82150791C25B56684E72B /* AppUpdatingBoundaryTest.swift in Sources */,
 				A7434665EBA9AD846BBDCFA4 /* UpdateCheckSchedulingTest.swift in Sources */,

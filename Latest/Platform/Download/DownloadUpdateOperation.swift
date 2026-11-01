@@ -67,84 +67,30 @@ class DownloadUpdateOperation: UpdateOperation, @unchecked Sendable {
     return archive
   }
 
+  /// Quits the app through the shared lifecycle; tests inject a fake one.
+  var lifecycle = AppLifecycle.live
+
   /// Reopen the surviving app after success, rollback, or cancellation after quitting.
   @MainActor
   func withApplicationClosed(_ install: @Sendable () async throws -> Void) async throws {
-    try Task.checkCancellation()
-    let running = NSWorkspace.shared.runningApplications.filter {
-      $0.bundleURL?.standardizedFileURL == app.fileURL.standardizedFileURL
-    }
-    if !running.isEmpty {
-      let alert = NSAlert()
-      alert.messageText = "Quit \(app.name) to install its update?"
-      alert.informativeText = "Save your work first. The app will reopen after the update."
-      alert.addButton(withTitle: "Quit and Update")
-      alert.addButton(withTitle: "Cancel")
-      guard alert.runModal() == .alertFirstButtonReturn else { throw CancellationError() }
-    }
-    try await ApplicationQuitLifecycle.run(
-      terminate: { running.forEach { $0.terminate() } },
-      isTerminated: { running.allSatisfy(\.isTerminated) },
-      reopen: {
-        guard !running.isEmpty,
-          FileManager.default.fileExists(atPath: app.fileURL.path)
-        else { return }
-        MacApplicationWorkspace.shared.openApplication(at: app.fileURL)
-      },
-      install: install
-    )
+    try await lifecycle.withApplicationClosed(at: app.fileURL, name: app.name, install)
   }
 
-  /// Same-volume renames with rollback. Keep the backup if recovery itself fails.
-  static func replaceItem(at target: URL, with candidate: URL, backupDirectory: URL) throws {
-    let manager = FileManager.default
-    let backup = backupDirectory.appendingPathComponent("original")
-    let hadOriginal = manager.fileExists(atPath: target.path)
-    if hadOriginal { try manager.moveItem(at: target, to: backup) }
-    do {
-      try manager.moveItem(at: candidate, to: target)
-    } catch {
-      if hadOriginal {
-        do { try manager.moveItem(at: backup, to: target) } catch {
-          throw AppDownloadError.replacementFailed("The original was saved at \(backup.path).")
-        }
-      }
-      throw error
-    }
-    if hadOriginal { try? manager.removeItem(at: backup) }
+  /// Same-volume renames. The original stays in `backupDirectory` until `verify` accepts
+  /// the installed destination, and is restored on any failure.
+  static func replaceItem(
+    at target: URL, with candidate: URL, backupDirectory: URL,
+    verify: (URL) throws -> Void = { _ in }
+  ) throws {
+    try ReplacementTransaction.perform(
+      at: target, backupDirectory: backupDirectory,
+      install: { try FileManager.default.moveItem(at: candidate, to: target) }, verify: verify)
   }
 
   static func removeStageUnlessRecoveryIsNeeded(_ stage: URL) {
-    if !FileManager.default.fileExists(atPath: stage.appendingPathComponent("original").path) {
+    if !ReplacementTransaction.needsRecovery(stage) {
       try? FileManager.default.removeItem(at: stage)
     }
-  }
-}
-
-/// Quit cannot be recalled after sending terminate(). Wait for its outcome even
-/// after cancellation, then reopen the surviving app without starting an install.
-@MainActor
-enum ApplicationQuitLifecycle {
-  static func run(
-    terminate: () -> Void,
-    isTerminated: @escaping @MainActor @Sendable () -> Bool,
-    reopen: () -> Void,
-    install: @Sendable () async throws -> Void
-  ) async throws {
-    // Confirmation can run a nested event loop where cancellation is accepted.
-    try Task.checkCancellation()
-    defer { if isTerminated() { reopen() } }
-    terminate()
-    let terminated = await Task { @MainActor in
-      for _ in 0..<100 {
-        if isTerminated() { return true }
-        try? await Task.sleep(for: .milliseconds(200))
-      }
-      return isTerminated()
-    }.value
-    guard terminated else { throw AppDownloadError.applicationStillRunning }
-    try Task.checkCancellation()
-    try await install()
   }
 }
 

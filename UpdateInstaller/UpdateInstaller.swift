@@ -49,7 +49,10 @@ final class UpdateInstaller: NSObject, UpdateInstallerProtocol {
         .appendingPathComponent("UpdaterInstaller-" + UUID().uuidString)
       try fileManager.createDirectory(
         at: staging, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
-      defer { try? fileManager.removeItem(at: staging) }
+      // A failed restore leaves the original in staging; keep it for recovery.
+      defer {
+        if !ReplacementTransaction.needsRecovery(staging) { try? fileManager.removeItem(at: staging) }
+      }
       let package = staging.appendingPathComponent("update.pkg")
       guard
         fileManager.createFile(
@@ -64,23 +67,30 @@ final class UpdateInstaller: NSObject, UpdateInstallerProtocol {
             == 0
         else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
       }
-      let output = try performCommand(
-        "/usr/sbin/installer",
-        arguments: ["-dumplog", "-pkg", package.path, "-target", volume.path])
-      let expression = try NSRegularExpression(
-        pattern: "PackageKit: Registered bundle (\\S+) for uid 0")
-      let range = NSRange(output.startIndex..<output.endIndex, in: output)
-      let registeredURLs = expression.matches(in: output, range: range).compactMap {
-        match -> URL? in
-        guard let range = Range(match.range(at: 1), in: output),
-          let candidate = URL(string: String(output[range])), candidate.isFileURL,
-          Bundle(url: candidate)?.bundleIdentifier == expectedIdentifier
-        else { return nil }
-        return candidate
-      }
-      guard let installedURL = registeredURLs.min(by: { $0.path.count < $1.path.count }) else {
-        throw failure("The installer did not register the expected app: \(expectedIdentifier).")
-      }
+      // The decision that this exact URL may be replaced was made by the app before
+      // purchasing. Here PackageKit must have written to that URL, with the same identity,
+      // or the original copy is put back.
+      let original = try BundleIdentity.read(at: appURL, validate: false)
+      try ReplacementTransaction.perform(
+        at: appURL, backupDirectory: staging, copyingOriginal: true,
+        install: {
+          let output = try performCommand(
+            "/usr/sbin/installer",
+            arguments: ["-dumplog", "-pkg", package.path, "-target", volume.path])
+          let expression = try NSRegularExpression(
+            pattern: "PackageKit: Registered bundle (\\S+) for uid 0")
+          let range = NSRange(output.startIndex..<output.endIndex, in: output)
+          let registered = expression.matches(in: output, range: range).compactMap {
+            match -> String? in
+            guard let range = Range(match.range(at: 1), in: output) else { return nil }
+            return URL(string: String(output[range]))?.standardizedFileURL.path
+          }
+          guard registered.contains(appURL.standardizedFileURL.path) else {
+            throw failure("The installer did not register \(appURL.path) (\(expectedIdentifier)).")
+          }
+        },
+        verify: { url in _ = try original.verifyReplacement(at: url) })
+      let installedURL = appURL
       // Derive the receipt path from the actual installed bundle. Never use a
       // caller-provided receipt path as an arbitrary privileged write target.
       let destination = installedURL.appendingPathComponent("Contents/_MASReceipt/receipt")

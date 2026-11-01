@@ -5,6 +5,10 @@ import Security
 /// Installs a verified standalone bundle, retaining the original until replacement succeeds.
 final class AppDownloadUpdateOperation: DownloadUpdateOperation, @unchecked Sendable {
   private let source: AppDownloadSource
+  /// False only for ad-hoc signed test fixtures; real vendors must keep a Team ID.
+  var requiresTeam = true
+  /// Launch-and-quit check for fixtures. Real apps are not launched to verify them.
+  var launchProbe: (@Sendable (URL) throws -> Void)?
 
   init(app: App.Bundle, source: AppDownloadSource) {
     self.source = source
@@ -34,15 +38,36 @@ final class AppDownloadUpdateOperation: DownloadUpdateOperation, @unchecked Send
     progressState = .extracting(progress: nil)
     try await Self.stageApp(
       from: archive, appPath: release.appPath, extracted: extracted, to: candidate)
-    try Self.validate(candidate: candidate, replacing: app, expectedVersion: release.version)
+    try Self.validate(
+      candidate: candidate, replacing: app, expectedVersion: release.version,
+      requiresTeam: requiresTeam)
+    let original = try BundleIdentity.read(at: app.fileURL, validate: false)
     try await withApplicationClosed { [self] in
       guard let current = BundleCollector.collectBundle(at: app.fileURL),
         current.bundleIdentifier == app.bundleIdentifier, current.version == app.version
       else { throw AppDownloadError.versionMismatch }
       try beginCommit()
       progressState = .installing
-      try Self.replaceItem(at: app.fileURL, with: candidate, backupDirectory: stage)
+      try Self.replaceItem(at: app.fileURL, with: candidate, backupDirectory: stage) { url in
+        try Self.verifyInstalled(
+          at: url, original: original, expectedVersion: release.version,
+          requiresTeam: requiresTeam, launchProbe: launchProbe)
+      }
     }
+  }
+
+  /// The destination, not the staged candidate, decides whether the backup is discarded.
+  static func verifyInstalled(
+    at url: URL, original: BundleIdentity, expectedVersion: Version, requiresTeam: Bool,
+    launchProbe: ((URL) throws -> Void)?
+  ) throws {
+    _ = try original.verifyReplacement(at: url, requiresTeam: requiresTeam)
+    let comparison = BundleCollector.collectBundle(at: url)?.version.comparisonForUpdate(
+      to: expectedVersion)
+    guard comparison == .samePrecedence || comparison == .newer else {
+      throw ReplacementError.verificationFailed("The installed version is not \(expectedVersion.versionNumber ?? expectedVersion.buildNumber ?? "the expected one").")
+    }
+    try launchProbe?(url)
   }
 
   /// Copies a downloaded bundle into staging and releases any mounted image before returning.
@@ -134,7 +159,9 @@ final class AppDownloadUpdateOperation: DownloadUpdateOperation, @unchecked Send
     }
   }
 
-  static func validate(candidate: URL, replacing app: App.Bundle, expectedVersion: Version) throws {
+  static func validate(
+    candidate: URL, replacing app: App.Bundle, expectedVersion: Version, requiresTeam: Bool = true
+  ) throws {
     guard let installed = BundleCollector.collectBundle(at: candidate),
       installed.bundleIdentifier == app.bundleIdentifier
     else { throw AppDownloadError.identityMismatch }
@@ -144,6 +171,15 @@ final class AppDownloadUpdateOperation: DownloadUpdateOperation, @unchecked Send
     else { throw AppDownloadError.versionMismatch }
 
     try validateCompatibility(of: candidate)
+
+    // Ad-hoc fixtures have no Team ID or stable designated requirement to check.
+    if !requiresTeam {
+      guard
+        (try? BundleIdentity.read(at: app.fileURL, validate: false)
+          .verifyReplacement(at: candidate, requiresTeam: false)) != nil
+      else { throw AppDownloadError.identityMismatch }
+      return
+    }
 
     var originalCode: SecStaticCode?
     var candidateCode: SecStaticCode?

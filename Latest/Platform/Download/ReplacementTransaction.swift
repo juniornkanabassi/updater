@@ -1,0 +1,125 @@
+// Copyright © 2026 Junior Nkana Bassi. Licensed under GPL-3.0; see LICENSE.md.
+// Compiled into the app and the root install helper; Foundation and Security only.
+
+import Foundation
+import Security
+
+/// Identity of the bundle currently on disk. Info.plist is read directly because
+/// `Bundle(url:)` caches its dictionary and would describe a replaced bundle.
+struct BundleIdentity: Equatable, Sendable {
+  let bundleIdentifier: String?
+  let teamIdentifier: String?
+  let shortVersion: String?
+  let bundleVersion: String?
+
+  /// `validate` checks the whole signature (strict, nested code); without it only
+  /// the signing information is read, which is enough to compare an original.
+  static func read(at url: URL, validate: Bool) throws -> BundleIdentity {
+    let data = try Data(contentsOf: url.appendingPathComponent("Contents/Info.plist"))
+    let info =
+      try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] ?? [:]
+    var code: SecStaticCode?
+    var signing: CFDictionary?
+    guard SecStaticCodeCreateWithPath(url as CFURL, [], &code) == errSecSuccess, let code,
+      SecCodeCopySigningInformation(code, SecCSFlags(rawValue: kSecCSSigningInformation), &signing)
+        == errSecSuccess
+    else { throw ReplacementError.verificationFailed("\(url.lastPathComponent) is not signed.") }
+    if validate {
+      let flags = SecCSFlags(
+        rawValue: kSecCSCheckAllArchitectures | kSecCSCheckNestedCode | kSecCSStrictValidate)
+      guard SecStaticCodeCheckValidity(code, flags, nil) == errSecSuccess else {
+        throw ReplacementError.verificationFailed(
+          "The signature of \(url.lastPathComponent) is not valid.")
+      }
+    }
+    return BundleIdentity(
+      bundleIdentifier: info["CFBundleIdentifier"] as? String,
+      teamIdentifier: (signing as? [String: Any])?[kSecCodeInfoTeamIdentifier as String] as? String,
+      shortVersion: info["CFBundleShortVersionString"] as? String,
+      bundleVersion: info["CFBundleVersion"] as? String)
+  }
+
+  /// The destination keeps the original's bundle ID and Team ID and has a valid signature.
+  /// `requiresTeam` is false only for ad-hoc signed test fixtures.
+  func verifyReplacement(at url: URL, requiresTeam: Bool = true) throws -> BundleIdentity {
+    let installed = try Self.read(at: url, validate: true)
+    guard installed.bundleIdentifier == bundleIdentifier, bundleIdentifier != nil else {
+      throw ReplacementError.verificationFailed("The installed bundle identifier changed.")
+    }
+    guard installed.teamIdentifier == teamIdentifier, !requiresTeam || teamIdentifier != nil
+    else { throw ReplacementError.verificationFailed("The installed signing team changed.") }
+    return installed
+  }
+}
+
+enum ReplacementError: LocalizedError, Equatable {
+  case verificationFailed(String)
+  case restoreFailed(String)
+
+  var errorDescription: String? {
+    switch self {
+    case .verificationFailed(let reason): "The update was rolled back. \(reason)"
+    case .restoreFailed(let backup):
+      "The update failed and the original could not be restored. It was kept at \(backup)."
+    }
+  }
+}
+
+/// Keeps the original until the installed destination passes `verify`, restoring it otherwise.
+enum ReplacementTransaction {
+  static let backupName = "original"
+
+  /// `copyingOriginal` clones the original aside for installers that replace it in place
+  /// (PackageKit); otherwise it is moved aside and `install` puts the candidate at `target`.
+  static func perform(
+    at target: URL, backupDirectory: URL, copyingOriginal: Bool = false,
+    install: () throws -> Void, verify: (URL) throws -> Void
+  ) throws {
+    let manager = FileManager.default
+    let backup = backupDirectory.appendingPathComponent(backupName)
+    let hadOriginal = manager.fileExists(atPath: target.path)
+    let originalIdentity = hadOriginal ? try? BundleIdentity.read(at: target, validate: false) : nil
+    if hadOriginal {
+      if copyingOriginal {
+        try manager.copyItem(at: target, to: backup)
+      } else {
+        try manager.moveItem(at: target, to: backup)
+      }
+    }
+    do {
+      try install()
+      try verify(target)
+    } catch {
+      guard hadOriginal else {
+        try? manager.removeItem(at: target)
+        throw error
+      }
+      do {
+        if manager.fileExists(atPath: target.path) || isSymlink(target) {
+          try manager.moveItem(
+            at: target, to: backupDirectory.appendingPathComponent("failed-" + UUID().uuidString))
+        }
+        try manager.moveItem(at: backup, to: target)
+        if let originalIdentity,
+          (try? BundleIdentity.read(at: target, validate: false)) != originalIdentity
+        {
+          throw ReplacementError.restoreFailed(target.path)
+        }
+      } catch {
+        throw ReplacementError.restoreFailed(
+          manager.fileExists(atPath: backup.path) ? backup.path : target.path)
+      }
+      throw error
+    }
+    if hadOriginal { try? manager.removeItem(at: backup) }
+  }
+
+  /// Whether a failed transaction left the original in `backupDirectory` for recovery.
+  static func needsRecovery(_ backupDirectory: URL) -> Bool {
+    FileManager.default.fileExists(atPath: backupDirectory.appendingPathComponent(backupName).path)
+  }
+
+  private static func isSymlink(_ url: URL) -> Bool {
+    (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true
+  }
+}

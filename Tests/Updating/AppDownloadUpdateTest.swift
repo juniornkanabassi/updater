@@ -201,6 +201,17 @@ final class AppDownloadUpdateTest: XCTestCase {
       try DownloadUpdateOperation.replaceItem(
         at: original, with: stage.appendingPathComponent("missing.app"), backupDirectory: stage))
     XCTAssertEqual(try Data(contentsOf: original), Data("abc".utf8))
+    // The backup survives the swap until the destination passes verification.
+    let rejected = stage.appendingPathComponent("Rejected.app")
+    try Data("bad".utf8).write(to: rejected)
+    XCTAssertThrowsError(
+      try DownloadUpdateOperation.replaceItem(at: original, with: rejected, backupDirectory: stage)
+      { installed in
+        XCTAssertEqual(try Data(contentsOf: installed), Data("bad".utf8))
+        XCTAssertTrue(ReplacementTransaction.needsRecovery(stage), "backup kept during verify")
+        throw ReplacementError.verificationFailed("rejected")
+      })
+    XCTAssertEqual(try Data(contentsOf: original), Data("abc".utf8))
     let candidate = stage.appendingPathComponent("Example.app")
     try Data("new".utf8).write(to: candidate)
     try DownloadUpdateOperation.replaceItem(
