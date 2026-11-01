@@ -4,19 +4,25 @@ import Security
 
 /// Installs a verified standalone bundle, retaining the original until replacement succeeds.
 final class AppDownloadUpdateOperation: DownloadUpdateOperation, @unchecked Sendable {
-  private let source: AppDownloadSource
+  private let fetchRelease: @Sendable () async throws -> AppDownloadRelease
   /// False only for ad-hoc signed test fixtures; real vendors must keep a Team ID.
   var requiresTeam = true
   /// Launch-and-quit check for fixtures. Real apps are not launched to verify them.
   var launchProbe: (@Sendable (URL) throws -> Void)?
 
   init(app: App.Bundle, source: AppDownloadSource) {
-    self.source = source
+    fetchRelease = { try await source.release() }
+    super.init(app: app)
+  }
+
+  /// Fixture feeds supply their own release metadata.
+  init(app: App.Bundle, release: @escaping @Sendable () async throws -> AppDownloadRelease) {
+    fetchRelease = release
     super.init(app: app)
   }
 
   override func performUpdate() async throws {
-    let release = try await source.release()
+    let release = try await fetchRelease()
     guard app.version.comparisonForUpdate(to: release.version) == .older else {
       throw AppDownloadError.versionMismatch
     }

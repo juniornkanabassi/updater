@@ -45,7 +45,9 @@ class DownloadUpdateOperation: UpdateOperation, @unchecked Sendable {
   func download(from url: URL, into directory: URL, maximumSize: Int = 8 * 1_024 * 1_024 * 1_024)
     async throws -> URL
   {
-    guard url.scheme == "https" else { throw AppDownloadError.invalidMetadata }
+    guard url.scheme == "https" || Self.allowsLoopbackHTTP(url) else {
+      throw AppDownloadError.invalidMetadata
+    }
     progressState = .downloading(loadedSize: 0, totalSize: 0)
     let delegate = BoundedDownloadDelegate(maximumSize: maximumSize) { [weak self] loaded, total in
       self?.progressState = .downloading(loadedSize: loaded, totalSize: total)
@@ -60,11 +62,22 @@ class DownloadUpdateOperation: UpdateOperation, @unchecked Sendable {
       throw error
     }
     guard !delegate.exceededLimit,
-      (response as? HTTPURLResponse)?.statusCode == 200, response.url?.scheme == "https",
+      (response as? HTTPURLResponse)?.statusCode == 200,
+      response.url?.scheme == "https" || response.url.map(Self.allowsLoopbackHTTP) == true,
       (try archive.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? Int.max) <= maximumSize
     else { throw AppDownloadError.invalidDownload }
     try Task.checkCancellation()
     return archive
+  }
+
+  /// Debug builds accept plain HTTP from 127.0.0.1 so tests can serve a local fixture feed.
+  /// Release builds always require HTTPS.
+  static func allowsLoopbackHTTP(_ url: URL) -> Bool {
+    #if DEBUG
+      url.scheme == "http" && url.host == "127.0.0.1"
+    #else
+      false
+    #endif
   }
 
   /// Quits the app through the shared lifecycle; tests inject a fake one.

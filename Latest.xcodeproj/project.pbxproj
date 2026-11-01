@@ -206,6 +206,7 @@
 		199B55B98F184BF7A40063B6 /* UpdateSchedulerTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AE1147BAA614C07A82F89E9 /* UpdateSchedulerTest.swift */; };
 		B97FA7B3859948D7920F42D4 /* AppStoreInstallGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20202E922FC84F798E42E3E0 /* AppStoreInstallGate.swift */; };
 		3E838E87191E4BE99D772DB2 /* AppStoreInstallGateTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4100A242EF04553B220B20A /* AppStoreInstallGateTest.swift */; };
+		80439E73AB35414E8018AD8E /* FixtureUpdateEndToEndTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E2FEF5D34B846309720B9B1 /* FixtureUpdateEndToEndTest.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -532,6 +533,7 @@
 		0AE1147BAA614C07A82F89E9 /* UpdateSchedulerTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateSchedulerTest.swift; sourceTree = "<group>"; };
 		20202E922FC84F798E42E3E0 /* AppStoreInstallGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStoreInstallGate.swift; sourceTree = "<group>"; };
 		A4100A242EF04553B220B20A /* AppStoreInstallGateTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStoreInstallGateTest.swift; sourceTree = "<group>"; };
+		2E2FEF5D34B846309720B9B1 /* FixtureUpdateEndToEndTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixtureUpdateEndToEndTest.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -993,6 +995,7 @@
 				09EDB41B76744E9F9F3B8074 /* UpdateHistoryStoreTest.swift */,
 				508D4E6B2FC000000000001 /* UpdateQueueTest.swift */,
 				A10300000000000000000001 /* SparkleUpdateOperationTest.swift */,
+				2E2FEF5D34B846309720B9B1 /* FixtureUpdateEndToEndTest.swift */,
 				A4100A242EF04553B220B20A /* AppStoreInstallGateTest.swift */,
 				0AE1147BAA614C07A82F89E9 /* UpdateSchedulerTest.swift */,
 				2A137AF0D85145869D5B1A70 /* ReplacementTransactionTest.swift */,
@@ -1448,6 +1451,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				80439E73AB35414E8018AD8E /* FixtureUpdateEndToEndTest.swift in Sources */,
 				3E838E87191E4BE99D772DB2 /* AppStoreInstallGateTest.swift in Sources */,
 				199B55B98F184BF7A40063B6 /* UpdateSchedulerTest.swift in Sources */,
 				A69D6B85C876481CB8A30AEB /* ReplacementTransactionTest.swift in Sources */,

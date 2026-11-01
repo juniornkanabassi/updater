@@ -60,6 +60,13 @@ struct AppDownloadRelease: Sendable {
   let sha256: String?
   let appPath: String
 
+  init(version: Version, url: URL, sha256: String?, appPath: String) {
+    self.version = version
+    self.url = url
+    self.sha256 = sha256
+    self.appPath = appPath
+  }
+
   init(data: Data, source: AppDownloadSource, platform: String = Self.platform) throws {
     guard var object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
       throw AppDownloadError.invalidMetadata
