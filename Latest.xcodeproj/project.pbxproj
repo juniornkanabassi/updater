@@ -204,6 +204,8 @@
 		4229D2F7DED340118F0AE70F /* FixtureApps.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD8739B0760E41C78D5C8BE6 /* FixtureApps.swift */; };
 		A69D6B85C876481CB8A30AEB /* ReplacementTransactionTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A137AF0D85145869D5B1A70 /* ReplacementTransactionTest.swift */; };
 		199B55B98F184BF7A40063B6 /* UpdateSchedulerTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AE1147BAA614C07A82F89E9 /* UpdateSchedulerTest.swift */; };
+		B97FA7B3859948D7920F42D4 /* AppStoreInstallGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20202E922FC84F798E42E3E0 /* AppStoreInstallGate.swift */; };
+		3E838E87191E4BE99D772DB2 /* AppStoreInstallGateTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4100A242EF04553B220B20A /* AppStoreInstallGateTest.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -528,6 +530,8 @@
 		BD8739B0760E41C78D5C8BE6 /* FixtureApps.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixtureApps.swift; sourceTree = "<group>"; };
 		2A137AF0D85145869D5B1A70 /* ReplacementTransactionTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplacementTransactionTest.swift; sourceTree = "<group>"; };
 		0AE1147BAA614C07A82F89E9 /* UpdateSchedulerTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateSchedulerTest.swift; sourceTree = "<group>"; };
+		20202E922FC84F798E42E3E0 /* AppStoreInstallGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStoreInstallGate.swift; sourceTree = "<group>"; };
+		A4100A242EF04553B220B20A /* AppStoreInstallGateTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStoreInstallGateTest.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -892,6 +896,7 @@
 			children = (
 				50C9F1092346386B00FD1802 /* AppStoreCheckerOperation.swift */,
 				52E000022FE1000000000001 /* AppStoreUpdateService.swift */,
+				20202E922FC84F798E42E3E0 /* AppStoreInstallGate.swift */,
 				5083BD312F2EA93F00D087C7 /* AppStoreUpdateSettings.swift */,
 				5039DE8C22CAA2790088B39B /* AppStoreUpdateOperation.swift */,
 			);
@@ -988,6 +993,7 @@
 				09EDB41B76744E9F9F3B8074 /* UpdateHistoryStoreTest.swift */,
 				508D4E6B2FC000000000001 /* UpdateQueueTest.swift */,
 				A10300000000000000000001 /* SparkleUpdateOperationTest.swift */,
+				A4100A242EF04553B220B20A /* AppStoreInstallGateTest.swift */,
 				0AE1147BAA614C07A82F89E9 /* UpdateSchedulerTest.swift */,
 				2A137AF0D85145869D5B1A70 /* ReplacementTransactionTest.swift */,
 				BD8739B0760E41C78D5C8BE6 /* FixtureApps.swift */,
@@ -1317,6 +1323,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B97FA7B3859948D7920F42D4 /* AppStoreInstallGate.swift in Sources */,
 				6B0A1C9393C84D7B8758BEF8 /* AppLifecycle.swift in Sources */,
 				07E28A1F4BCC4BB1AE8D4DBE /* ReplacementTransaction.swift in Sources */,
 				36859CA69E05436092D93AD3 /* UpdateHistoryStore.swift in Sources */,
@@ -1441,6 +1448,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				3E838E87191E4BE99D772DB2 /* AppStoreInstallGateTest.swift in Sources */,
 				199B55B98F184BF7A40063B6 /* UpdateSchedulerTest.swift in Sources */,
 				A69D6B85C876481CB8A30AEB /* ReplacementTransactionTest.swift in Sources */,
 				4229D2F7DED340118F0AE70F /* FixtureApps.swift in Sources */,

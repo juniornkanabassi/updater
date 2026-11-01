@@ -124,6 +124,9 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
     -> UpdateOutcome?
   {
     if let outcome = operation.outcomeOverride { return outcome }
+    if operation.isCancelled, operation.error == nil || operation.error is CancellationError {
+      return nil
+    }
     if let error = operation.error {
       if case AppDownloadError.applicationStillRunning = error { return .needsQuit }
       let nsError = error as NSError
@@ -135,7 +138,6 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
       }
       return .failed(reason: error.localizedDescription, logPath: nil)
     }
-    if operation.isCancelled { return nil }
     guard let after else {
       return .failed(reason: "The app is no longer at \(before.fileURL.path).", logPath: nil)
     }

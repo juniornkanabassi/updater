@@ -6,6 +6,7 @@
 //  Copyright © 2019 Max Langer. All rights reserved.
 //
 
+import AppKit
 import CommerceKit
 import CoreServices
 import StoreFoundation
@@ -43,12 +44,21 @@ enum AppStoreUpdater {
 
 /// Owns App Store downloads while Latest displays progress. Apple downloads the
 /// purchased update; the signed helper handles PackageKit's entitlement failure.
-private final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
+final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
   private let itemIdentifier: UInt64
   private let installURL: URL
   @MainActor private var observerIdentifier: String?
   @MainActor private var artifacts = AppStoreDownloadArtifacts()
   @MainActor private var isInstalling = false
+
+  /// Seams for tests: the gate runs before `prepare` (the helper) and any purchase.
+  var gate = AppStoreInstallGate.live
+  var prepare: @Sendable () async throws -> Void = { try await AppStoreUpdater.prepareForUpdates() }
+  var openURL: @MainActor @Sendable (URL) -> Void = { NSWorkspace.shared.open($0) }
+  var lifecycle = AppLifecycle.live
+
+  /// Every App Store job goes through the one helper and download queue.
+  override var lockKey: String { "appStoreHelper" }
 
   init(
     bundleIdentifier: String, installURL: URL, appIdentifier: App.Bundle.Identifier,
@@ -69,9 +79,19 @@ private final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendabl
         self.finish()
         return
       }
+      // Fail closed before any helper or CommerceKit request if the install could
+      // land on another copy of this app.
+      guard await self.gate.allowsInstall(at: self.installURL, bundleIdentifier: self.bundleIdentifier)
+      else {
+        self.outcomeOverride = .handedOff
+        self.openURL(URL(string: "macappstore://showUpdatesPage")!)
+        self.finishOnMain()
+        return
+      }
+      guard !self.isCancelled, !self.isFinished else { return }
       // Recheck at execution time as well: approval or daemon health may have
       // changed while the operation waited in the queue.
-      do { try await AppStoreUpdater.prepareForUpdates() } catch {
+      do { try await self.prepare() } catch {
         guard !self.isCancelled, !self.isFinished else { return }
         self.preparationFailed(error)
         return
@@ -200,24 +220,32 @@ private final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendabl
       return
     }
     do {
-      try beginCommit()
       isInstalling = true
-      progressState = .installing
-      appStoreUpdateLogger.notice(
-        "Installing preserved package: bytes=\((try? package.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)"
-      )
-      let installedURL = try await InstallHelper.installPackage(
-        at: package, appURL: installURL, receiptData: receipt)
-      // Refresh Spotlight and LaunchServices after restoring the App Store receipt.
-      let process = Process()
-      process.executableURL = URL(fileURLWithPath: "/usr/bin/mdimport")
-      process.arguments = [installedURL.path]
-      try? process.run()
-      LSRegisterURL(installedURL as CFURL, true)
+      try await lifecycle.withApplicationClosed(
+        at: installURL, name: installURL.deletingPathExtension().lastPathComponent
+      ) { [self] in
+        try await installPreservedPackage(package, receipt: receipt)
+      }
       finish()
     } catch {
       finish(with: error)
     }
+  }
+
+  @MainActor private func installPreservedPackage(_ package: URL, receipt: Data) async throws {
+    try beginCommit()
+    progressState = .installing
+    appStoreUpdateLogger.notice(
+      "Installing preserved package: bytes=\((try? package.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)"
+    )
+    let installedURL = try await InstallHelper.installPackage(
+      at: package, appURL: installURL, receiptData: receipt)
+    // Refresh Spotlight and LaunchServices after restoring the App Store receipt.
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/mdimport")
+    process.arguments = [installedURL.path]
+    try? process.run()
+    LSRegisterURL(installedURL as CFURL, true)
   }
 }
 

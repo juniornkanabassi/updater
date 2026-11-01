@@ -224,12 +224,19 @@ final class AppStoreUpdateCheckerOperation: Sendable {
     return AppStoreReceipt.existingURL(forAppAt: url) != nil
   }
 
-  init(with app: App.Bundle, session: URLSession = .shared) {
+  init(
+    with app: App.Bundle, session: URLSession = .shared,
+    installable: @escaping @Sendable (URL, String) async -> Bool = {
+      await AppStoreInstallGate.live.allowsInstall(at: $0, bundleIdentifier: $1)
+    }
+  ) {
     self.app = app
     self.lookupClient = AppStoreLookupClient(session: session)
+    self.installable = installable
   }
 
   private let lookupClient: AppStoreLookupClient
+  private let installable: @Sendable (URL, String) async -> Bool
 
   /// The bundle to be checked for updates.
   fileprivate let app: App.Bundle
@@ -241,7 +248,13 @@ final class AppStoreUpdateCheckerOperation: Sendable {
     try Task.checkCancellation()
     let entry = try await fetchAppInfo()
     try Task.checkCancellation()
-    return update(from: entry)
+    // Decide the capability only when there is something to install; the operation
+    // checks again right before it purchases.
+    let remote = Version(versionNumber: entry.versionNumber, buildNumber: nil)
+    let installable =
+      Self.isIOSAppBundle(at: app.fileURL) || app.version.comparisonForUpdate(to: remote) != .older
+      ? true : await self.installable(app.fileURL, app.bundleIdentifier)
+    return update(from: entry, installable: installable)
   }
 
   // MARK: - Bundle Operations
@@ -347,11 +360,12 @@ enum AppStoreReceipt {
 extension AppStoreUpdateCheckerOperation {
 
   /// Returns a proper update object from the given app store entry.
-  private func update(from entry: AppStoreEntry) -> App.Update {
+  private func update(from entry: AppStoreEntry, installable: Bool) -> App.Update {
     let version = Version(versionNumber: entry.versionNumber, buildNumber: nil)
     let action: App.Update.Action =
-      if Self.isIOSAppBundle(at: app.fileURL) {
-        // iOS Apps: Open App Store page where the user can update manually. The update operation does not work for them.
+      if Self.isIOSAppBundle(at: app.fileURL) || !installable {
+        // iOS apps, and native apps whose install target is not provably this URL,
+        // open the App Store page instead.
         .external(
           label: NSLocalizedString(
             "AppStoreSource", comment: "The source name of apps loaded from the App Store."),

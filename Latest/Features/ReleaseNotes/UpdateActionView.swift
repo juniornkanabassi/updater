@@ -135,6 +135,8 @@ struct UpdateActionSurface: View {
     VStack(spacing: 5) {
       UpdateActionControl(
         appName: app.name,
+        // Hand-offs read "Open" with "in <Vendor>" below; Updater installs only on "Update".
+        isHandOff: app.capability == .handOff,
         presentation: presentation,
         performAction: performAction
       )
@@ -189,6 +191,7 @@ enum UpdateActionVisualStyle {
 
 private struct UpdateActionControl: View {
   let appName: String
+  let isHandOff: Bool
   let presentation: UpdateActionPresentation
   let performAction: () -> Void
 
@@ -197,8 +200,11 @@ private struct UpdateActionControl: View {
     switch presentation {
     case .update:
       UpdateActionCapsule(
-        content: .title(NSLocalizedString("UpdateAction", comment: "Action to update an app")),
-        accessibilityLabel: "Update \(appName)",
+        content: .title(
+          isHandOff
+            ? NSLocalizedString("OpenAction", comment: "Action to open an app")
+            : NSLocalizedString("UpdateAction", comment: "Action to update an app")),
+        accessibilityLabel: isHandOff ? "Open the updater for \(appName)" : "Update \(appName)",
         performAction: performAction
       )
     case .open:

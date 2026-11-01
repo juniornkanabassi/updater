@@ -177,6 +177,30 @@ final class SparkleUpdateOperationTest: XCTestCase {
     XCTAssertEqual(retries, 2, "The retry action must disappear after the target has quit")
   }
 
+  /// Sol finding: information-only items hand off to their page and are never installed.
+  func testInformationOnlyItemsHandOffAndAreNeverInstalled() throws {
+    // The deprecated initializer is the public way to build an item without a feed.
+    let item = try XCTUnwrap(
+      SUAppcastItem(dictionary: [
+        "sparkle:version": "2.0", "sparkle:shortVersionString": "2.0",
+        "link": "https://example.com/release",
+      ]))
+    XCTAssertTrue(item.isInformationOnlyUpdate)
+    guard case .external(let label, _) = SparkleUpdateCheckerOperation.updateAction(for: item)
+    else { return XCTFail("Information-only items must hand off") }
+    XCTAssertEqual(label, "example.com")
+
+    let operation = makeOperation()
+    let opened = Mutex<[URL]>([])
+    operation.openURL = { url in opened.withLock { $0.append(url) } }
+    var choices = [SPUUserUpdateChoice]()
+    operation.handleUpdateFound(item) { choices.append($0) }
+    XCTAssertEqual(choices, [.dismiss])
+    XCTAssertEqual(opened.withLock { $0 }, [URL(string: "https://example.com/release")!])
+    XCTAssertEqual(operation.outcomeOverride, .handedOff)
+    XCTAssertTrue(operation.isFinished)
+  }
+
   private func makeOperation() -> SparkleUpdateOperation {
     SparkleUpdateOperation(
       bundleIdentifier: "test.sparkle", appIdentifier: URL(fileURLWithPath: "/tmp/Sparkle.app"))

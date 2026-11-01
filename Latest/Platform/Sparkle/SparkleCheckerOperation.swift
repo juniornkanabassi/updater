@@ -157,14 +157,21 @@ final class SparkleUpdateCheckerOperation: NSObject, @unchecked Sendable {
           source: .sparkle,
           date: appcastItem.date,
           releaseNotes: releaseNotes,
-          updateAction: .builtIn { app in
-            UpdateQueue.shared.addOperation(
-              SparkleUpdateOperation(
-                bundleIdentifier: app.bundleIdentifier,
-                appIdentifier: app.identifier
-              ))
-          }
+          updateAction: Self.updateAction(for: appcastItem)
         )))
+  }
+
+  /// Sparkle forbids installing information-only items; they hand off to their page.
+  static func updateAction(for appcastItem: SUAppcastItem) -> App.Update.Action {
+    if appcastItem.isInformationOnlyUpdate, let infoURL = appcastItem.infoURL {
+      return .external(label: infoURL.host() ?? "Website") { _ in
+        Task { @MainActor in MacApplicationWorkspace.shared.open(infoURL) }
+      }
+    }
+    return .builtIn { app in
+      UpdateQueue.shared.addOperation(
+        SparkleUpdateOperation(bundleIdentifier: app.bundleIdentifier, appIdentifier: app.identifier))
+    }
   }
 }
 
@@ -180,6 +187,8 @@ extension SparkleUpdateCheckerOperation: SPUUserDriver {
     reply: @escaping (SPUUserUpdateChoice) -> Void
   ) {
     finish(with: appcastItem)
+    // Close the check session; installing is the update operation's job.
+    reply(.dismiss)
   }
 
   func showUpdateNotFoundWithError(_ error: Error, acknowledgement: @escaping () -> Void) {

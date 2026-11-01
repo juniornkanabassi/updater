@@ -20,6 +20,8 @@ final class SparkleUpdateOperation: UpdateOperation, @unchecked Sendable {
   @MainActor private var progressTask: Task<Void, Never>?
   @MainActor private var expectedContentLength: UInt64 = 0
   @MainActor private var receivedLength: UInt64 = 0
+  /// Opens an information-only item's page; injectable so tests open nothing.
+  var openURL: @MainActor @Sendable (URL) -> Void = { MacApplicationWorkspace.shared.open($0) }
 
   // MARK: - Operation Overrides
 
@@ -101,6 +103,21 @@ extension SparkleUpdateOperation: SPUUserDriver {
     with appcastItem: SUAppcastItem, state: SPUUserUpdateState,
     reply: @escaping (SPUUserUpdateChoice) -> Void
   ) {
+    handleUpdateFound(appcastItem, reply: reply)
+  }
+
+  /// Split out because Sparkle's update state cannot be constructed in tests.
+  @MainActor func handleUpdateFound(
+    _ appcastItem: SUAppcastItem, reply: @escaping (SPUUserUpdateChoice) -> Void
+  ) {
+    // The feed may have turned informational since the check: never reply .install.
+    if appcastItem.isInformationOnlyUpdate {
+      reply(.dismiss)
+      if let infoURL = appcastItem.infoURL { openURL(infoURL) }
+      outcomeOverride = .handedOff
+      finish()
+      return
+    }
     reply(self.isCancelled ? .dismiss : .install)
   }
 

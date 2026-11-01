@@ -72,10 +72,17 @@ class AppStoreCheckerOperationTest: XCTestCase {
       version: Version(versionNumber: "1", buildNumber: nil), name: "Native",
       bundleIdentifier: "com.example.native.\(UUID())", fileURL: temporaryAppURL(),
       source: .appStore)
-    let update = try await AppStoreUpdateCheckerOperation(with: app, session: session).check()
+    let update = try await AppStoreUpdateCheckerOperation(
+      with: app, session: session, installable: { _, _ in true }
+    ).check()
     guard case .builtIn = update.updateAction else {
       return XCTFail(
         "A native app must retain its update capability when manual mode later changes")
+    }
+    // The same app at a path the install could miss is handed off to the App Store.
+    let gated = try await AppStoreUpdateCheckerOperation(with: app, session: session).check()
+    guard case .external = gated.updateAction else {
+      return XCTFail("An App Store install that cannot target this exact URL must hand off")
     }
     let wrappedURL = temporaryAppURL()
     try writeReceipt(
