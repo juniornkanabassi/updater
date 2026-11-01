@@ -71,7 +71,9 @@ final class AppDownloadUpdateOperation: DownloadUpdateOperation, @unchecked Send
     let comparison = BundleCollector.collectBundle(at: url)?.version.comparisonForUpdate(
       to: expectedVersion)
     guard comparison == .samePrecedence || comparison == .newer else {
-      throw ReplacementError.verificationFailed("The installed version is not \(expectedVersion.versionNumber ?? expectedVersion.buildNumber ?? "the expected one").")
+      throw ReplacementError.verificationFailed(
+        "The installed version is not \(expectedVersion.versionNumber ?? expectedVersion.buildNumber ?? "the expected one")."
+      )
     }
     try launchProbe?(url)
   }

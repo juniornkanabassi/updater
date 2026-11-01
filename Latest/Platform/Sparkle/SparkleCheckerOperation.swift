@@ -170,7 +170,8 @@ final class SparkleUpdateCheckerOperation: NSObject, @unchecked Sendable {
     }
     return .builtIn { app in
       UpdateQueue.shared.addOperation(
-        SparkleUpdateOperation(bundleIdentifier: app.bundleIdentifier, appIdentifier: app.identifier))
+        SparkleUpdateOperation(
+          bundleIdentifier: app.bundleIdentifier, appIdentifier: app.identifier))
     }
   }
 }

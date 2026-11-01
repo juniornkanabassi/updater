@@ -21,7 +21,9 @@ struct AppLifecycle: Sendable {
     runningApps: { url in
       NSWorkspace.shared.runningApplications
         .filter { $0.bundleURL?.standardizedFileURL == url.standardizedFileURL }
-        .map { app in RunningApp(terminate: { _ = app.terminate() }, isTerminated: { app.isTerminated }) }
+        .map { app in
+          RunningApp(terminate: { _ = app.terminate() }, isTerminated: { app.isTerminated })
+        }
     },
     confirmQuit: { name in
       let alert = NSAlert()

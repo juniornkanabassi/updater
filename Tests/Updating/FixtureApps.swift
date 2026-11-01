@@ -57,7 +57,8 @@ enum FixtureApp {
       let relative = String(item.resolvingSymlinksInPath().path.dropFirst(base.count))
       let values = try item.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
       if values.isSymbolicLink == true {
-        result[relative] = try "→" + FileManager.default.destinationOfSymbolicLink(atPath: item.path)
+        result[relative] =
+          try "→" + FileManager.default.destinationOfSymbolicLink(atPath: item.path)
       } else if values.isRegularFile == true {
         result[relative] = SHA256.hash(data: try Data(contentsOf: item))
           .map { String(format: "%02x", $0) }.joined()

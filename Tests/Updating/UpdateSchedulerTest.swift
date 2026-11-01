@@ -81,7 +81,8 @@ final class UpdateSchedulerTest: XCTestCase {
     XCTAssertTrue(reason.contains("Signature changed."))
     // A reloaded row (fresh queue and store, no job) still shows the failure...
     let reloaded = UpdateQueue(
-      history: UpdateHistoryStore(fileURL: history.fileURL), readBundle: { url in
+      history: UpdateHistoryStore(fileURL: history.fileURL),
+      readBundle: { url in
         App.Bundle(
           version: Version(versionNumber: installed.withLock { $0 }, buildNumber: nil),
           name: "Fixture", bundleIdentifier: FixtureApp.identifier, fileURL: url,
@@ -100,7 +101,9 @@ final class UpdateSchedulerTest: XCTestCase {
 }
 
 private final class RunLog: Sendable {
-  let entries = Mutex<[(name: String, start: ContinuousClock.Instant, end: ContinuousClock.Instant)]>([])
+  let entries = Mutex<
+    [(name: String, start: ContinuousClock.Instant, end: ContinuousClock.Instant)]
+  >([])
 }
 
 private final class TimedOperation: UpdateOperation, @unchecked Sendable {

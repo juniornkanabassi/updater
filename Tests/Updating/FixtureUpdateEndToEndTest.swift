@@ -28,7 +28,8 @@ final class FixtureUpdateEndToEndTest: XCTestCase {
     try FileManager.default.createDirectory(at: feed, withIntermediateDirectories: true)
     let candidate = try FixtureApp.make(in: build, version: "1.1", launches: candidateLaunches)
     let archive = feed.appendingPathComponent("Fixture-1.1.zip")
-    try FixtureApp.run("/usr/bin/ditto", ["-c", "-k", "--keepParent", candidate.path, archive.path])
+    try FixtureApp.run(
+      "/usr/bin/ditto", ["-c", "-k", "--keepParent", candidate.path, archive.path])
     let server = try await LocalFileServer.start(serving: feed)
     addTeardownBlock { server.stop() }
     let sha = SHA256.hash(data: try Data(contentsOf: archive)).map { String(format: "%02x", $0) }

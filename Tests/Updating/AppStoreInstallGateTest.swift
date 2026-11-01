@@ -84,7 +84,8 @@ final class AppStoreInstallGateTest: XCTestCase {
       signed: false)
     try FixtureApp.make(in: root, name: "Unrelated", identifier: "com.example.x", version: "1")
     XCTAssertEqual(
-      try AppStoreInstallGate.copies(of: identifier, in: [root, root.appendingPathComponent("gone")]),
+      try AppStoreInstallGate.copies(
+        of: identifier, in: [root, root.appendingPathComponent("gone")]),
       [nested.standardizedFileURL.path])
   }
 

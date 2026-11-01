@@ -19,7 +19,9 @@ struct AppStoreInstallGate: Sendable {
     guard target.deletingLastPathComponent().path == "/Applications",
       target.pathExtension == "app", target.resolvingSymlinksInPath().path == target.path,
       !bundleIdentifier.isEmpty,
-      bundleIdentifier.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || ".-_".contains($0)) })
+      bundleIdentifier.allSatisfy({
+        $0.isASCII && ($0.isLetter || $0.isNumber || ".-_".contains($0))
+      })
     else { return false }
     do {
       // 2. A direct walk finds no other copy. 3. LaunchServices and Spotlight agree.
@@ -88,7 +90,9 @@ struct AppStoreInstallGate: Sendable {
       // system volume, which is never indexed on macOS 26.
       let data = "/System/Volumes/Data"
       let volume = FileManager.default.fileExists(atPath: data) ? data : "/"
-      return try await InstallerCommand.run("/usr/bin/mdutil", ["-s", volume], timeout: .seconds(10))
-        .contains("Indexing enabled.")
+      return try await InstallerCommand.run(
+        "/usr/bin/mdutil", ["-s", volume], timeout: .seconds(10)
+      )
+      .contains("Indexing enabled.")
     })
 }

@@ -51,7 +51,9 @@ final class UpdateInstaller: NSObject, UpdateInstallerProtocol {
         at: staging, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
       // A failed restore leaves the original in staging; keep it for recovery.
       defer {
-        if !ReplacementTransaction.needsRecovery(staging) { try? fileManager.removeItem(at: staging) }
+        if !ReplacementTransaction.needsRecovery(staging) {
+          try? fileManager.removeItem(at: staging)
+        }
       }
       let package = staging.appendingPathComponent("update.pkg")
       guard

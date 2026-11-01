@@ -81,7 +81,8 @@ final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
       }
       // Fail closed before any helper or CommerceKit request if the install could
       // land on another copy of this app.
-      guard await self.gate.allowsInstall(at: self.installURL, bundleIdentifier: self.bundleIdentifier)
+      guard
+        await self.gate.allowsInstall(at: self.installURL, bundleIdentifier: self.bundleIdentifier)
       else {
         self.outcomeOverride = .handedOff
         self.openURL(URL(string: "macappstore://showUpdatesPage")!)

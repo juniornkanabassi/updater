@@ -35,8 +35,9 @@ final class ReplacementTransactionTest: XCTestCase {
           shortVersion: identity.shortVersion, bundleVersion: identity.bundleVersion)
       }
       XCTAssertThrowsError(
-        try DownloadUpdateOperation.replaceItem(at: original, with: candidate, backupDirectory: stage)
-        { url in
+        try DownloadUpdateOperation.replaceItem(
+          at: original, with: candidate, backupDirectory: stage
+        ) { url in
           try AppDownloadUpdateOperation.verifyInstalled(
             at: url, original: identity,
             expectedVersion: Version(versionNumber: "1.1", buildNumber: "1.1"),
@@ -60,7 +61,8 @@ final class ReplacementTransactionTest: XCTestCase {
     let identity = try BundleIdentity.read(at: original, validate: false)
     try DownloadUpdateOperation.replaceItem(at: original, with: candidate, backupDirectory: stage) {
       try AppDownloadUpdateOperation.verifyInstalled(
-        at: $0, original: identity, expectedVersion: Version(versionNumber: "1.1", buildNumber: "1.1"),
+        at: $0, original: identity,
+        expectedVersion: Version(versionNumber: "1.1", buildNumber: "1.1"),
         requiresTeam: false, launchProbe: FixtureApp.launchProbe)
     }
     XCTAssertEqual(try FixtureApp.digest(original), expected)
@@ -83,7 +85,8 @@ final class ReplacementTransactionTest: XCTestCase {
       try ReplacementTransaction.perform(
         at: target, backupDirectory: staging, copyingOriginal: true,
         install: {
-          XCTAssertTrue(FileManager.default.fileExists(atPath: target.path), "original stays in place")
+          XCTAssertTrue(
+            FileManager.default.fileExists(atPath: target.path), "original stays in place")
           try FileManager.default.removeItem(at: target)
           try FileManager.default.copyItem(at: other, to: target)
         },
@@ -141,8 +144,11 @@ final class ReplacementTransactionTest: XCTestCase {
       let lifecycle = AppLifecycle(
         runningApps: { _ in
           wasRunning
-            ? [.init(terminate: { terminated.withLock { $0 = true } },
-              isTerminated: { terminated.withLock { $0 } })] : []
+            ? [
+              .init(
+                terminate: { terminated.withLock { $0 = true } },
+                isTerminated: { terminated.withLock { $0 } })
+            ] : []
         },
         confirmQuit: { _ in
           XCTAssertTrue(wasRunning, "Only a running app is asked to quit")
