@@ -1,0 +1,69 @@
+// Copyright © 2026 Junior Nkana Bassi. Licensed under GPL-3.0; see LICENSE.md.
+
+import Foundation
+import Synchronization
+
+/// One finished update action for the app at `appPath`.
+struct UpdateHistoryEntry: Codable, Equatable, Sendable {
+  var date = Date()
+  let appPath: String
+  let bundleIdentifier: String
+  /// The installed version when the action started, used to tell whether a
+  /// recorded failure still describes the bundle on disk.
+  let installedVersion: String
+  let outcome: UpdateOutcome
+}
+
+/// Append-only JSON lines in Application Support, so outcomes survive list reloads and relaunches.
+final class UpdateHistoryStore: Sendable {
+  static let shared = UpdateHistoryStore(
+    fileURL: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+      .appendingPathComponent("Updater/history.jsonl"))
+
+  let fileURL: URL
+  /// Latest entry per app path, loaded from disk on first use.
+  private let latest = Mutex<[String: UpdateHistoryEntry]?>(nil)
+
+  init(fileURL: URL) { self.fileURL = fileURL }
+
+  func record(_ entry: UpdateHistoryEntry) {
+    latest.withLock { cache in
+      if cache == nil { cache = Self.load(from: fileURL) }
+      cache?[entry.appPath] = entry
+      let encoder = JSONEncoder()
+      encoder.dateEncodingStrategy = .iso8601
+      guard var line = try? encoder.encode(entry) else { return }
+      line.append(0x0A)
+      try? FileManager.default.createDirectory(
+        at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+      if let handle = try? FileHandle(forWritingTo: fileURL) {
+        defer { try? handle.close() }
+        _ = try? handle.seekToEnd()
+        try? handle.write(contentsOf: line)
+      } else {
+        try? line.write(to: fileURL)
+      }
+    }
+  }
+
+  func latestEntry(for appURL: URL) -> UpdateHistoryEntry? {
+    latest.withLock { cache in
+      if cache == nil { cache = Self.load(from: fileURL) }
+      return cache?[appURL.path]
+    }
+  }
+
+  private static func load(from url: URL) -> [String: UpdateHistoryEntry] {
+    guard let data = try? Data(contentsOf: url) else { return [:] }
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    var entries = [String: UpdateHistoryEntry]()
+    // A torn final line from a crash is skipped rather than discarding the history.
+    for line in data.split(separator: 0x0A) {
+      if let entry = try? decoder.decode(UpdateHistoryEntry.self, from: line) {
+        entries[entry.appPath] = entry
+      }
+    }
+    return entries
+  }
+}

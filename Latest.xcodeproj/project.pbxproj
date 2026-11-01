@@ -193,6 +193,11 @@
 		FA6C0E11A75026835D8C8DA0 /* ZoomReleaseNotesExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76F591149A1D25F98CE7FF78 /* ZoomReleaseNotesExtractor.swift */; };
 		FC11D0411459214F0127D12C /* UpdateProgressState.swift in Sources */ = {isa = PBXBuildFile; fileRef = D65ADD2EF3A7D6AF8410BB80 /* UpdateProgressState.swift */; };
 		FC7D27A69F7FE63CA593CC43 /* ToolbarProgressPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 002A891730B3DDB4A59CA5A1 /* ToolbarProgressPresentation.swift */; };
+		26822C2AA0E24008AF84C99B /* UpdateOutcome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40D9D04B4C9A44088BC23049 /* UpdateOutcome.swift */; };
+		163D0BA972754FE9BAE60D8F /* UpdateOutcome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40D9D04B4C9A44088BC23049 /* UpdateOutcome.swift */; };
+		36859CA69E05436092D93AD3 /* UpdateHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10C0753E2494FF989086B15 /* UpdateHistoryStore.swift */; };
+		9908B350C9C84CF8BA24C0B0 /* UpdateHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10C0753E2494FF989086B15 /* UpdateHistoryStore.swift */; };
+		81F85B58314F425186C7EA2E /* UpdateHistoryStoreTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09EDB41B76744E9F9F3B8074 /* UpdateHistoryStoreTest.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -509,6 +514,9 @@
 		E458C4775DF2A158BCD73C05 /* ReleaseNotesWebViewTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseNotesWebViewTest.swift; sourceTree = "<group>"; };
 		E573007060BA2A08246BCBD6 /* ZedReleaseNotesExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZedReleaseNotesExtractor.swift; sourceTree = "<group>"; };
 		ED91A6614676AD2E7E5AAC6E /* LatestAppBenchmarks.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = LatestAppBenchmarks.xctestplan; sourceTree = "<group>"; };
+		40D9D04B4C9A44088BC23049 /* UpdateOutcome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateOutcome.swift; sourceTree = "<group>"; };
+		F10C0753E2494FF989086B15 /* UpdateHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateHistoryStore.swift; sourceTree = "<group>"; };
+		09EDB41B76744E9F9F3B8074 /* UpdateHistoryStoreTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateHistoryStoreTest.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -761,6 +769,7 @@
 				5058E9C227863FC80028F564 /* App.swift */,
 				5095121F1FF36301003D2D7F /* Bundle.swift */,
 				50366E5127DFD14100D4E247 /* Source.swift */,
+				40D9D04B4C9A44088BC23049 /* UpdateOutcome.swift */,
 				509512111FF362A1003D2D7F /* Update.swift */,
 			);
 			path = Domain;
@@ -837,6 +846,7 @@
 				A937EB19DC5A6BBCB6EF6BC6 /* AppUpdating.swift */,
 				5039DE8622CA39C60088B39B /* UpdateOperation.swift */,
 				5039DE8422CA396F0088B39B /* UpdateQueue.swift */,
+				F10C0753E2494FF989086B15 /* UpdateHistoryStore.swift */,
 			);
 			path = Updating;
 			sourceTree = "<group>";
@@ -963,6 +973,7 @@
 				BC32934D27C9A1E207B84105 /* InstallHelperInteractionTest.swift */,
 				AF47380B4D5A5B6A192C0071 /* InstallHelperTest.swift */,
 				0267A1D6626D912543A3A797 /* UpdateActionPresentationTest.swift */,
+				09EDB41B76744E9F9F3B8074 /* UpdateHistoryStoreTest.swift */,
 				508D4E6B2FC000000000001 /* UpdateQueueTest.swift */,
 				A10300000000000000000001 /* SparkleUpdateOperationTest.swift */,
 				A0310000000000000000000E /* AppDownloadUpdateTest.swift */,
@@ -1290,6 +1301,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				36859CA69E05436092D93AD3 /* UpdateHistoryStore.swift in Sources */,
+				26822C2AA0E24008AF84C99B /* UpdateOutcome.swift in Sources */,
 				FC11D0411459214F0127D12C /* UpdateProgressState.swift in Sources */,
 				82E647E788D57C9DEBE786BD /* UpdateActionPresentation.swift in Sources */,
 				CD5EB6F6C464E0E2DD32CBC2 /* ToolbarProgressPresentation.swift in Sources */,
@@ -1457,6 +1470,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				81F85B58314F425186C7EA2E /* UpdateHistoryStoreTest.swift in Sources */,
+				9908B350C9C84CF8BA24C0B0 /* UpdateHistoryStore.swift in Sources */,
+				163D0BA972754FE9BAE60D8F /* UpdateOutcome.swift in Sources */,
 				5A6BD4F6341A97047C0339D6 /* App.swift in Sources */,
 				1030C80F874CD49A3EA9B670 /* Bundle.swift in Sources */,
 				E3114AC43EEB5DD6746D55E2 /* Source.swift in Sources */,
