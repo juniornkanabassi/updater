@@ -1,0 +1,39 @@
+{
+  "configurations": [
+    {
+      "id": "BC992FCF-ADDE-5123-85E5-48CFDAE5DEC8",
+      "name": "Integration",
+      "options": {}
+    }
+  ],
+  "defaultOptions": {
+    "environmentVariableEntries": [
+      {
+        "key": "LATEST_UI_TESTS",
+        "value": "0"
+      }
+    ]
+  },
+  "testTargets": [
+    {
+      "target": {
+        "containerPath": "container:Latest.xcodeproj",
+        "identifier": "50C81D681FBADC5900324C2E",
+        "name": "Latest Tests"
+      },
+      "skippedTests": [
+        "ComponentAppearanceTest",
+        "MainWindowAppearanceTest",
+        "SidebarInteractionTest",
+        "SidebarAppearanceTest",
+        "ToolbarInteractionTest",
+        "InstallHelperInteractionTest",
+        "ReleaseNotesWebViewTest",
+        "UpdateActionInteractionTest",
+        "AppPerformanceTest",
+        "ComplexityBenchmarkTest/testComplexityBenchmarks()"
+      ]
+    }
+  ],
+  "version": 1
+}

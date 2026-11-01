@@ -1,0 +1,683 @@
+[
+  {
+    "keys": ["1password", "com1password1password"],
+    "homebrewTokens": ["1password"],
+    "kind": "changelog",
+    "urlTemplate": "https://releases.1password.com/mac/stable/",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["betterdisplay", "comgithubwaydabberbetterdisplay", "probetterdisplaybetterdisplay"],
+    "homebrewTokens": ["betterdisplay"],
+    "kind": "github",
+    "urlTemplate": "https://api.github.com/repos/waydabber/BetterDisplay/releases/tags/v{version}",
+    "versionPrefix": "exact",
+    "knownFallbackKey": "betterdisplay"
+  },
+  {
+    "keys": ["bruno", "comusebrunoapp"],
+    "homebrewTokens": ["bruno"],
+    "kind": "github",
+    "urlTemplate": "https://api.github.com/repos/usebruno/bruno/releases/tags/v{version}",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["bravebrowser", "combravebrowser"],
+    "homebrewTokens": ["brave-browser", "brave-origin"],
+    "kind": "changelog",
+    "urlTemplate": "https://brave.com/latest/",
+    "versionPrefix": "majorMinorPatch"
+  },
+  {
+    "keys": ["chrome", "googlechrome", "comgooglechrome"],
+    "homebrewTokens": ["google-chrome"],
+    "kind": "changelog",
+    "urlTemplate": "https://chromereleases.googleblog.com/",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["docker", "dockerdesktop", "comdockerdocker"],
+    "homebrewTokens": ["docker-desktop"],
+    "kind": "changelog",
+    "urlTemplate": "https://docs.docker.com/desktop/release-notes.md",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["dbeaverenterprise"],
+    "homebrewTokens": ["dbeaver-enterprise"],
+    "kind": "changelog",
+    "urlTemplate": "https://dbeaver.com/release-notes/",
+    "versionPrefix": "majorMinor"
+  },
+  {
+    "keys": ["dbeaverlite"],
+    "homebrewTokens": ["dbeaverlite"],
+    "kind": "changelog",
+    "urlTemplate": "https://dbeaver.com/dbeaver-lite-release-notes/",
+    "versionPrefix": "majorMinor"
+  },
+  {
+    "keys": ["dbeaverteam"],
+    "homebrewTokens": ["dbeaverteam"],
+    "kind": "changelog",
+    "urlTemplate": "https://dbeaver.com/dbeaver-team-release-notes/",
+    "versionPrefix": "majorMinor"
+  },
+  {
+    "keys": ["dbeaverultimate"],
+    "homebrewTokens": ["dbeaverultimate"],
+    "kind": "changelog",
+    "urlTemplate": "https://dbeaver.com/dbeaver-ultimate-release-notes/",
+    "versionPrefix": "majorMinor"
+  },
+  {
+    "keys": ["dbvr"],
+    "homebrewTokens": ["dbvr"],
+    "kind": "changelog",
+    "urlTemplate": "https://dbeaver.com/dbvr-release-notes/",
+    "versionPrefix": "majorMinor"
+  },
+  {
+    "keys": ["firefox", "orgmozillafirefox"],
+    "homebrewTokens": ["firefox"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.firefox.com/en-US/firefox/{version}/releasenotes/",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["ghostty", "commitchellhghostty"],
+    "homebrewTokens": ["ghostty"],
+    "kind": "changelog",
+    "urlTemplate": "https://raw.githubusercontent.com/ghostty-org/website/main/docs/install/release-notes/{version-dashes}.mdx",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["aquaapp"],
+    "homebrewTokens": ["aqua-app"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.jetbrains.com/aqua/whatsnew/{major-minor-dashes}/",
+    "versionPrefix": "majorMinor"
+  },
+  {
+    "keys": ["clion"],
+    "homebrewTokens": ["clion", "clion@eap"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.jetbrains.com/clion/whatsnew/{major-minor-dashes}/",
+    "versionPrefix": "majorMinor"
+  },
+  {
+    "keys": ["datagrip"],
+    "homebrewTokens": ["datagrip"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.jetbrains.com/datagrip/whatsnew/{major-minor-dashes}/",
+    "versionPrefix": "majorMinor"
+  },
+  {
+    "keys": ["dataspell"],
+    "homebrewTokens": ["dataspell"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.jetbrains.com/dataspell/whatsnew/{major-minor-dashes}/",
+    "versionPrefix": "majorMinor"
+  },
+  {
+    "keys": ["goland"],
+    "homebrewTokens": ["goland"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.jetbrains.com/go/whatsnew/{major-minor-dashes}/",
+    "versionPrefix": "majorMinor"
+  },
+  {
+    "keys": ["intellijidea", "intellijideace"],
+    "homebrewTokens": ["intellij-idea", "intellij-idea-ce", "intellij-idea@eap"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.jetbrains.com/idea/whatsnew/{major-minor-dashes}/",
+    "versionPrefix": "majorMinor"
+  },
+  {
+    "keys": ["mps"],
+    "homebrewTokens": ["mps"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.jetbrains.com/mps/whatsnew/{major-minor-dashes}/",
+    "versionPrefix": "majorMinor"
+  },
+  {
+    "keys": ["phpstorm"],
+    "homebrewTokens": ["phpstorm"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.jetbrains.com/phpstorm/whatsnew/{major-minor-dashes}/",
+    "versionPrefix": "majorMinor"
+  },
+  {
+    "keys": ["pycharm", "pycharmce", "pycharmedu"],
+    "homebrewTokens": ["pycharm", "pycharm-ce", "pycharm-edu"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.jetbrains.com/pycharm/whatsnew/{major-minor-dashes}/",
+    "versionPrefix": "majorMinor"
+  },
+  {
+    "keys": ["rider"],
+    "homebrewTokens": ["rider"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.jetbrains.com/rider/whatsnew/{major-minor-dashes}/",
+    "versionPrefix": "majorMinor"
+  },
+  {
+    "keys": ["rubymine"],
+    "homebrewTokens": ["rubymine"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.jetbrains.com/ruby/whatsnew/{major-minor-dashes}/",
+    "versionPrefix": "majorMinor"
+  },
+  {
+    "keys": ["rustrover"],
+    "homebrewTokens": ["rustrover"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.jetbrains.com/rust/whatsnew/{major-minor-dashes}/",
+    "versionPrefix": "majorMinor"
+  },
+  {
+    "keys": ["webstorm"],
+    "homebrewTokens": ["webstorm"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.jetbrains.com/webstorm/whatsnew/{major-minor-dashes}/",
+    "versionPrefix": "majorMinor"
+  },
+  {
+    "keys": ["writerside"],
+    "homebrewTokens": ["writerside"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.jetbrains.com/writerside/whatsnew/{major-minor-dashes}/",
+    "versionPrefix": "majorMinor"
+  },
+  {
+    "keys": ["notion", "notionid"],
+    "homebrewTokens": [],
+    "kind": "none"
+  },
+  {
+    "keys": ["obsidian", "mdobsidian"],
+    "homebrewTokens": ["obsidian"],
+    "kind": "changelog",
+    "urlTemplate": "https://obsidian.md/changelog/",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["omnifocus", "comomnigroupomnifocus"],
+    "homebrewTokens": ["omnifocus"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.omnigroup.com/releasenotes/omnifocus",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["omnigraffle", "comomnigroupomnigraffle"],
+    "homebrewTokens": ["omnigraffle"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.omnigroup.com/releasenotes/omnigraffle",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["omnioutliner", "comomnigroupomnioutliner"],
+    "homebrewTokens": ["omnioutliner"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.omnigroup.com/releasenotes/omnioutliner",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["omniplan", "comomnigroupomniplan"],
+    "homebrewTokens": ["omniplan"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.omnigroup.com/releasenotes/omniplan",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["omnipresence", "comomnigroupomnipresence"],
+    "homebrewTokens": ["omnipresence"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.omnigroup.com/releasenotes/omnipresence",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["telegramdesktop", "comtdesktoptelegram"],
+    "homebrewTokens": ["telegram-desktop"],
+    "kind": "changelog",
+    "urlTemplate": "https://raw.githubusercontent.com/telegramdesktop/tdesktop/dev/changelog.txt",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["airfoil"],
+    "homebrewTokens": ["airfoil"],
+    "kind": "changelog",
+    "urlTemplate": "https://rogueamoeba.com/support/releasenotes/?product=Airfoil%20for%20Mac",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["audiohijack"],
+    "homebrewTokens": ["audio-hijack"],
+    "kind": "changelog",
+    "urlTemplate": "https://rogueamoeba.com/support/releasenotes/?product=Audio%20Hijack",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["farrago"],
+    "homebrewTokens": ["farrago"],
+    "kind": "changelog",
+    "urlTemplate": "https://rogueamoeba.com/support/releasenotes/?product=Farrago",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["fission"],
+    "homebrewTokens": ["fission"],
+    "kind": "changelog",
+    "urlTemplate": "https://rogueamoeba.com/support/releasenotes/?product=Fission",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["loopback"],
+    "homebrewTokens": ["loopback"],
+    "kind": "changelog",
+    "urlTemplate": "https://rogueamoeba.com/support/releasenotes/?product=Loopback",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["piezo"],
+    "homebrewTokens": ["piezo"],
+    "kind": "changelog",
+    "urlTemplate": "https://rogueamoeba.com/support/releasenotes/?product=Piezo",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["soundsource"],
+    "homebrewTokens": ["soundsource"],
+    "kind": "changelog",
+    "urlTemplate": "https://rogueamoeba.com/support/releasenotes/?product=SoundSource",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["visualstudiocode", "commicrosoftvscode"],
+    "homebrewTokens": ["visual-studio-code"],
+    "kind": "changelog",
+    "urlTemplate": "https://code.visualstudio.com/updates/v{major-minor-underscores}",
+    "versionPrefix": "majorMinor"
+  },
+  {
+    "keys": ["cursor"],
+    "homebrewTokens": ["cursor"],
+    "kind": "changelog",
+    "urlTemplate": "https://cursor.com/changelog",
+    "versionPrefix": "majorMinor",
+    "allowsLatestFallback": true
+  },
+  {
+    "keys": ["microsoftedge", "commicrosoftedgemac"],
+    "homebrewTokens": ["microsoft-edge"],
+    "kind": "changelog",
+    "urlTemplate": "https://learn.microsoft.com/en-us/deployedge/microsoft-edge-relnote-stable-channel",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["raycast", "comraycastmacos"],
+    "homebrewTokens": ["raycast"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.raycast.com/changelog",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["slack", "comtinyspeckslackmacgap"],
+    "homebrewTokens": ["slack"],
+    "kind": "changelog",
+    "urlTemplate": "https://slack.com/release-notes/mac",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["warp", "devwarpwarp", "devwarpwarpstable"],
+    "homebrewTokens": ["warp"],
+    "kind": "changelog",
+    "urlTemplate": "https://docs.warp.dev/changelog",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["zed"],
+    "homebrewTokens": ["zed"],
+    "kind": "changelog",
+    "urlTemplate": "https://zed.dev/releases/stable/{version}",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["zedpreview"],
+    "homebrewTokens": ["zed@preview"],
+    "kind": "changelog",
+    "urlTemplate": "https://zed.dev/releases/preview/{version}",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["zoom", "zoomus", "uszoomxos"],
+    "homebrewTokens": ["zoom"],
+    "kind": "changelog",
+    "urlTemplate": "https://support.zoom.com/hc/en/article?id=zm_kb&sysparm_article=KB0061222",
+    "versionPrefix": "majorMinorPatch"
+  },
+  {
+    "keys": ["abletonlive"],
+    "homebrewTokens": ["ableton-live-intro", "ableton-live-intro@11", "ableton-live-lite", "ableton-live-lite@11", "ableton-live-standard", "ableton-live-standard@11", "ableton-live-suite", "ableton-live-suite@10", "ableton-live-suite@11"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.ableton.com/en/release-notes/live-{major}/",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["dcpomatic"],
+    "homebrewTokens": ["dcp-o-matic", "dcp-o-matic-batch-converter", "dcp-o-matic-combiner", "dcp-o-matic-disk-writer", "dcp-o-matic-editor", "dcp-o-matic-encode-server", "dcp-o-matic-kdm-creator", "dcp-o-matic-player", "dcp-o-matic-playlist-editor"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.dcpomatic.com/release-notes?v={version}",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["iterm2", "comgooglecodeiterm2"],
+    "homebrewTokens": ["iterm2", "iterm2@beta"],
+    "kind": "changelog",
+    "urlTemplate": "https://iterm2.com/downloads.html",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["devonthink", "comdevontechnologiesthink"],
+    "homebrewTokens": ["devonthink"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.devontechnologies.com/apps/devonthink/releases",
+    "versionPrefix": "majorMinor"
+  },
+  {
+    "keys": ["displaperture"],
+    "homebrewTokens": ["displaperture"],
+    "kind": "changelog",
+    "urlTemplate": "https://manytricks.com/displaperture/releasenotes/",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["keycodes"],
+    "homebrewTokens": ["key-codes"],
+    "kind": "changelog",
+    "urlTemplate": "https://manytricks.com/keycodes/releasenotes/",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["leech"],
+    "homebrewTokens": ["leech"],
+    "kind": "changelog",
+    "urlTemplate": "https://manytricks.com/leech/releasenotes/",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["menuwhere"],
+    "homebrewTokens": ["menuwhere"],
+    "kind": "changelog",
+    "urlTemplate": "https://manytricks.com/menuwhere/releasenotes/",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["moom", "commanytricksmoom"],
+    "homebrewTokens": ["moom"],
+    "kind": "changelog",
+    "urlTemplate": "https://manytricks.com/moom/releasenotes/",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["namemangler"],
+    "homebrewTokens": ["name-mangler"],
+    "kind": "changelog",
+    "urlTemplate": "https://manytricks.com/namemangler/releasenotes/",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["resolutionator"],
+    "homebrewTokens": ["resolutionator"],
+    "kind": "changelog",
+    "urlTemplate": "https://manytricks.com/resolutionator/releasenotes/",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["timesink"],
+    "homebrewTokens": ["time-sink"],
+    "kind": "changelog",
+    "urlTemplate": "https://manytricks.com/timesink/releasenotes/",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["littlesnitch", "atobdevlittlesnitch"],
+    "homebrewTokens": ["little-snitch", "little-snitch@nightly"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.obdev.at/products/littlesnitch/releasenotes.html",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["littlesnitch5legacy"],
+    "homebrewTokens": ["little-snitch@5"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.obdev.at/products/littlesnitch/releasenotes5.html",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["abetterfinderattributes"],
+    "homebrewTokens": ["a-better-finder-attributes"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.publicspace.net/ABetterFinderAttributes/version.html",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["abetterfinderrename"],
+    "homebrewTokens": ["a-better-finder-rename"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.publicspace.net/ABetterFinderRename/version.html",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["bigmeanfoldermachine"],
+    "homebrewTokens": ["big-mean-folder-machine"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.publicspace.net/BigMeanFolderMachine/version.html",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["macbreakz"],
+    "homebrewTokens": ["macbreakz"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.publicspace.net/MacBreakZ/version.html",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["niftyfilelists"],
+    "homebrewTokens": ["nifty-file-lists"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.publicspace.net/NiftyFileLists/version.html",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["vitaminr"],
+    "homebrewTokens": ["vitamin-r"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.publicspace.net/Vitamin-R/version.html",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["sidenotes", "comapptoriumsidenotes", "comapptoriumsidenotespaddle"],
+    "homebrewTokens": ["sidenotes"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.apptorium.com/sidenotes/release-notes/{version}",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["elgatowavelink", "comelgatowavelink"],
+    "homebrewTokens": ["elgato-wave-link"],
+    "kind": "changelog",
+    "urlTemplate": "https://help.elgato.com/hc/en-us/sections/4913442828941-Wave-Link-Release-Notesverf%C3%BCgbar",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["appcleaner9", "comnektonyappcleanerpro"],
+    "homebrewTokens": ["app-cleaner"],
+    "kind": "changelog",
+    "urlTemplate": "https://nektony.com/mac-app-cleaner/download",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["diskexpert6", "comnektonydiskexpertsii"],
+    "homebrewTokens": ["disk-expert"],
+    "kind": "changelog",
+    "urlTemplate": "https://nektony.com/disk-expert/download",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["duplicatefilefinder9", "comnektonyduplicatefilefindersii"],
+    "homebrewTokens": ["duplicate-file-finder"],
+    "kind": "changelog",
+    "urlTemplate": "https://nektony.com/duplicate-finder-free/download",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["memorycleaner5", "comnektonymemorycleanersii"],
+    "homebrewTokens": ["memory-cleaner"],
+    "kind": "changelog",
+    "urlTemplate": "https://nektony.com/memory-cleaner/download",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["navicatpremium", "comnavicatnavicatpremium"],
+    "homebrewTokens": ["navicat-premium"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.navicat.com/en/products/navicat-premium-release-note",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["navicatformysql", "comnavicatnavicatformysql"],
+    "homebrewTokens": ["navicat-for-mysql"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.navicat.com/en/products/navicat-for-mysql-release-note",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["istatmenus", "comegomenuistatmenus"],
+    "homebrewTokens": ["istat-menus", "istat-menus@5", "istat-menus@6"],
+    "kind": "changelog",
+    "urlTemplate": "https://weather.bjango.com/mac/istatmenus/versionhistory/",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["teacode", "comapptoriumteacode", "comapptoriumteacodepaddle"],
+    "homebrewTokens": ["teacode"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.apptorium.com/teacode/release-notes/{version}",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["workspaces", "comapptoriumworkspaces", "comapptoriumworkspacespaddle"],
+    "homebrewTokens": ["workspaces"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.apptorium.com/workspaces/release-notes/{version}",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["windowkeys", "comapptoriumwindowkeys", "comapptoriumwindowkeyspaddle"],
+    "homebrewTokens": ["windowkeys"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.apptorium.com/windowkeys/release-notes/{version}",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["expressions", "comapptoriumexpressions", "comapptoriumexpressionspaddle"],
+    "homebrewTokens": ["expressions"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.apptorium.com/expressions/release-notes/{version}",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["screenfocus", "comapptoriumscreenfocus", "comapptoriumscreenfocuspaddle"],
+    "homebrewTokens": ["screenfocus"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.apptorium.com/screenfocus/release-notes/{version}",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["eclipse", "eclipseide", "orgeclipseeclipse", "orgeclipseplatformide"],
+    "homebrewTokens": [
+      "eclipse-cpp",
+      "eclipse-dsl",
+      "eclipse-ide",
+      "eclipse-installer",
+      "eclipse-java",
+      "eclipse-jee",
+      "eclipse-modeling",
+      "eclipse-php",
+      "eclipse-platform",
+      "eclipse-rcp"
+    ],
+    "kind": "changelog",
+    "urlTemplate": "https://raw.githubusercontent.com/eclipse-platform/www.eclipse.org-eclipse/master/news/{version}/platform.md",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["parallelsdesktop", "comparallelsdesktopconsole"],
+    "homebrewTokens": ["parallels"],
+    "kind": "changelog",
+    "urlTemplate": "https://kb.parallels.com/en/131014",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["expressvpn", "comexpressvpn"],
+    "homebrewTokens": ["expressvpn"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.expressvpn.com/support/vpn-setup/release-notes/mac-app/",
+    "versionPrefix": "majorMinorPatch"
+  },
+  {
+    "keys": ["navicatforpostgresql", "comnavicatnavicatforpostgresql"],
+    "homebrewTokens": ["navicat-for-postgresql"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.navicat.com/en/products/navicat-for-postgresql-release-note",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": ["navicatforsqlite", "comnavicatnavicatforsqlite"],
+    "homebrewTokens": ["navicat-for-sqlite"],
+    "kind": "changelog",
+    "urlTemplate": "https://www.navicat.com/en/products/navicat-for-sqlite-release-note",
+    "versionPrefix": "exact"
+  },
+  {
+    "keys": [
+      "net.freemacsoft.AppCleaner"
+    ],
+    "homebrewTokens": [],
+    "kind": "changelog",
+    "versionPrefix": "exact",
+    "urlTemplate": "https://freemacsoft.net/appcleaner/releasenotes.html"
+  },
+  {
+    "keys": [
+      "com.knollsoft.Rectangle"
+    ],
+    "homebrewTokens": [
+      "rectangle"
+    ],
+    "kind": "github",
+    "versionPrefix": "exact",
+    "urlTemplate": "https://api.github.com/repos/rxhanson/Rectangle/releases/tags/v{version}"
+  },
+  {
+    "keys": [
+      "com.bitgapp.eqmac"
+    ],
+    "homebrewTokens": [
+      "eqmac"
+    ],
+    "kind": "github",
+    "versionPrefix": "exact",
+    "urlTemplate": "https://api.github.com/repos/bitgapp/eqMac/releases/tags/v{version}"
+  },
+  {
+    "keys": [
+      "com.zed-industries.delta"
+    ],
+    "homebrewTokens": [],
+    "kind": "changelog",
+    "versionPrefix": "exact",
+    "urlTemplate": "https://delta.dev/docs/whats-in-the-latest"
+  }
+]

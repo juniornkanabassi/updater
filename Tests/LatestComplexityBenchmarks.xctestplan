@@ -1,0 +1,30 @@
+{
+  "configurations": [
+    {
+      "id": "3E87C101-5D91-57FB-8F59-DD843092D3B2",
+      "name": "ComplexityBenchmarks",
+      "options": {}
+    }
+  ],
+  "defaultOptions": {
+    "environmentVariableEntries": [
+      {
+        "key": "LATEST_UI_TESTS",
+        "value": "0"
+      }
+    ]
+  },
+  "testTargets": [
+    {
+      "target": {
+        "containerPath": "container:Latest.xcodeproj",
+        "identifier": "50C81D681FBADC5900324C2E",
+        "name": "Latest Tests"
+      },
+      "selectedTests": [
+        "ComplexityBenchmarkTest/testComplexityBenchmarks()"
+      ]
+    }
+  ],
+  "version": 1
+}

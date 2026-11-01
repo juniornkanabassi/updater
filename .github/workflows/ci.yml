@@ -1,0 +1,95 @@
+name: macOS CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: macos-26
+    timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          # The app's build-number phase counts commits in Git history.
+          fetch-depth: 0
+
+      - name: Prepare tools and visual diagnostics
+        run: |
+          command -v rg >/dev/null || brew install ripgrep
+          xcodebuild -version
+          swift --version
+          mkdir -p build/visual-diagnostics
+
+      - name: Cache pinned package downloads
+        uses: actions/cache@v6
+        with:
+          path: build/DerivedData/SourcePackages
+          key: packages-${{ runner.os }}-${{ runner.arch }}-xcode26.6-${{ hashFiles('Latest.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+
+      - name: Cache pinned SwiftLint
+        uses: actions/cache@v6
+        with:
+          path: build/tools
+          key: swiftlint-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('script/lint.sh') }}
+
+      - name: Resolve pinned dependencies
+        run: |
+          xcodebuild -resolvePackageDependencies \
+            -project Latest.xcodeproj -scheme Latest \
+            -derivedDataPath build/DerivedData \
+            -onlyUsePackageVersionsFromResolvedFile
+          git diff --exit-code -- Latest.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+
+      - name: Check formatting and correctness lint
+        run: |
+          ./script/format.sh --check
+          ./script/lint.sh
+
+      - name: Analyze declarations (advisory findings)
+        run: ./script/lint.sh --analyze
+
+      - name: Run unhosted unit gates
+        run: |
+          set -o pipefail
+          ./script/test.sh 2>&1 | tee build/ci-unit-tests.log
+
+      - name: Run background app-hosted integration gates
+        run: |
+          set -o pipefail
+          ./script/test.sh --integration 2>&1 | tee build/ci-integration-tests.log
+
+      - name: Run production UI gates
+        env:
+          TEST_RUNNER_LATEST_VISUAL_OUTPUT_DIRECTORY: ${{ github.workspace }}/build/visual-diagnostics
+        run: |
+          set -o pipefail
+          ./script/test.sh --ui 2>&1 | tee build/ci-ui-tests.log
+
+      - name: Preserve test results and visual diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: macOS-test-results
+          path: |
+            build/ci-*-tests.log
+            build/lint*.log
+            build/*.xcresult
+            build/production-visuals/**/*.png
+            build/visual-diagnostics/*.png
+            build/detail-capsule-*/*.png
+          if-no-files-found: warn
+          retention-days: 14

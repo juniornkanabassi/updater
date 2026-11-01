@@ -18,8 +18,8 @@ NS_ASSUME_NONNULL_BEGIN
 }
 
 + (BOOL)supportsSecureCoding;
-@property(retain) NSDictionary *metrics; // @synthesize metrics=_metrics;
-@property(retain) NSArray<SSDownload*> *downloads; // @synthesize downloads=_downloads;
+@property(retain, nullable) NSDictionary *metrics; // @synthesize metrics=_metrics;
+@property(retain, nullable) NSArray<SSDownload*> *downloads; // @synthesize downloads=_downloads;
 
 //- (void).cxx_destruct;
 

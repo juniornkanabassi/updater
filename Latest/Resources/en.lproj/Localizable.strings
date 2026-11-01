@@ -31,6 +31,9 @@
 /* Update progress state of downloading an update. The first %@ stands for the already downloaded bytes, the second one for the total amount of bytes. One expected output would be 'Downloading 3 MB of 21 MB' */
 "DownloadingUpdateStatus" = "Downloading %@ of %@";
 
+/* Download progress when the server does not provide the final size. */
+"DownloadingUnknownSizeUpdateStatus" = "Downloading %@…";
+
 /* Description of button that opens an error dialogue. */
 "ErrorButtonAccessibilityTitle" = "Error while updating app";
 
@@ -144,3 +147,36 @@
 
 /* A label used for apps which are not supported by Latest. */
 "UnsupportedLabel" = "No support";
+
+/* Tool tip of a toolbar button that checks for updates */
+"CheckForUpdatesToolbarItemToolTip" = "Check for Updates";
+
+/* Tool tip of a toolbar button that performs updates for all apps with update available */
+"UpdateAllToolbarItemToolTip" = "Update all Apps";
+
+/* Shown when the update helper is not installed. */
+"InstallHelperNotFoundErrorDescription" = "To install App Store updates within Latest, a helper must be installed. If you don't want to install the helper, you can update apps via the App Store manually.";
+
+/* Shown when the update helper is installed but disabled, requiring approval. */
+"InstallHelperRequiresApprovalErrorDescription" = "Enable the update helper in Settings to install updates within Latest.";
+
+/* Title of the alert prompting to install or enable the update helper */
+"UpdateInstallHelperAlert.Title" = "Update Helper Required";
+
+/* Checkbox title to always open the App Store instead of using the helper */
+"UpdateInstallHelperAlert.SuppressionTitle" = "Always open App Store";
+
+/* Primary button to install the update helper */
+"UpdateInstallHelperAlert.Primary.InstallHelper" = "Install Helper";
+
+/* Primary button to open Settings to enable the update helper */
+"UpdateInstallHelperAlert.Primary.OpenSettings" = "Open Settings";
+
+/* Button to update the app in the App Store */
+"UpdateInstallHelperAlert.Secondary.AppStore" = "Update In App Store";
+
+/* Cancel button in the helper alert */
+"UpdateInstallHelperAlert.Cancel" = "Cancel";
+
+/* Short description of an error when communicating with the apps install helper. */
+"InstallHelperCommunicationFailedError" = "The connection to the update helper was interrupted.";

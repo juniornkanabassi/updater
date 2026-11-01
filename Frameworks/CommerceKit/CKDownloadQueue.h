@@ -6,7 +6,7 @@
 
 #import "CKServiceInterface.h"
 
-@class CKDownloadQueueClient, NSArray, NSLock, NSMutableDictionary;
+@class CKDownloadQueueClient, NSArray, NSLock, NSMutableDictionary, SSDownload;
 
 @protocol CKDownloadQueueObserver;
 
@@ -37,15 +37,16 @@ NS_ASSUME_NONNULL_BEGIN
 //- (void)fetchIconForItemIdentifier:(unsigned long long)arg1 atURL:(id)arg2 replyBlock:(CDUnknownBlockType)arg3;
 
 - (void)removeDownloadWithItemIdentifier:(unsigned long long)arg1;
-- (void)cancelDownload:(id)arg1 promptToConfirm:(BOOL)arg2 askToDelete:(BOOL)arg3;
+- (void)cancelDownload:(nullable SSDownload *)download promptToConfirm:(BOOL)promptToConfirm askToDelete:(BOOL)askToDelete;
 - (void)resumeDownloadWithItemIdentifier:(unsigned long long)arg1;
 - (void)pauseDownloadWithItemIdentifier:(unsigned long long)arg1;
 - (void)addDownload:(id)arg1;
-- (id)downloadForItemIdentifier:(unsigned long long)arg1;
-@property(readonly, nonatomic) NSArray *downloads; // @dynamic downloads;
-- (void)removeObserver:(id<CKDownloadQueueObserver>)arg1;
-- (id<CKDownloadQueueObserver>)addObserver:(id<CKDownloadQueueObserver>)arg1;
-- (id<CKDownloadQueueObserver>)addObserver:(id<CKDownloadQueueObserver>)arg1 forDownloadTypes:(long long)arg2;
+- (nullable SSDownload *)downloadForItemIdentifier:(unsigned long long)identifier;
+@property(readonly, nonatomic, nullable) NSArray<SSDownload *> *downloads; // @dynamic downloads;
+// Registration returns a token, not the observer object.
+- (void)removeObserver:(nullable NSString *)observerUUID;
+- (NSString *)addObserver:(nullable id<CKDownloadQueueObserver>)observer;
+- (NSString *)addObserver:(nullable id<CKDownloadQueueObserver>)observer forDownloadTypes:(long long)downloadTypes;
 
 // - (id)addObserverForDownloadTypes:(long long)arg1 withBlock:(CDUnknownBlockType)arg2;
 

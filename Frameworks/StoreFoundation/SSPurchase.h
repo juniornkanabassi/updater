@@ -39,7 +39,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 + (id)purchasesGroupedByAccountIdentifierWithPurchases:(id)arg1;
 + (BOOL)supportsSecureCoding;
-+ (id)purchaseWithBuyParameters:(id)arg1;
++ (instancetype)purchaseWithBuyParameters:(nullable NSString *)parameters;
 @property(retain) NSDictionary *dsidLessOptions; // @synthesize dsidLessOptions=_dsidLessOptions;
 @property BOOL isDSIDLessPurchase; // @synthesize isDSIDLessPurchase=_isDSIDLessPurchase;
 @property(copy) NSDictionary *responseDialog; // @synthesize responseDialog=_responseDialog;
@@ -61,8 +61,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property BOOL isRedownload; // @synthesize isRedownload=_isRedownload;
 @property BOOL isUpdate; // @synthesize isUpdate=_isUpdate;
 @property(retain, nonatomic) NSString *appleID; // @synthesize appleID=_appleID;
-@property(copy, nonatomic) SSDownloadMetadata *downloadMetadata; // @synthesize downloadMetadata=_downloadMetadata;
-@property(copy, nonatomic) NSString *buyParameters; // @synthesize buyParameters=_buyParameters;
+@property(copy, nonatomic, nullable) SSDownloadMetadata *downloadMetadata; // @synthesize downloadMetadata=_downloadMetadata;
+@property(copy, nonatomic, nullable) NSString *buyParameters; // @synthesize buyParameters=_buyParameters;
 @property(retain, nonatomic) NSNumber *accountIdentifier; // @synthesize accountIdentifier=_accountIdentifier;
 
 //- (void).cxx_destruct;

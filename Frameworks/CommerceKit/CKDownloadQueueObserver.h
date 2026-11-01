@@ -9,6 +9,8 @@
 #import "CKDownloadQueue.h"
 @import StoreFoundation;
 
+NS_ASSUME_NONNULL_BEGIN
+
 @protocol CKDownloadQueueObserver
 
 - (void)downloadQueue:(CKDownloadQueue *)downloadQueue changedWithAddition:(SSDownload *)download;
@@ -16,3 +18,5 @@
 - (void)downloadQueue:(CKDownloadQueue *)downloadQueue statusChangedForDownload:(SSDownload *)download;
 
 @end
+
+NS_ASSUME_NONNULL_END

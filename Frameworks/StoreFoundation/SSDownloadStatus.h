@@ -25,8 +25,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, getter=isCancelled) BOOL cancelled; // @synthesize cancelled=_cancelled;
 @property(nonatomic, getter=isPaused) BOOL paused; // @synthesize paused=_paused;
 @property(nonatomic, getter=isFailed) BOOL failed; // @synthesize failed=_failed;
-@property(retain, nonatomic) NSError *error; // @synthesize error=_error;
-@property(readonly, nonatomic) SSDownloadPhase *activePhase; // @synthesize activePhase=_activePhase;
+@property(retain, nonatomic, nullable) NSError *error; // @synthesize error=_error;
+@property(readonly, nonatomic, nullable) SSDownloadPhase *activePhase; // @synthesize activePhase=_activePhase;
 
 //- (void).cxx_destruct;
 

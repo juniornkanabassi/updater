@@ -19,7 +19,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 //- (void).cxx_destruct;
 
-@property(readonly) SSOperationProgress *operationProgress;
+@property(readonly, nullable) SSOperationProgress *operationProgress;
 @property(readonly) long long totalProgressValue;
 @property(readonly) long long progressValue;
 @property(readonly) float progressChangeRate;

@@ -32,7 +32,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (id _Nullable)localServerInfo;
 @property(readonly, nullable) NSString *iapContentVersion;
 @property(readonly, nullable) NSNumber *iapContentSize;
-@property(readonly, nullable) NSArray *assets;
+@property(readonly, nullable) NSArray<SSDownloadAsset *> *assets;
 
 @property BOOL animationExpected;
 
@@ -90,8 +90,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (id)initWithCoder:(id)arg1;
 - (void)encodeWithCoder:(id)arg1;
 
-- (nullable instancetype)initWithDictionary:(id)arg1;
-- (nullable instancetype)initWithKind:(id)arg1;
+- (instancetype)initWithDictionary:(nullable NSDictionary *)dictionary;
+- (instancetype)initWithKind:(nullable NSString *)kind;
 - (instancetype)init;
 
 @end

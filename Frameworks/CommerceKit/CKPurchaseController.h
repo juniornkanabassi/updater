@@ -10,7 +10,8 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-typedef void (^SSPurchaseCompletion)(SSPurchase * _Nullable purchase, BOOL completed, NSError * _Nullable error, SSPurchaseResponse * _Nullable response);
+// Preserve a missing response in Swift's async import instead of forcing it non-null.
+typedef void (^SSPurchaseCompletion)(SSPurchase * _Nonnull purchase, BOOL completed, NSError * _Nullable error, SSPurchaseResponse * _Nullable_result response);
 
 @interface CKPurchaseController : CKServiceInterface
 {
@@ -35,7 +36,7 @@ typedef void (^SSPurchaseCompletion)(SSPurchase * _Nullable purchase, BOOL compl
 - (void)checkServerDownloadQueue;
 - (id)purchaseInProgressForProductID:(id)arg1;
 - (id)purchasesInProgress;
-- (void)cancelPurchaseWithProductID:(id)arg1;
+- (void)cancelPurchaseWithProductID:(nullable NSNumber *)productID;
 - (void)resumeDownloadForPurchasedProductID:(id)arg1;
 
 //- (void)startPurchases:(id)arg1 shouldStartDownloads:(BOOL)arg2 eventHandler:(CDUnknownBlockType)arg3;

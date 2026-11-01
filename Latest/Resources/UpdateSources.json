@@ -1,0 +1,14 @@
+[
+  {
+    "bundleIdentifiers": [
+      "com.openai.codex"
+    ],
+    "sparkleFeedURL": "https://persistent.oaistatic.com/codex-app-prod/appcast.xml"
+  },
+  {
+    "bundleIdentifiers": [
+      "com.mitchellh.ghostty"
+    ],
+    "sparkleFeedURL": "https://release.files.ghostty.org/appcast.xml"
+  }
+]

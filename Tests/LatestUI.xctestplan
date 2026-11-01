@@ -1,0 +1,37 @@
+{
+  "configurations": [
+    {
+      "id": "097C4BE6-FEB5-5F43-AE5B-7B60DD24ED3C",
+      "name": "UI",
+      "options": {}
+    }
+  ],
+  "defaultOptions": {
+    "environmentVariableEntries": [
+      {
+        "key": "LATEST_UI_TESTS",
+        "value": "1"
+      }
+    ]
+  },
+  "testTargets": [
+    {
+      "target": {
+        "containerPath": "container:Latest.xcodeproj",
+        "identifier": "50C81D681FBADC5900324C2E",
+        "name": "Latest Tests"
+      },
+      "selectedTests": [
+        "ComponentAppearanceTest",
+        "MainWindowAppearanceTest",
+        "SidebarInteractionTest",
+        "SidebarAppearanceTest",
+        "ToolbarInteractionTest",
+        "InstallHelperInteractionTest",
+        "ReleaseNotesWebViewTest",
+        "UpdateActionInteractionTest"
+      ]
+    }
+  ],
+  "version": 1
+}
