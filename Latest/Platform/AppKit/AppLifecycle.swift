@@ -57,10 +57,11 @@ struct AppLifecycle: Sendable {
 extension AppLifecycle {
   /// Quits the app for an installer that relaunches it itself (Sparkle). Throws if the
   /// user declines or the app is still open at the timeout. Never force-kills.
-  @MainActor
-  func quit(at url: URL, name: String) async throws {
+  /// Returns whether the app was running, so the caller can reopen it afterwards.
+  @MainActor @discardableResult
+  func quit(at url: URL, name: String) async throws -> Bool {
     let running = runningApps(url)
-    guard !running.isEmpty else { return }
+    guard !running.isEmpty else { return false }
     guard confirmQuit(name) else { throw CancellationError() }
     running.forEach { $0.terminate() }
     let deadline = ContinuousClock.now + timeout
@@ -68,6 +69,7 @@ extension AppLifecycle {
       guard ContinuousClock.now < deadline else { throw AppDownloadError.applicationStillRunning }
       try? await Task.sleep(for: .milliseconds(200))
     }
+    return true
   }
 }
 

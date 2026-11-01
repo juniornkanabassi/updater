@@ -222,23 +222,37 @@ final class AppDownloadUpdateTest: XCTestCase {
   }
 
   /// Sol R6: Obsidian's payload is shared by every copy, so it installs only with one copy.
-  func testObsidianInstallsItsSharedPayloadOnlyWithASingleCopy() {
-    XCTAssertTrue(ObsidianUpdate.payloadIsExclusive(copies: { ["/Applications/Obsidian.app"] }))
+  func testObsidianInstallsItsSharedPayloadOnlyWithASingleCopy() async {
+    let selected = URL(fileURLWithPath: "/Applications/Obsidian.app")
+    XCTAssertTrue(ObsidianUpdate.payloadIsExclusive(for: selected, copies: { [selected.path] }))
     XCTAssertFalse(
-      ObsidianUpdate.payloadIsExclusive(copies: {
-        ["/Applications/Obsidian.app", "/Users/Shared/Obsidian.app"]
-      }))
+      ObsidianUpdate.payloadIsExclusive(
+        for: selected, copies: { [selected.path, "/Users/Shared/Obsidian.app"] }))
     XCTAssertFalse(
-      ObsidianUpdate.payloadIsExclusive(copies: { throw CocoaError(.fileReadNoPermission) }))
+      ObsidianUpdate.payloadIsExclusive(for: selected, copies: { ["/Users/Shared/Obsidian.app"] }),
+      "the only copy must be the selected one")
+    XCTAssertFalse(
+      ObsidianUpdate.payloadIsExclusive(
+        for: selected, copies: { throw CocoaError(.fileReadNoPermission) }))
     let bundle = App.Bundle(
       version: Version(versionNumber: "1.0.0", buildNumber: nil), name: "Obsidian",
-      bundleIdentifier: "md.obsidian", fileURL: URL(fileURLWithPath: "/tmp/Obsidian.app"),
-      source: .none)
+      bundleIdentifier: "md.obsidian", fileURL: selected, source: .none)
     let release = ObsidianUpdate.Release(
       minimumVersion: "1.0.0", latestVersion: "1.1.0",
       downloadUrl: URL(string: "https://example.com/p.asar.gz")!, hash: "h", signature: "s")
-    XCTAssertEqual(
-      ObsidianUpdateOperation(app: bundle, release: release).lockKey, "obsidianPayload")
+    let operation = ObsidianUpdateOperation(app: bundle, release: release)
+    XCTAssertEqual(operation.lockKey, "obsidianPayload")
+    // Sol R3 (second pass): the pre-write recheck hands off if a copy appeared meanwhile.
+    let opened = Mutex<[URL]>([])
+    operation.openApplication = { url in opened.withLock { $0.append(url) } }
+    operation.copies = { [selected.path] }
+    XCTAssertTrue(operation.confirmExclusivePayload())
+    XCTAssertNil(operation.outcomeOverride)
+    operation.copies = { [selected.path, "/Users/Shared/Obsidian.app"] }
+    XCTAssertFalse(operation.confirmExclusivePayload())
+    XCTAssertEqual(operation.outcomeOverride, .handedOff)
+    for _ in 0..<50 where opened.withLock({ $0 }).isEmpty { await Task.yield() }
+    XCTAssertEqual(opened.withLock { $0 }, [selected])
   }
 
   func testObsidianPreservesStableAndExistingEarlyAccessChannels() throws {

@@ -103,6 +103,14 @@ class UpdateOperation: StatefulOperation, @unchecked Sendable {
     set { outcomeStorage.withLock { $0 = newValue } }
   }
 
+  private let resolver = Mutex<(@Sendable (UpdateOperation) -> UpdateOutcome?)?>(nil)
+  /// Set by the scheduler. Runs once as the job finishes, reads the bundle on disk and
+  /// returns the verified outcome, so a derived failure is what subscribers see.
+  var resolveOutcome: (@Sendable (UpdateOperation) -> UpdateOutcome?)? {
+    get { resolver.withLock { $0 } }
+    set { resolver.withLock { $0 = newValue } }
+  }
+
   private let expectedStorage = Mutex<Version?>(nil)
   /// The version the installer promised, when known; an outcome below it is a failure.
   var expectedVersion: Version? {
@@ -114,8 +122,18 @@ class UpdateOperation: StatefulOperation, @unchecked Sendable {
   @MainActor func retryTermination() {}
 
   override func finish() {
-    let didCompleteSuccessfully =
-      self.error == nil && !self.isCancelled && self.markCompletionNotificationPending()
+    let ranCleanly = self.error == nil && !self.isCancelled
+    let resolve = resolver.withLock { resolve in
+      defer { resolve = nil }
+      return resolve
+    }
+    if let outcome = resolve?(self), self.error == nil,
+      let failure = UpdateOutcomeError(outcome: outcome)
+    {
+      recordError(failure)
+    }
+    // The bundle may have changed even when verification failed: refresh the row either way.
+    let didCompleteSuccessfully = ranCleanly && self.markCompletionNotificationPending()
 
     if let error = self.error {
       self.progressState = .error(error)

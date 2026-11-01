@@ -27,10 +27,12 @@ final class UpdateHistoryStoreTest: XCTestCase {
     let other = bundle("/tmp/Other/Fixture.app")
 
     let store = UpdateHistoryStore(fileURL: file)
-    store.record(UpdateHistoryEntry(bundle: app, outcome: .updated(from: "0.9", to: "1.0")))
     store.record(
-      UpdateHistoryEntry(bundle: app, outcome: .failed(reason: "Signature changed", logPath: nil)))
-    store.record(UpdateHistoryEntry(bundle: other, outcome: .handedOff))
+      UpdateHistoryEntry(before: app, after: app, outcome: .updated(from: "0.9", to: "1.0")))
+    store.record(
+      UpdateHistoryEntry(
+        before: app, after: app, outcome: .failed(reason: "Signature changed", logPath: nil)))
+    store.record(UpdateHistoryEntry(before: other, after: other, outcome: .handedOff))
     // Simulate a crash mid-write.
     let handle = try FileHandle(forWritingTo: file)
     try handle.seekToEnd()
@@ -45,7 +47,7 @@ final class UpdateHistoryStoreTest: XCTestCase {
     XCTAssertNil(reloaded.latestEntry(for: URL(fileURLWithPath: "/tmp/Missing.app")))
 
     // Sol R10: an entry appended after the torn fragment must survive the next reload.
-    reloaded.record(UpdateHistoryEntry(bundle: app, outcome: .needsQuit))
+    reloaded.record(UpdateHistoryEntry(before: app, after: app, outcome: .needsQuit))
     XCTAssertEqual(
       UpdateHistoryStore(fileURL: file).latestEntry(for: app.fileURL)?.outcome, .needsQuit)
   }
@@ -53,8 +55,12 @@ final class UpdateHistoryStoreTest: XCTestCase {
   /// Sol R11: a recorded outcome describes one product at one full version (short + build).
   func testEntryMatchesOnlyTheSameProductPathAndFullVersion() {
     let entry = UpdateHistoryEntry(
-      bundle: bundle("/tmp/A.app"), outcome: .failed(reason: "x", logPath: nil))
+      before: bundle("/tmp/A.app", version: "0.9"), after: bundle("/tmp/A.app"),
+      outcome: .failed(reason: "x", logPath: nil))
+    // Sol R4 (second pass): the failure follows the bundle left after the attempt, not
+    // the one it started from.
     XCTAssertTrue(entry.describes(bundle("/tmp/A.app")))
+    XCTAssertFalse(entry.describes(bundle("/tmp/A.app", version: "0.9")), "starting version")
     XCTAssertFalse(entry.describes(bundle("/tmp/A.app", build: "101")), "new build")
     XCTAssertFalse(entry.describes(bundle("/tmp/A.app", id: "com.example.other")), "other app")
     XCTAssertFalse(entry.describes(bundle("/tmp/A.app", version: "1.1")))

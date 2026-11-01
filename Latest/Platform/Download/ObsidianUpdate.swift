@@ -39,9 +39,10 @@ enum ObsidianUpdate {
   }
 
   /// Obsidian's payload lives in ~/Library/Application Support/obsidian and is shared by
-  /// every installed copy, so Updater installs it only when exactly one copy exists.
-  static func payloadIsExclusive(copies: () throws -> Set<String>) -> Bool {
-    (try? copies())?.count == 1
+  /// every installed copy, so Updater installs it only when the selected app is the one
+  /// and only copy.
+  static func payloadIsExclusive(for app: URL, copies: () throws -> Set<String>) -> Bool {
+    (try? copies()) == [app.standardizedFileURL.path]
   }
 
   static let liveCopies: @Sendable () throws -> Set<String> = {
@@ -73,7 +74,8 @@ enum ObsidianUpdate {
     let version = Version(versionNumber: release.latestVersion, buildNumber: nil)
     let compatible = try installerIsCompatible(bundle, with: release)
     let canInstall =
-      compatible && !release.isEarlyAccess && payloadIsExclusive(copies: copies)
+      compatible && !release.isEarlyAccess
+      && payloadIsExclusive(for: bundle.fileURL, copies: copies)
     let action: App.Update.Action
     if canInstall {
       action = .builtIn { app in
@@ -130,6 +132,21 @@ final class ObsidianUpdateOperation: DownloadUpdateOperation, @unchecked Sendabl
   private let release: ObsidianUpdate.Release
   /// The payload folder is shared by every copy, so the lock is the folder, not the URL.
   override var lockKey: String { "obsidianPayload" }
+  var copies = ObsidianUpdate.liveCopies
+  var openApplication: @MainActor @Sendable (URL) -> Void = {
+    MacApplicationWorkspace.shared.openApplication(at: $0)
+  }
+
+  /// Rechecked under the payload lock right before writing: a second copy may have
+  /// appeared since discovery. Otherwise hand off to Obsidian's own updater.
+  func confirmExclusivePayload() -> Bool {
+    guard ObsidianUpdate.payloadIsExclusive(for: app.fileURL, copies: copies) else {
+      outcomeOverride = .handedOff
+      Task { @MainActor [app, openApplication] in openApplication(app.fileURL) }
+      return false
+    }
+    return true
+  }
 
   init(app: App.Bundle, release: ObsidianUpdate.Release) {
     self.release = release
@@ -176,6 +193,7 @@ final class ObsidianUpdateOperation: DownloadUpdateOperation, @unchecked Sendabl
         current.version.comparisonForUpdate(to: version) == .older,
         try ObsidianUpdate.installerIsCompatible(current, with: release)
       else { throw AppDownloadError.versionMismatch }
+      guard confirmExclusivePayload() else { return }
       try beginCommit()
       progressState = .installing
       // Replace a partial same-name payload too; the previous usable version stays intact.

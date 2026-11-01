@@ -207,4 +207,31 @@ final class AppStoreInstallGateTest: XCTestCase {
         of: identifier, in: [locked.appendingPathComponent("Applications")]))
     XCTAssertThrowsError(try AppStoreInstallGate.copies(of: identifier, in: [locked]))
   }
+
+  /// Sol R5 (second pass): blocking probes share one deadline; a late "yes" is ignored.
+  func testSlowProbesHitTheDeadlineAndCannotAllowLater() async throws {
+    let target = self.target
+    let finished = Mutex(false)
+    var gate = AppStoreInstallGate.agreeing(on: target.path)
+    gate.deadline = .milliseconds(200)
+    gate.walk = { _ in
+      Thread.sleep(forTimeInterval: 1.5)  // a hung folder walk
+      finished.withLock { $0 = true }
+      return [target.path]
+    }
+    let start = ContinuousClock.now
+    let allowed = await gate.allowsInstall(at: target, bundleIdentifier: identifier)
+    XCTAssertFalse(allowed)
+    XCTAssertLessThan(ContinuousClock.now - start, .seconds(1), "answered at the deadline")
+    XCTAssertFalse(finished.withLock { $0 }, "the walk was still running")
+
+    var slowSpotlight = AppStoreInstallGate.agreeing(on: target.path)
+    slowSpotlight.deadline = .milliseconds(200)
+    slowSpotlight.spotlightURLs = { _ in
+      try await Task.sleep(for: .seconds(2))
+      return [target]
+    }
+    let late = await slowSpotlight.allowsInstall(at: target, bundleIdentifier: identifier)
+    XCTAssertFalse(late)
+  }
 }

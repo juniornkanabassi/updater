@@ -8,25 +8,31 @@ struct UpdateHistoryEntry: Codable, Equatable, Sendable {
   var date = Date()
   let appPath: String
   let bundleIdentifier: String
-  /// The installed version and build when the action started, used to tell whether a
-  /// recorded failure still describes the bundle on disk.
+  /// The version and build when the action started.
   let versionNumber: String?
   let buildNumber: String?
+  /// What was on disk after the attempt; a failure applies only while this is still there.
+  let resultBundleIdentifier: String?
+  let resultVersionNumber: String?
+  let resultBuildNumber: String?
   let outcome: UpdateOutcome
 
-  init(bundle: App.Bundle, outcome: UpdateOutcome) {
-    appPath = bundle.fileURL.path
-    bundleIdentifier = bundle.bundleIdentifier
-    versionNumber = bundle.version.versionNumber
-    buildNumber = bundle.version.buildNumber
+  init(before: App.Bundle, after: App.Bundle?, outcome: UpdateOutcome) {
+    appPath = before.fileURL.path
+    bundleIdentifier = before.bundleIdentifier
+    versionNumber = before.version.versionNumber
+    buildNumber = before.version.buildNumber
+    resultBundleIdentifier = after?.bundleIdentifier
+    resultVersionNumber = after?.version.versionNumber
+    resultBuildNumber = after?.version.buildNumber
     self.outcome = outcome
   }
 
-  /// Same path, product and full version as the bundle the outcome was recorded for.
+  /// Same path, product and full version as the bundle left by the attempt.
   func describes(_ bundle: App.Bundle) -> Bool {
-    appPath == bundle.fileURL.path && bundleIdentifier == bundle.bundleIdentifier
-      && versionNumber == bundle.version.versionNumber
-      && buildNumber == bundle.version.buildNumber
+    appPath == bundle.fileURL.path && resultBundleIdentifier == bundle.bundleIdentifier
+      && resultVersionNumber == bundle.version.versionNumber
+      && resultBuildNumber == bundle.version.buildNumber
   }
 }
 

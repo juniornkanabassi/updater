@@ -83,6 +83,43 @@ final class UpdateSchedulerTest: XCTestCase {
     }
   }
 
+  /// Sol R4 (second pass): a failure found by re-reading the disk is the job's terminal
+  /// state for subscribers, and stays on the row after reload while that bundle remains.
+  @MainActor
+  func testDerivedFailureIsPublishedAndKeyedToTheResultingBundle() async throws {
+    let directory = try disposableDirectory()
+    let history = UpdateHistoryStore(fileURL: directory.appendingPathComponent("history.jsonl"))
+    let url = directory.appendingPathComponent("Fixture.app")
+    let installed = Mutex("1.0")
+    let read: @Sendable (URL) -> App.Bundle? = { url in
+      App.Bundle(
+        version: Version(versionNumber: installed.withLock { $0 }, buildNumber: nil),
+        name: "Fixture", bundleIdentifier: FixtureApp.identifier, fileURL: url, source: .sparkle,
+        modificationDate: .distantPast)
+    }
+    let queue = UpdateQueue(history: history, readBundle: read)
+    let feed = queue.stateChanges(for: url)
+    let terminal = Task { () -> UpdateProgressState? in
+      for await state in feed.changes { if case .error = state { return state } }
+      return nil
+    }
+    // The installer reports success but left an older version behind.
+    let done = expectation(description: "done")
+    let job = ScriptedOperation(url: url) { installed.withLock { $0 = "0.9" } }
+    job.completionBlock = { done.fulfill() }
+    queue.addOperation(job)
+    await fulfillment(of: [done], timeout: 2)
+    XCTAssertTrue(job.error is UpdateOutcomeError)
+    let published = await terminal.value
+    guard case .error(let error) = published else { return XCTFail("subscribers saw no failure") }
+    XCTAssertTrue(error.localizedDescription.contains("not an update"))
+    let reloaded = UpdateQueue(
+      history: UpdateHistoryStore(fileURL: history.fileURL), readBundle: read)
+    guard case .error = reloaded.state(for: url) else {
+      return XCTFail("the failure applies to the bundle the attempt left on disk")
+    }
+  }
+
   func testSecondSubmissionForTheSameURLReturnsTheRunningJob() async {
     let queue = UpdateQueue()
     let url = URL(fileURLWithPath: "/tmp/Dedup-\(UUID().uuidString).app")

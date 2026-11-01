@@ -2,6 +2,7 @@
 
 import CoreServices
 import Foundation
+import Synchronization
 
 /// Decides, before any purchase or helper request, whether an App Store install provably
 /// writes to the selected URL. PackageKit may relocate the install to any copy that
@@ -12,6 +13,8 @@ struct AppStoreInstallGate: Sendable {
   var launchServicesURLs: @Sendable (_ bundleIdentifier: String) throws -> [URL]
   var spotlightURLs: @Sendable (_ bundleIdentifier: String) async throws -> [URL]
   var indexingEnabled: @Sendable () async throws -> Bool
+  /// Total time allowed for every probe together; past it the app is handed off.
+  var deadline: Duration = .seconds(10)
 
   func allowsInstall(at url: URL, bundleIdentifier: String) async -> Bool {
     let target = url.standardizedFileURL
@@ -23,19 +26,32 @@ struct AppStoreInstallGate: Sendable {
         $0.isASCII && ($0.isLetter || $0.isNumber || ".-_".contains($0))
       })
     else { return false }
-    do {
-      // 2. A direct walk finds no other copy. 3. LaunchServices and Spotlight agree.
-      // 4. Spotlight is indexing, so an absent result is meaningful.
-      guard try walk(bundleIdentifier) == [target.path],
-        Set(try launchServicesURLs(bundleIdentifier).map(\.standardizedFileURL.path))
-          == [target.path],
-        Set(try await spotlightURLs(bundleIdentifier).map(\.standardizedFileURL.path))
-          == [target.path],
-        try await indexingEnabled()
-      else { return false }
-      return true
-    } catch {
-      return false
+    // One deadline covers every probe. The answer is taken once: a probe finishing after
+    // the deadline cannot turn a hand-off into an install.
+    let id = bundleIdentifier
+    return await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+      let answer = ResumeOnce(continuation)
+      // The walk and LaunchServices block, so they run on a GCD thread, not the actor pool.
+      DispatchQueue.global(qos: .userInitiated).async {
+        // 2. A direct walk finds no other copy. 3. LaunchServices agrees.
+        let local =
+          (try? walk(id)) == [target.path]
+          && (try? launchServicesURLs(id)).map { Set($0.map(\.standardizedFileURL.path)) }
+            == [target.path]
+        guard local else { return answer.resume(false) }
+        Task {
+          // 3. Spotlight agrees. 4. It is indexing, so an absent result is meaningful.
+          let spotlight = (try? await spotlightURLs(id)).map {
+            Set($0.map(\.standardizedFileURL.path))
+          }
+          let indexing = (try? await indexingEnabled()) == true
+          answer.resume(spotlight == [target.path] && indexing)
+        }
+      }
+      Task { [deadline] in
+        try? await Task.sleep(for: deadline)
+        answer.resume(false)
+      }
     }
   }
 
@@ -114,4 +130,18 @@ struct AppStoreInstallGate: Sendable {
       )
       .contains("Indexing enabled.")
     })
+}
+
+/// Resumes a continuation once; later calls are ignored.
+private final class ResumeOnce: Sendable {
+  private let continuation: Mutex<CheckedContinuation<Bool, Never>?>
+  init(_ continuation: CheckedContinuation<Bool, Never>) {
+    self.continuation = Mutex(continuation)
+  }
+  func resume(_ value: Bool) {
+    continuation.withLock { pending in
+      defer { pending = nil }
+      return pending
+    }?.resume(returning: value)
+  }
 }

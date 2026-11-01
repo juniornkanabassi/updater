@@ -94,24 +94,56 @@ enum ReplacementTransaction {
         try? manager.removeItem(at: target)
         throw error
       }
-      do {
-        if manager.fileExists(atPath: target.path) || isSymlink(target) {
-          try manager.moveItem(
-            at: target, to: backupDirectory.appendingPathComponent("failed-" + UUID().uuidString))
-        }
-        try manager.moveItem(at: backup, to: target)
-        if let originalIdentity,
-          (try? BundleIdentity.read(at: target, validate: false)) != originalIdentity
-        {
-          throw ReplacementError.restoreFailed(target.path)
-        }
-      } catch {
-        throw ReplacementError.restoreFailed(
-          manager.fileExists(atPath: backup.path) ? backup.path : target.path)
-      }
+      try restore(target, backupDirectory: backupDirectory, originalIdentity: originalIdentity)
       throw error
     }
     if hadOriginal { try? manager.removeItem(at: backup) }
+  }
+
+  /// Clones `target` into `backupDirectory` for an installer Updater does not drive itself
+  /// (Sparkle). Returns the original's identity for `verifyExternalInstall`.
+  static func cloneOriginal(at target: URL, into backupDirectory: URL) throws -> BundleIdentity {
+    let identity = try BundleIdentity.read(at: target, validate: false)
+    try FileManager.default.copyItem(
+      at: target, to: backupDirectory.appendingPathComponent(backupName))
+    return identity
+  }
+
+  /// After an installer Updater does not drive: an untouched target passes; a changed one
+  /// must be the same product, newer than before and at least `expected`.
+  static func verifyExternalInstall(
+    at target: URL, original: BundleIdentity, expected: Version?, requiresTeam: Bool = true
+  ) throws {
+    if (try? BundleIdentity.read(at: target, validate: false)) == original { return }
+    let installed = try original.verifyReplacement(at: target, requiresTeam: requiresTeam)
+    try verifyVersion(
+      installed: Version(
+        versionNumber: installed.shortVersion, buildNumber: installed.bundleVersion),
+      previous: Version(versionNumber: original.shortVersion, buildNumber: original.bundleVersion),
+      expected: expected)
+  }
+
+  /// Moves whatever is at `target` aside and the backup back, then checks the restored
+  /// identity. On failure the backup is left in place and its path reported.
+  static func restore(_ target: URL, backupDirectory: URL, originalIdentity: BundleIdentity?) throws
+  {
+    let manager = FileManager.default
+    let backup = backupDirectory.appendingPathComponent(backupName)
+    do {
+      if manager.fileExists(atPath: target.path) || isSymlink(target) {
+        try manager.moveItem(
+          at: target, to: backupDirectory.appendingPathComponent("failed-" + UUID().uuidString))
+      }
+      try manager.moveItem(at: backup, to: target)
+      if let originalIdentity,
+        (try? BundleIdentity.read(at: target, validate: false)) != originalIdentity
+      {
+        throw ReplacementError.restoreFailed(target.path)
+      }
+    } catch {
+      throw ReplacementError.restoreFailed(
+        manager.fileExists(atPath: backup.path) ? backup.path : target.path)
+    }
   }
 
   /// Whether a failed transaction left the original in `backupDirectory` for recovery.

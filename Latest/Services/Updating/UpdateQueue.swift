@@ -84,13 +84,14 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
     if let existing = index(operation) { return existing }
     let before = readBundle(operation.appIdentifier)
 
+    operation.resolveOutcome = { [weak self] operation in
+      self?.resolveOutcome(of: operation, before: before)
+    }
     let previousCompletionBlock = operation.completionBlock
     operation.completionBlock = { [weak self, weak operation] in
       previousCompletionBlock?()
 
       guard let self, let operation else { return }
-      // Record before unindexing so the row's fallback state already sees the outcome.
-      self.recordOutcome(of: operation, before: before)
       self.removeIndexedOperation(operation)
     }
 
@@ -104,15 +105,19 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
 
   /// Hand-offs happen outside the queue; record them so the row can say so.
   func recordHandOff(of app: App) {
-    history?.record(UpdateHistoryEntry(bundle: app.bundle, outcome: .handedOff))
+    history?.record(UpdateHistoryEntry(before: app.bundle, after: app.bundle, outcome: .handedOff))
   }
 
-  private func recordOutcome(of operation: UpdateOperation, before: App.Bundle?) {
-    guard let history, let before,
-      let outcome = Self.outcome(
-        of: operation, before: before, after: readBundle(operation.appIdentifier))
-    else { return }
-    history.record(UpdateHistoryEntry(bundle: before, outcome: outcome))
+  /// Called by the job as it finishes, before its terminal state is published.
+  private func resolveOutcome(of operation: UpdateOperation, before: App.Bundle?) -> UpdateOutcome?
+  {
+    guard let before else { return nil }
+    let after = readBundle(operation.appIdentifier)
+    guard let outcome = Self.outcome(of: operation, before: before, after: after) else {
+      return nil
+    }
+    history?.record(UpdateHistoryEntry(before: before, after: after, outcome: outcome))
+    return outcome
   }
 
   /// Success is never taken from the installer's word: `updated` needs the version on

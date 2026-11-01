@@ -115,8 +115,13 @@ class StatefulOperation: Operation, @unchecked Sendable {
   var error: Error? { storedError.withLock { $0 } }
 
   func finish(with error: Error) {
-    storedError.withLock { $0 = error }
+    recordError(error)
     self.finish()
+  }
+
+  /// Sets the error that `finish()` will publish, for failures found while finishing.
+  func recordError(_ error: Error) {
+    storedError.withLock { $0 = error }
   }
 
 }
