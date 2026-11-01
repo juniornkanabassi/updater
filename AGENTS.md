@@ -2,6 +2,8 @@
 
 ## Scope and workflow
 
+Reviews here follow the JuniorOS `03 Skills/Review workflow.md`. This project's own delta is `REVIEW.md`. Name that file in every review brief, because the local `/code-review` does not read `REVIEW.md` by itself.
+
 - Complete the requested work, preserve unrelated changes, and keep explanations concise. Explicit user instructions take precedence over skill guidance. For analysis or review, inspect and report; implement only when requested. For fixes, make routine choices without unnecessary confirmation.
 - Use `README.md` for commands and architecture. Search production code in `Latest/` and tests in `Tests/`; exclude generated build trees.
 - Apply only relevant skill workflows and use repository commands. Keep checks and documentation proportional to the change; do not expand a small edit into a broad audit or publication workflow.
