@@ -230,15 +230,20 @@ final class AppStoreUpdateCheckerOperation: Sendable {
       // Before 26.1 CommerceKit installs without Updater's checks: always hand off.
       guard AppStoreUpdateOperation.requiresManualInstallation else { return false }
       return await AppStoreInstallGate.live.allowsInstall(at: $0, bundleIdentifier: $1)
+    },
+    enqueue: @escaping AppStoreEnqueue = {
+      AppStoreUpdater.enqueueUpdate(for: $0, appStoreIdentifier: $1, version: $2)
     }
   ) {
     self.app = app
     self.lookupClient = AppStoreLookupClient(session: session)
     self.installable = installable
+    self.enqueue = enqueue
   }
 
   private let lookupClient: AppStoreLookupClient
   private let installable: @Sendable (URL, String) async -> Bool
+  private let enqueue: AppStoreEnqueue
 
   /// The bundle to be checked for updates.
   fileprivate let app: App.Bundle
@@ -359,6 +364,9 @@ enum AppStoreReceipt {
   }
 }
 
+/// Schedules an App Store update for the app (bundle, store ID, advertised version).
+typealias AppStoreEnqueue = @Sendable (App.Bundle, UInt64, String) -> Void
+
 extension AppStoreUpdateCheckerOperation {
 
   /// Returns a proper update object from the given app store entry.
@@ -381,7 +389,7 @@ extension AppStoreUpdateCheckerOperation {
           label: NSLocalizedString(
             "AppStoreSource", comment: "The source name of apps loaded from the App Store."),
           installs: { !AppStoreUpdateSettings.alwaysPerformManualUpdates.active },
-          block: { app in Self.updateApp(app, entry: entry) })
+          block: { [enqueue] app in Self.updateApp(app, entry: entry, enqueue: enqueue) })
 
       }
 
@@ -390,20 +398,16 @@ extension AppStoreUpdateCheckerOperation {
       source: .appStore, date: entry.date, releaseNotes: entry.releaseNotes, updateAction: action)
   }
 
-  private static func updateApp(_ app: App.Bundle, entry: AppStoreEntry) {
+  /// Enqueues straight away. The helper is prepared only inside the scheduled operation,
+  /// after its exact-target gate passes, so a hand-off never touches the helper.
+  private static func updateApp(
+    _ app: App.Bundle, entry: AppStoreEntry, enqueue: AppStoreEnqueue
+  ) {
     if AppStoreUpdateSettings.alwaysPerformManualUpdates.active {
       openAppStorePage(for: entry)
       return
     }
-    Task { @MainActor in
-      UpdateInstallHelperAlert.shared.prepare(
-        fallbackURL: entry.pageURL,
-        preparation: { try await AppStoreUpdater.prepareForUpdates() }
-      ) {
-        AppStoreUpdater.enqueueUpdate(
-          for: app, appStoreIdentifier: entry.appStoreIdentifier, version: entry.versionNumber)
-      }
-    }
+    enqueue(app, entry.appStoreIdentifier, entry.versionNumber)
   }
 
   private static func openAppStorePage(for entry: AppStoreEntry) {

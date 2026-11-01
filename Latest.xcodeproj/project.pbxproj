@@ -208,6 +208,7 @@
 		3E838E87191E4BE99D772DB2 /* AppStoreInstallGateTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4100A242EF04553B220B20A /* AppStoreInstallGateTest.swift */; };
 		80439E73AB35414E8018AD8E /* FixtureUpdateEndToEndTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E2FEF5D34B846309720B9B1 /* FixtureUpdateEndToEndTest.swift */; };
 		75BF034E17924A85B1E9E583 /* Version.swift in Sources */ = {isa = PBXBuildFile; fileRef = 509512101FF362A1003D2D7F /* Version.swift */; };
+		FBD185FCD20B45929D40C766 /* ExternalInstallGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAE516F02A5D4C5AA1F7151A /* ExternalInstallGuard.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -535,6 +536,7 @@
 		20202E922FC84F798E42E3E0 /* AppStoreInstallGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStoreInstallGate.swift; sourceTree = "<group>"; };
 		A4100A242EF04553B220B20A /* AppStoreInstallGateTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStoreInstallGateTest.swift; sourceTree = "<group>"; };
 		2E2FEF5D34B846309720B9B1 /* FixtureUpdateEndToEndTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixtureUpdateEndToEndTest.swift; sourceTree = "<group>"; };
+		BAE516F02A5D4C5AA1F7151A /* ExternalInstallGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExternalInstallGuard.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1110,6 +1112,7 @@
 				A03100000000000000000005 /* AppDownloadUpdateOperation.swift */,
 				A03100000000000000000003 /* AppDownloadSource.swift */,
 				A03100000000000000000009 /* DownloadUpdateOperation.swift */,
+				BAE516F02A5D4C5AA1F7151A /* ExternalInstallGuard.swift */,
 				47729FF2A33A45B3ACBE39BF /* ReplacementTransaction.swift */,
 				A0310000000000000000000B /* InstallerCommand.swift */,
 			);
@@ -1327,6 +1330,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FBD185FCD20B45929D40C766 /* ExternalInstallGuard.swift in Sources */,
 				B97FA7B3859948D7920F42D4 /* AppStoreInstallGate.swift in Sources */,
 				6B0A1C9393C84D7B8758BEF8 /* AppLifecycle.swift in Sources */,
 				07E28A1F4BCC4BB1AE8D4DBE /* ReplacementTransaction.swift in Sources */,

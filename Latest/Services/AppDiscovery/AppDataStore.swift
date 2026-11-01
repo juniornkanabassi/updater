@@ -104,6 +104,12 @@ final class AppDataStore: AppProviding, Sendable {
     return app
   }
 
+  /// Drops the row for a bundle that is no longer on disk.
+  func remove(appAt url: URL) {
+    state.withLock { $0.appsByIdentifier[url] = nil }
+    scheduleFilterUpdate()
+  }
+
   func set(_ update: Result<App.Update, Error>?, for bundle: App.Bundle) -> App {
     let app = state.withLock { state in
       let ignored =

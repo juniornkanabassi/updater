@@ -8,7 +8,6 @@
 
 import AppKit
 import Sparkle
-import Synchronization
 
 /// The operation updating Sparkle apps.
 final class SparkleUpdateOperation: UpdateOperation, @unchecked Sendable {
@@ -26,9 +25,12 @@ final class SparkleUpdateOperation: UpdateOperation, @unchecked Sendable {
   /// False only for ad-hoc signed test fixtures.
   var requiresTeam = true
   /// Updater's own clone of the exact target, taken before Sparkle can commit.
-  private let backup = Mutex<(directory: URL, original: BundleIdentity)?>(nil)
-  /// Set when Updater quit the target, so it is reopened after any failure or cancel.
-  @MainActor private var wasRunning = false
+  private let protection: ExternalInstallGuard
+
+  override init(bundleIdentifier: String, appIdentifier: App.Bundle.Identifier) {
+    protection = ExternalInstallGuard(target: appIdentifier)
+    super.init(bundleIdentifier: bundleIdentifier, appIdentifier: appIdentifier)
+  }
   /// Opens an information-only item's page; injectable so tests open nothing.
   var openURL: @MainActor @Sendable (URL) -> Void = { MacApplicationWorkspace.shared.open($0) }
 
@@ -73,66 +75,23 @@ final class SparkleUpdateOperation: UpdateOperation, @unchecked Sendable {
     self.finish()
   }
 
-  /// APFS clone into a private folder on the target's volume.
-  func takeBackup() throws {
-    let directory = try FileManager.default.url(
-      for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: appIdentifier,
-      create: true)
-    let original = try ReplacementTransaction.cloneOriginal(at: appIdentifier, into: directory)
-    backup.withLock { $0 = (directory, original) }
-  }
+  func takeBackup() throws { try protection.takeClone() }
 
-  /// Every terminal path ends here: verify what Sparkle left at the exact URL against the
-  /// clone (restoring it on failure, after closing a relaunched app), reopen the app if
-  /// Updater quit it and it is not running, then publish the result.
+  /// Every terminal path ends here: the shared guard verifies what Sparkle left at the exact
+  /// URL (restoring the clone on failure) and reopens an app Updater quit, then the result
+  /// is published.
   @MainActor func finalize(_ error: Error?) async {
-    var result = error
-    if let saved = backup.withLock({ value -> (directory: URL, original: BundleIdentity)? in
-      defer { value = nil }
-      return value
-    }) {
-      do {
-        try ReplacementTransaction.verifyExternalInstall(
-          at: appIdentifier, original: saved.original, expected: expectedVersion,
-          requiresTeam: requiresTeam)
-        try? FileManager.default.removeItem(at: saved.directory)
-      } catch let failure {
-        do {
-          try await lifecycle.quit(
-            at: appIdentifier, name: appIdentifier.deletingPathExtension().lastPathComponent)
-          try ReplacementTransaction.restore(
-            appIdentifier, backupDirectory: saved.directory, originalIdentity: saved.original)
-          try? FileManager.default.removeItem(at: saved.directory)
-          result = failure
-        } catch {
-          result = ReplacementError.restoreFailed(
-            saved.directory.appendingPathComponent(ReplacementTransaction.backupName).path)
-        }
-      }
-    }
-    reopenIfQuit()
+    let result = await protection.settle(
+      error: error, expected: expectedVersion, requiresTeam: requiresTeam, lifecycle: lifecycle)
     if let result { finish(with: result) } else { finish() }
-  }
-
-  @MainActor private func reopenIfQuit() {
-    guard wasRunning, lifecycle.runningApps(appIdentifier).isEmpty,
-      FileManager.default.fileExists(atPath: appIdentifier.path)
-    else { return }
-    wasRunning = false
-    lifecycle.reopen(appIdentifier)
   }
 
   override func finish() {
     // Cancel and early exits happen before Sparkle commits: the target is untouched.
-    if let saved = backup.withLock({ value -> (directory: URL, original: BundleIdentity)? in
-      defer { value = nil }
-      return value
-    }) {
-      try? FileManager.default.removeItem(at: saved.directory)
-    }
+    protection.discard()
     super.finish()
     Task { @MainActor in
-      self.reopenIfQuit()
+      self.protection.reopenIfQuit(self.lifecycle)
       self.cancelProgressNotification()
       let cancellation = self.cancellationCallback
       self.cancellationCallback = nil
@@ -291,8 +250,9 @@ extension SparkleUpdateOperation: SPUUserDriver {
     if !lifecycle.runningApps(appIdentifier).isEmpty {
       Task { @MainActor in
         do {
-          wasRunning = try await lifecycle.quit(
-            at: appIdentifier, name: appIdentifier.deletingPathExtension().lastPathComponent)
+          protection.noteQuit(
+            wasRunning: try await lifecycle.quit(
+              at: appIdentifier, name: appIdentifier.deletingPathExtension().lastPathComponent))
         } catch {
           // .skip cancels the installation; .dismiss would defer it.
           reply(.skip)

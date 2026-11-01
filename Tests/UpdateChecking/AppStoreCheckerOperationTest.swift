@@ -102,6 +102,52 @@ class AppStoreCheckerOperationTest: XCTestCase {
     }
   }
 
+  /// Sol R3 (third pass): the production button action enqueues first; with a second copy
+  /// appearing between discovery and the click, the gate hands off and the helper is never
+  /// asked to prepare.
+  @MainActor
+  func testUpdateActionTouchesNoHelperWhenTheGateFailsAtRunTime() async throws {
+    let defaults = UserDefaults.standard
+    let previousArguments = defaults.volatileDomain(forName: UserDefaults.argumentDomain)
+    defer { defaults.setVolatileDomain(previousArguments, forName: UserDefaults.argumentDomain) }
+    var arguments = previousArguments
+    arguments[AppStoreUpdateSettings.alwaysPerformManualUpdates.rawValue] = false
+    defaults.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain)
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [AppStoreLookupURLProtocol.self]
+    let session = URLSession(configuration: configuration)
+    defer { session.invalidateAndCancel() }
+    let app = App.Bundle(
+      version: Version(versionNumber: "1", buildNumber: nil), name: "Native",
+      bundleIdentifier: "com.example.native.\(UUID())", fileURL: temporaryAppURL(),
+      source: .appStore)
+    let queue = UpdateQueue()
+    let helperCalls = Mutex(0)
+    let done = expectation(description: "scheduled job finished")
+    let scheduled = Mutex<AppStoreUpdateOperation?>(nil)
+    let update = try await AppStoreUpdateCheckerOperation(
+      with: app, session: session, installable: { _, _ in true },  // one copy at discovery
+      enqueue: { bundle, identifier, version in
+        let operation = AppStoreUpdateOperation(
+          bundleIdentifier: bundle.bundleIdentifier, installURL: bundle.fileURL,
+          appIdentifier: bundle.identifier, appStoreIdentifier: identifier)
+        operation.expectedVersion = Version(versionNumber: version, buildNumber: nil)
+        operation.installGate = { _, _ in false }  // a second copy appeared before the click
+        operation.prepare = { helperCalls.withLock { $0 += 1 } }
+        operation.openURL = { _ in }
+        operation.completionBlock = { done.fulfill() }
+        scheduled.withLock { $0 = operation }
+        queue.addOperation(operation)
+      }
+    ).check()
+    let checked = App(bundle: app, update: .success(update), isIgnored: false)
+    XCTAssertEqual(checked.capability, .install)
+    update.updateAction.perform(with: app, isBulkUpdate: false)
+    await fulfillment(of: [done], timeout: 5)
+    XCTAssertEqual(helperCalls.withLock { $0 }, 0)
+    XCTAssertEqual(scheduled.withLock { $0 }?.outcomeOverride, .handedOff)
+  }
+
   func testTransportCancellationDoesNotTryAnotherEntity() async throws {
     let (checker, session, control, identifier) = controlledLookup(cancelImmediately: true)
     defer {

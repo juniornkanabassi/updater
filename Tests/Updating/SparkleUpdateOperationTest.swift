@@ -285,6 +285,33 @@ final class SparkleUpdateOperationTest: XCTestCase {
     }
   }
 
+  /// Sol R1 (third pass): a bundle damaged in place with unchanged metadata fails the full
+  /// signature check and the clone goes back.
+  func testDamagedButUnchangedLookingBundleIsRestored() async throws {
+    let root = try disposableDirectory()
+    let app = try FixtureApp.make(in: root, version: "1.0")
+    let before = try FixtureApp.digest(app)
+    let original = try BundleIdentity.read(at: app, validate: false)
+    let operation = SparkleUpdateOperation(
+      bundleIdentifier: FixtureApp.identifier, appIdentifier: app)
+    operation.requiresTeam = false
+    operation.lifecycle = FakeTarget(running: false).lifecycle()
+    try operation.takeBackup()
+    let executable = try FileHandle(
+      forWritingTo: app.appendingPathComponent("Contents/MacOS/Fixture"))
+    try executable.seekToEnd()
+    try executable.write(contentsOf: Data([0]))
+    try executable.close()
+    XCTAssertEqual(
+      try BundleIdentity.read(at: app, validate: false), original, "metadata unchanged")
+    XCTAssertThrowsError(
+      try ReplacementTransaction.verifyExternalInstall(
+        at: app, original: original, expected: nil, requiresTeam: false))
+    await operation.finalize(nil)
+    XCTAssertNotNil(operation.error)
+    XCTAssertEqual(try FixtureApp.digest(app), before, "restored byte-for-byte")
+  }
+
   /// Sol R1 + R6 (second pass): a relaunched bad version is quit before the clone goes back,
   /// and the app Updater quit is reopened exactly once after a restore or an error, but not
   /// when Sparkle already relaunched it.
@@ -350,7 +377,7 @@ final class SparkleUpdateOperationTest: XCTestCase {
 }
 
 /// A target app that quits when asked and records relaunches.
-private final class FakeTarget: Sendable {
+final class FakeTarget: Sendable {
   let running: Mutex<Bool>
   let quits = Mutex(0)
   let reopens = Mutex(0)

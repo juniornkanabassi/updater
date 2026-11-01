@@ -120,6 +120,39 @@ final class UpdateSchedulerTest: XCTestCase {
     }
   }
 
+  /// Sol R4 (third pass): failed attempts reconcile the row with the disk too, and a bundle
+  /// that is gone afterwards loses its row while its failure stays in history.
+  func testFailedAttemptsReconcileTheRowAndAVanishedAppLosesIt() async throws {
+    let root = try disposableDirectory()
+    let app = try FixtureApp.make(in: root, version: "1.0", signed: false)
+    let notices = Mutex(0)
+    let job = ScriptedOperation(url: app) { throw ReplacementError.verificationFailed("x") }
+    let observer = NotificationCenter.default.addObserver(
+      forName: .latestUpdateOperationDidFinish, object: job, queue: nil
+    ) { _ in notices.withLock { $0 += 1 } }
+    defer { NotificationCenter.default.removeObserver(observer) }
+    let done = expectation(description: "done")
+    job.completionBlock = { done.fulfill() }
+    UpdateQueue().addOperation(job)
+    await fulfillment(of: [done], timeout: 2)
+    XCTAssertEqual(notices.withLock { $0 }, 1, "a failed attempt still refreshes the row")
+
+    let coordinator = UpdateCheckCoordinator(
+      check: { _, _ in throw LatestError.updateInfoUnavailable }, repositoryProvider: { nil })
+    let bundle = try XCTUnwrap(BundleCollector.collectBundle(at: app))
+    coordinator.updateDiscoveredBundles([bundle])
+    let store = try XCTUnwrap(coordinator.appProvider as? AppDataStore)
+    XCTAssertTrue(store.apps.contains { $0.fileURL == app })
+    try FileManager.default.removeItem(at: app)
+    NotificationCenter.default.post(
+      name: .latestUpdateOperationDidFinish, object: nil,
+      userInfo: [UpdateOperation.appIdentifierUserInfoKey: app])
+    for _ in 0..<200 where store.apps.contains(where: { $0.fileURL == app }) {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    XCTAssertFalse(store.apps.contains { $0.fileURL == app })
+  }
+
   func testSecondSubmissionForTheSameURLReturnsTheRunningJob() async {
     let queue = UpdateQueue()
     let url = URL(fileURLWithPath: "/tmp/Dedup-\(UUID().uuidString).app")

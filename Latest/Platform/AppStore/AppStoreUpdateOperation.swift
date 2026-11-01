@@ -53,7 +53,9 @@ final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
   @MainActor private var isInstalling = false
 
   /// Seams for tests: the gate runs before `prepare` (the helper) and any purchase.
-  var gate = AppStoreInstallGate.live
+  var installGate: @Sendable (URL, String) async -> Bool = {
+    await AppStoreInstallGate.live.allowsInstall(at: $0, bundleIdentifier: $1)
+  }
   var prepare: @Sendable () async throws -> Void = { try await AppStoreUpdater.prepareForUpdates() }
   var openURL: @MainActor @Sendable (URL) -> Void = { NSWorkspace.shared.open($0) }
   var lifecycle = AppLifecycle.live
@@ -64,6 +66,15 @@ final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
       at: $0, appURL: $1, receiptData: $2, expectedVersion: $3)
   }
 
+  /// Starts the CommerceKit purchase; replaced in tests, which cannot reach the App Store.
+  var purchase: @MainActor @Sendable (AppStoreUpdateOperation) async -> Void = {
+    await $0.performPurchase()
+  }
+  /// False only for ad-hoc signed test fixtures.
+  var requiresTeam = true
+  /// Updater's own clone of the exact target: CommerceKit can install by itself on success.
+  private let protection: ExternalInstallGuard
+
   /// Every App Store job goes through the one helper and download queue.
   override var lockKey: String { "appStoreHelper" }
 
@@ -73,6 +84,7 @@ final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
   ) {
     self.installURL = installURL
     itemIdentifier = appStoreIdentifier
+    protection = ExternalInstallGuard(target: installURL)
     super.init(bundleIdentifier: bundleIdentifier, appIdentifier: appIdentifier)
   }
 
@@ -103,38 +115,74 @@ final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
         return
       }
       guard !self.isCancelled, !self.isFinished else { return }
-      // Register before starting the purchase: small downloads can finish before
-      // its completion callback, and their package/receipt must be preserved.
-      self.observerIdentifier = CKDownloadQueue.shared().add(self)
-      let purchase = SSPurchase(itemIdentifier: self.itemIdentifier)
+      // Before CommerceKit or the helper can touch the app: quit it with a time limit
+      // (a refusal means no purchase) and take Updater's own clone (none means no purchase).
       do {
-        let (_, completed, response) = try await CKPurchaseController.shared().perform(
-          purchase, withOptions: 0)
-        let downloads = response?.downloads ?? []
-        // Cancellation can finish the operation before Apple creates its download.
-        guard !self.isCancelled else {
-          for download in downloads {
-            CKDownloadQueue.shared().cancelDownload(
-              download, promptToConfirm: false, askToDelete: false)
-          }
-          self.finishOnMain()
-          return
-        }
-        appStoreUpdateLogger.notice(
-          "Purchase completed=\(completed), downloads=\(downloads.count)"
-        )
-        if downloads.isEmpty, !self.isFinished, !self.isInstalling {
-          self.finish(with: LatestError.updateInfoUnavailable)
-        }
+        self.protection.noteQuit(
+          wasRunning: try await self.lifecycle.quit(
+            at: self.installURL, name: self.installURL.deletingPathExtension().lastPathComponent))
+      } catch is CancellationError {
+        self.finishOnMain()
+        return
       } catch {
-        guard !self.isFinished, !self.isInstalling else { return }
         self.finish(with: error)
+        return
       }
+      do { try self.protection.takeClone() } catch {
+        self.handOff()
+        self.finishOnMain()
+        return
+      }
+      guard !self.isCancelled, !self.isFinished else {
+        await self.finalize(nil)
+        return
+      }
+      await self.purchase(self)
     }
   }
 
+  @MainActor private func performPurchase() async {
+    // Register before starting the purchase: small downloads can finish before
+    // its completion callback, and their package/receipt must be preserved.
+    observerIdentifier = CKDownloadQueue.shared().add(self)
+    let purchase = SSPurchase(itemIdentifier: itemIdentifier)
+    do {
+      let (_, completed, response) = try await CKPurchaseController.shared().perform(
+        purchase, withOptions: 0)
+      let downloads = response?.downloads ?? []
+      // Cancellation can finish the operation before Apple creates its download.
+      guard !isCancelled else {
+        for download in downloads {
+          CKDownloadQueue.shared().cancelDownload(
+            download, promptToConfirm: false, askToDelete: false)
+        }
+        await finalize(nil)
+        return
+      }
+      appStoreUpdateLogger.notice(
+        "Purchase completed=\(completed), downloads=\(downloads.count)"
+      )
+      if downloads.isEmpty, !isFinished, !isInstalling {
+        await finalize(LatestError.updateInfoUnavailable)
+      }
+    } catch {
+      guard !isFinished, !isInstalling else { return }
+      await finalize(error)
+    }
+  }
+
+  /// Every path after the clone ends here: CommerceKit's own install, the helper install,
+  /// or any failure. The shared guard verifies the exact URL, restores the clone on failure
+  /// and reopens an app Updater quit; then the result is published.
+  @MainActor func finalize(_ error: Error?) async {
+    guard !isFinished else { return }
+    let result = await protection.settle(
+      error: error, expected: expectedVersion, requiresTeam: requiresTeam, lifecycle: lifecycle)
+    if let result { finish(with: result) } else { finish() }
+  }
+
   @MainActor private func allowsInstall() async -> Bool {
-    await gate.allowsInstall(at: installURL, bundleIdentifier: bundleIdentifier)
+    await installGate(installURL, bundleIdentifier)
   }
 
   @MainActor private func handOff() {
@@ -168,7 +216,7 @@ final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
         withProductID: NSNumber(value: self.itemIdentifier))
       self.cancelPendingDownload()
       // installer cannot safely be interrupted halfway through replacing an app.
-      if !self.isInstalling { self.finish() }
+      if !self.isInstalling { await self.finalize(nil) }
     }
   }
 
@@ -190,6 +238,9 @@ final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
       self.observerIdentifier = nil
     }
     artifacts.removeAll()
+    // Exits that never reached finalize happened before anything could touch the app.
+    protection.discard()
+    protection.reopenIfQuit(lifecycle)
     super.finish()
   }
 
@@ -213,10 +264,11 @@ final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
       wasCancelled: isCancelled)
     {
     case .completed:
-      finish()
+      // CommerceKit installed by itself: verify against the clone like any other route.
+      await nativeInstallCompleted()
       return
     case .failed(let error):
-      finish(with: error)
+      await finalize(error)
       return
     case .installPackage:
       break
@@ -227,8 +279,8 @@ final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
         ?? snapshot.receiptData,
       !receipt.isEmpty
     else {
-      finish(
-        with: LatestError.custom(
+      await finalize(
+        LatestError.custom(
           title: "App Store Package Unavailable",
           description:
             "The App Store download did not provide a complete installer package and receipt. Please retry the update."
@@ -242,12 +294,17 @@ final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
       ) { [self] in
         try await installPreservedPackage(package, receipt: receipt)
       }
-      finish()
+      await finalize(nil)
     } catch  where outcomeOverride == .handedOff {
-      finish()
+      await finalize(nil)
     } catch {
-      finish(with: error)
+      await finalize(error)
     }
+  }
+
+  /// CommerceKit's download queue reported that it installed the update itself.
+  @MainActor func nativeInstallCompleted() async {
+    await finalize(nil)
   }
 
   /// Rechecks the exact target right before the helper mutates anything: copies can

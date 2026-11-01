@@ -107,7 +107,7 @@ final class AppStoreInstallGateTest: XCTestCase {
       appStoreIdentifier: 1)
     var gate = AppStoreInstallGate.agreeing(on: target.path)
     gate.indexingEnabled = { false }
-    operation.gate = gate
+    operation.installGate = { [gate] in await gate.allowsInstall(at: $0, bundleIdentifier: $1) }
     operation.prepare = { helperCalls.withLock { $0 += 1 } }
     operation.openURL = { url in opened.withLock { $0.append(url) } }
     let done = expectation(description: "finished")
@@ -131,7 +131,8 @@ final class AppStoreInstallGateTest: XCTestCase {
     let operation = AppStoreUpdateOperation(
       bundleIdentifier: identifier, installURL: target, appIdentifier: target,
       appStoreIdentifier: 1)
-    operation.gate = .agreeing(on: target.path)
+    let agreeing = AppStoreInstallGate.agreeing(on: target.path)
+    operation.installGate = { await agreeing.allowsInstall(at: $0, bundleIdentifier: $1) }
     operation.usesVerifiedHelperInstall = false
     operation.prepare = { helperCalls.withLock { $0 += 1 } }
     operation.openURL = { url in opened.withLock { $0.append(url) } }
@@ -159,7 +160,7 @@ final class AppStoreInstallGateTest: XCTestCase {
         URL(fileURLWithPath: "/Users/Shared/UpdaterGateFixture.app"),
       ]
     }
-    operation.gate = gate
+    operation.installGate = { [gate] in await gate.allowsInstall(at: $0, bundleIdentifier: $1) }
     operation.openURL = { _ in }
     operation.installPackage = { _, appURL, _, _ in
       installs.withLock { $0 += 1 }
@@ -233,5 +234,89 @@ final class AppStoreInstallGateTest: XCTestCase {
     }
     let late = await slowSpotlight.allowsInstall(at: target, bundleIdentifier: identifier)
     XCTAssertFalse(late)
+  }
+
+  private func nativeOperation(
+    for app: URL, target: FakeTarget,
+    purchase: @escaping @MainActor @Sendable (AppStoreUpdateOperation) async -> Void
+  ) -> AppStoreUpdateOperation {
+    let operation = AppStoreUpdateOperation(
+      bundleIdentifier: FixtureApp.identifier, installURL: app, appIdentifier: app,
+      appStoreIdentifier: 1)
+    operation.installGate = { _, _ in true }
+    operation.prepare = {}
+    operation.openURL = { _ in }
+    operation.requiresTeam = false
+    operation.lifecycle = target.lifecycle(timeout: .milliseconds(300))
+    operation.purchase = purchase
+    operation.expectedVersion = Version(versionNumber: "1.1", buildNumber: nil)
+    return operation
+  }
+
+  private func run(_ operation: AppStoreUpdateOperation) async {
+    let done = expectation(description: "finished")
+    operation.completionBlock = { done.fulfill() }
+    UpdateQueue().addOperation(operation)
+    await fulfillment(of: [done], timeout: 10)
+  }
+
+  /// Sol R2 (third pass): CommerceKit's own successful install is protected like every other
+  /// route: quit and clone first, then verified, and restored with the app reopened.
+  func testNativeCommerceKitInstallIsQuitClonedVerifiedAndRestored() async throws {
+    // A bad native install: restored byte-for-byte and the quit app reopened once.
+    let root = try disposableDirectory()
+    let app = try FixtureApp.make(in: root, version: "1.0")
+    let before = try FixtureApp.digest(app)
+    let payload = try FixtureApp.make(in: root.appendingPathComponent("payload"), version: "0.9")
+    let target = FakeTarget(running: true)
+    let purchases = Mutex(0)
+    let bad = nativeOperation(for: app, target: target) { operation in
+      purchases.withLock { $0 += 1 }
+      XCTAssertEqual(target.quits.withLock { $0 }, 1, "quit before the purchase")
+      try? FileManager.default.removeItem(at: app)
+      try? FileManager.default.copyItem(at: payload, to: app)
+      await operation.nativeInstallCompleted()
+    }
+    await run(bad)
+    XCTAssertEqual(purchases.withLock { $0 }, 1)
+    XCTAssertTrue(bad.error is ReplacementError, String(describing: bad.error))
+    XCTAssertEqual(try FixtureApp.digest(app), before)
+    XCTAssertEqual(target.reopens.withLock { $0 }, 1)
+
+    // A good native install is kept.
+    let good = try FixtureApp.make(in: root.appendingPathComponent("good"), version: "1.1")
+    let kept = nativeOperation(for: app, target: FakeTarget(running: false)) { operation in
+      try? FileManager.default.removeItem(at: app)
+      try? FileManager.default.copyItem(at: good, to: app)
+      await operation.nativeInstallCompleted()
+    }
+    await run(kept)
+    XCTAssertNil(kept.error)
+    XCTAssertEqual(try BundleIdentity.read(at: app, validate: false).shortVersion, "1.1")
+  }
+
+  /// Sol R2 (third pass): no purchase when the app will not quit or cannot be cloned.
+  func testNoPurchaseWithoutQuitOrClone() async throws {
+    let root = try disposableDirectory()
+    let app = try FixtureApp.make(in: root, version: "1.0")
+    let purchases = Mutex(0)
+    let refusing = FakeTarget(running: true)
+    let stubborn = nativeOperation(for: app, target: refusing) { _ in purchases.withLock { $0 += 1 }
+    }
+    stubborn.lifecycle = AppLifecycle(
+      runningApps: { _ in [.init(terminate: {}, isTerminated: { false })] },
+      confirmQuit: { _ in true }, reopen: { _ in }, timeout: .milliseconds(200))
+    await run(stubborn)
+    guard case AppDownloadError.applicationStillRunning? = stubborn.error else {
+      return XCTFail("Expected needs-quit, got \(String(describing: stubborn.error))")
+    }
+
+    let missing = root.appendingPathComponent("Missing.app")
+    let uncloneable = nativeOperation(for: missing, target: FakeTarget(running: false)) { _ in
+      purchases.withLock { $0 += 1 }
+    }
+    await run(uncloneable)
+    XCTAssertEqual(uncloneable.outcomeOverride, .handedOff)
+    XCTAssertEqual(purchases.withLock { $0 }, 0)
   }
 }

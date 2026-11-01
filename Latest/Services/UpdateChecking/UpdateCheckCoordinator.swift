@@ -301,7 +301,10 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
       try? await Task.sleep(for: .milliseconds(300))
       guard !Task.isCancelled else { return }
 
-      guard let self, let bundle = BundleCollector.collectBundle(at: appIdentifier) else {
+      guard let self else { return }
+      // A failed attempt or rollback can leave the app missing; its failure stays in history.
+      guard let bundle = BundleCollector.collectBundle(at: appIdentifier) else {
+        self.updateCheckSchedulingLock.withLock { self.dataStore.remove(appAt: appIdentifier) }
         return
       }
 

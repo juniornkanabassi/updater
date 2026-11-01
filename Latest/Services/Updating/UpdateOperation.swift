@@ -122,7 +122,6 @@ class UpdateOperation: StatefulOperation, @unchecked Sendable {
   @MainActor func retryTermination() {}
 
   override func finish() {
-    let ranCleanly = self.error == nil && !self.isCancelled
     let resolve = resolver.withLock { resolve in
       defer { resolve = nil }
       return resolve
@@ -132,8 +131,10 @@ class UpdateOperation: StatefulOperation, @unchecked Sendable {
     {
       recordError(failure)
     }
-    // The bundle may have changed even when verification failed: refresh the row either way.
-    let didCompleteSuccessfully = ranCleanly && self.markCompletionNotificationPending()
+    // Any attempt may have changed or removed the bundle, including failures and rollbacks,
+    // so the row is reconciled with the disk after every finish except a plain cancel.
+    let shouldReconcile =
+      !(self.isCancelled && self.error == nil) && self.markCompletionNotificationPending()
 
     if let error = self.error {
       self.progressState = .error(error)
@@ -143,7 +144,7 @@ class UpdateOperation: StatefulOperation, @unchecked Sendable {
 
     super.finish()
 
-    if didCompleteSuccessfully {
+    if shouldReconcile {
       NotificationCenter.default.post(
         name: .latestUpdateOperationDidFinish, object: self,
         userInfo: [

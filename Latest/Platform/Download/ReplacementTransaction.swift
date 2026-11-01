@@ -109,12 +109,14 @@ enum ReplacementTransaction {
     return identity
   }
 
-  /// After an installer Updater does not drive: an untouched target passes; a changed one
+  /// After an installer Updater does not drive. The destination's full signature is always
+  /// checked (strict, every architecture, nested code), so a damaged bundle never passes
+  /// because its metadata looks unchanged. An untouched target then passes; a changed one
   /// must be the same product, newer than before and at least `expected`.
   static func verifyExternalInstall(
     at target: URL, original: BundleIdentity, expected: Version?, requiresTeam: Bool = true
   ) throws {
-    if (try? BundleIdentity.read(at: target, validate: false)) == original { return }
+    if try BundleIdentity.read(at: target, validate: true) == original { return }
     let installed = try original.verifyReplacement(at: target, requiresTeam: requiresTeam)
     try verifyVersion(
       installed: Version(
