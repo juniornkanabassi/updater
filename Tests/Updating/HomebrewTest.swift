@@ -46,6 +46,9 @@ private struct BrewStub {
           fi
         done
         printf ']}\n' ;;
+      "fetch --cask")
+        [ -f "$dir/fetchdelay" ] && sleep "$(cat "$dir/fetchdelay")"
+        echo "==> Downloading $3" ;;
       "upgrade --cask")
         token="$3"
         [ -f "$dir/delay" ] && sleep "$(cat "$dir/delay")"
@@ -66,32 +69,40 @@ private struct BrewStub {
     try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: brew.path)
   }
 
-  /// `casks`: token → (installed app targets, needs a pkg, quit IDs, signals). Each gets a
-  /// Caskroom record for version 1.0; `outdated` gives the version brew would install.
+  /// `casks`: token → installed app target. The current definition (brew info) and the
+  /// installed one (the Caskroom receipt) both hold that app and a zap; `current` and
+  /// `installed` add artifacts to either side. Each cask gets a Caskroom record for 1.0, and
+  /// `outdated` gives the version brew would install.
   func describe(
-    _ casks: [String: (apps: [URL], pkg: Bool)], outdated: [String: String],
-    quits: [String: [String]] = [:], signals: Set<String> = []
+    _ casks: [String: URL], outdated: [String: String],
+    current: [String: [[String: Any]]] = [:], installed: [String: [[String: Any]]] = [:],
+    version: [String: String] = [:], flightBlocks: Set<String> = []
   ) throws {
+    let zap: [String: Any] = ["zap": [["trash": ["~/Library/Caches/fixture"]]]]
     let info: [String: Any] = [
       "formulae": [],
-      "casks": casks.map { token, cask in
-        var uninstall = [String: Any]()
-        if let ids = quits[token] { uninstall["quit"] = ids }
-        if signals.contains(token) { uninstall["signal"] = [["TERM", "com.example.any"]] }
-        return [
-          "token": token,
-          "artifacts": cask.apps.map { ["app": [$0.lastPathComponent], "target": $0.path] }
-            + (cask.pkg ? [["pkg": ["Installer.pkg"]]] : [])
-            + (uninstall.isEmpty ? [] : [["uninstall": [uninstall]]]),
+      "casks": casks.map { token, app in
+        [
+          "token": token, "version": version[token] ?? "1.1", "installed": "1.0",
+          "artifacts": [["app": [app.lastPathComponent], "target": app.path], zap]
+            + (current[token] ?? []),
         ] as [String: Any]
       },
     ]
     try JSONSerialization.data(withJSONObject: info).write(
       to: directory.appendingPathComponent("info.json"))
-    for token in casks.keys {
+    for (token, app) in casks {
       let record = caskroom.appendingPathComponent("\(token)/1.0")
       try FileManager.default.createDirectory(at: record, withIntermediateDirectories: true)
       try Data("installed 1.0".utf8).write(to: record.appendingPathComponent(".metadata"))
+      let metadata = caskroom.appendingPathComponent("\(token)/.metadata")
+      try FileManager.default.createDirectory(at: metadata, withIntermediateDirectories: true)
+      let receipt: [String: Any] = [
+        "uninstall_flight_blocks": flightBlocks.contains(token),
+        "uninstall_artifacts": [["app": [app.lastPathComponent]], zap] + (installed[token] ?? []),
+      ]
+      try JSONSerialization.data(withJSONObject: receipt).write(
+        to: metadata.appendingPathComponent("INSTALL_RECEIPT.json"))
     }
     for (token, version) in outdated {
       try version.write(
@@ -144,7 +155,7 @@ final class HomebrewTest: XCTestCase {
     let payload = try FixtureApp.make(
       in: root.appendingPathComponent("payload"), version: payloadVersion)
     try stub.stage("fixture", payload: payload, target: installed)
-    try stub.describe(["fixture": ([installed], false)], outdated: ["fixture": "1.1"])
+    try stub.describe(["fixture": installed], outdated: ["fixture": "1.1"])
     let logs = root.appendingPathComponent("logs")
     return Setup(
       root: root, installed: installed, otherCopy: otherCopy, stub: stub,
@@ -189,8 +200,8 @@ final class HomebrewTest: XCTestCase {
     try FileManager.default.createSymbolicLink(at: link, withDestinationURL: setup.installed)
     let pkgApp = try FixtureApp.make(in: setup.root.appendingPathComponent("Pkg"), version: "1.0")
     try setup.stub.describe(
-      ["fixture": ([setup.installed], false), "pkgcask": ([pkgApp], true)],
-      outdated: ["fixture": "1.1"])
+      ["fixture": setup.installed, "pkgcask": pkgApp],
+      outdated: ["fixture": "1.1"], current: ["pkgcask": [["pkg": ["Installer.pkg"]]]])
     let owner = try await setup.homebrew.owningCask(of: setup.installed)
     XCTAssertEqual(owner?.token, "fixture")
     let viaLink = try await setup.homebrew.owningCask(of: link)
@@ -198,7 +209,7 @@ final class HomebrewTest: XCTestCase {
     let other = try await setup.homebrew.owningCask(of: setup.otherCopy)
     XCTAssertNil(other, "a copy elsewhere is not owned")
     let pkg = try await setup.homebrew.owningCask(of: pkgApp)
-    XCTAssertEqual(pkg?.needsAdministrator, true)
+    XCTAssertEqual(pkg?.allowListed, false, "a pkg is outside the allow list")
     let outdated = try await setup.homebrew.outdatedVersion(of: "fixture")
     XCTAssertEqual(outdated, "1.1")
   }
@@ -208,8 +219,9 @@ final class HomebrewTest: XCTestCase {
     let setup = try makeSetup()
     let pkgApp = try FixtureApp.make(in: setup.root.appendingPathComponent("Pkg"), version: "1.0")
     try setup.stub.describe(
-      ["fixture": ([setup.installed], false), "pkgcask": ([pkgApp], true)],
-      outdated: ["fixture": "1.1", "pkgcask": "2.0"])
+      ["fixture": setup.installed, "pkgcask": pkgApp],
+      outdated: ["fixture": "1.1", "pkgcask": "2.0"],
+      current: ["pkgcask": [["pkg": ["Installer.pkg"]]]])
     let bundle = try XCTUnwrap(BundleCollector.collectBundle(at: setup.installed))
     let update = try await HomebrewCheckerOperation(
       with: bundle, repository: nil, homebrew: setup.homebrew
@@ -293,7 +305,7 @@ final class HomebrewTest: XCTestCase {
     let payload = setup.root.appendingPathComponent("payload/Fixture.app")
     try setup.stub.stage("fixture2", payload: payload, target: second)
     try setup.stub.describe(
-      ["fixture": ([setup.installed], false), "fixture2": ([second], false)],
+      ["fixture": setup.installed, "fixture2": second],
       outdated: ["fixture": "1.1", "fixture2": "1.1"])
     try setup.stub.flag("delay", "0.3")
     let queue = UpdateQueue()
@@ -325,15 +337,15 @@ final class HomebrewTest: XCTestCase {
     }
   }
 
-  /// Sol R2-001: brew's uninstall hooks act by bundle ID. Signals always hand off; a quit
-  /// hands off when another copy with that ID exists on disk or is running elsewhere.
-  func testQuitAndSignalHooksMustStayOnTheSelectedCopy() throws {
+  /// Sol R2-001: brew's uninstall quit acts by bundle ID, so it must name only this app and
+  /// that ID must have no other copy on disk or running elsewhere.
+  func testQuitHooksMustStayOnTheSelectedCopy() throws {
     let root = try disposableDirectory()
     let selected = try FixtureApp.make(in: root.appendingPathComponent("A"), version: "1.0")
     let second = try FixtureApp.make(in: root.appendingPathComponent("B"), version: "1.0")
     let path = Homebrew.canonical(selected)
     let quitting = InstalledCask(
-      token: "fixture", apps: [path], needsAdministrator: false, quits: [FixtureApp.identifier])
+      token: "fixture", apps: [path], allowListed: true, quits: [FixtureApp.identifier])
     func scope(copies: Set<String>, running: [String]) -> HomebrewScope {
       HomebrewScope(copies: { _ in copies }, runningPaths: { _ in running })
     }
@@ -347,11 +359,103 @@ final class HomebrewTest: XCTestCase {
     XCTAssertFalse(
       HomebrewScope(
         copies: { _ in throw CocoaError(.fileReadNoPermission) }, runningPaths: { _ in [] }
-      )
-      .installs(quitting, at: selected), "an unreadable walk fails closed")
-    let signalling = InstalledCask(
-      token: "fixture", apps: [path], needsAdministrator: false, signals: true)
-    XCTAssertFalse(scope(copies: [path], running: []).installs(signalling, at: selected))
+      ).installs(quitting, at: selected), "an unreadable walk fails closed")
+    let otherID = InstalledCask(
+      token: "fixture", apps: [path], allowListed: true, quits: ["com.example.someone-else"])
+    XCTAssertFalse(scope(copies: [], running: []).installs(otherID, at: selected))
+    let refused = InstalledCask(token: "fixture", apps: [path], allowListed: false)
+    XCTAssertFalse(scope(copies: [], running: []).installs(refused, at: selected))
+  }
+
+  /// Sol R2-101/102: only `app` (exactly one), `zap`, and `uninstall` with nothing but
+  /// `quit:` pass. Everything else is refused.
+  func testAllowListAcceptsOnlyOneAppZapAndQuit() {
+    let app: [String: Any] = ["app": ["Fixture.app"]]
+    let zap: [String: Any] = ["zap": [["trash": ["~/x"]]]]
+    XCTAssertEqual(HomebrewAllowList.quits(in: [app]), [])
+    XCTAssertEqual(
+      HomebrewAllowList.quits(in: [app, zap, ["uninstall": [["quit": "com.example.a"]]]]),
+      ["com.example.a"])
+    let refused: [(String, [[String: Any]])] = [
+      ("launchctl", [app, ["uninstall": [["quit": "a", "launchctl": "b"]]]]),
+      ("signal", [app, ["uninstall": [["signal": [["TERM", "a"]]]]]]),
+      ("delete", [app, ["uninstall": [["delete": ["/x"]]]]]),
+      ("rmdir", [app, ["uninstall": [["rmdir": ["/x"]]]]]),
+      ("script", [app, ["uninstall": [["script": ["executable": "x"]]]]]),
+      ("pkg", [app, ["pkg": ["Installer.pkg"]]]),
+      ("installer", [app, ["installer": [["script": "x"]]]]),
+      ("binary", [app, ["binary": ["x"]]]),
+      ("postflight", [app, ["postflight": NSNull()]]),
+      ("two apps", [app, app]),
+      ("no app", [zap]),
+    ]
+    for (name, artifacts) in refused {
+      XCTAssertNil(HomebrewAllowList.quits(in: artifacts), name)
+    }
+  }
+
+  /// Sol R2-101/102 and R2-105: the installed definition (receipt) and the current one
+  /// (brew info) must both pass, and `:latest` hands off.
+  func testInstalledAndCurrentDefinitionsMustBothPass() async throws {
+    let cases: [(String, (BrewStub, URL) throws -> Void)] = [
+      (
+        "installed has launchctl",
+        { stub, app in
+          try stub.describe(
+            ["fixture": app], outdated: ["fixture": "1.1"],
+            installed: ["fixture": [["uninstall": [["launchctl": "com.example.agent"]]]]])
+        }
+      ),
+      (
+        "current adds a pkg",
+        { stub, app in
+          try stub.describe(
+            ["fixture": app], outdated: ["fixture": "1.1"],
+            current: ["fixture": [["pkg": ["Installer.pkg"]]]])
+        }
+      ),
+      (
+        "installed has flight blocks",
+        { stub, app in
+          try stub.describe(
+            ["fixture": app], outdated: ["fixture": "1.1"], flightBlocks: ["fixture"])
+        }
+      ),
+      (
+        "current is :latest",
+        { stub, app in
+          try stub.describe(
+            ["fixture": app], outdated: ["fixture": "latest"], version: ["fixture": "latest"])
+        }
+      ),
+      (
+        "outdated reports latest",
+        { stub, app in
+          try stub.describe(["fixture": app], outdated: ["fixture": "latest"])
+        }
+      ),
+    ]
+    for (name, describe) in cases {
+      let setup = try makeSetup()
+      try describe(setup.stub, setup.installed)
+      let bundle = try XCTUnwrap(BundleCollector.collectBundle(at: setup.installed))
+      let update = try await HomebrewCheckerOperation(
+        with: bundle, repository: nil, homebrew: setup.homebrew
+      ).check()
+      XCTAssertEqual(
+        App(bundle: bundle, update: .success(update), isIgnored: false).capability, .handOff, name)
+    }
+    // A missing receipt with an empty API caskfile cannot be read: refused.
+    let root = try disposableDirectory()
+    let metadata = root.appendingPathComponent(".metadata/1.0/20261101/Casks")
+    try FileManager.default.createDirectory(at: metadata, withIntermediateDirectories: true)
+    try Data("{}".utf8).write(to: metadata.appendingPathComponent("fixture.json"))
+    XCTAssertNil(
+      HomebrewAllowList.installedArtifacts(caskroom: root).flatMap(HomebrewAllowList.quits))
+    try FileManager.default.removeItem(at: metadata.appendingPathComponent("fixture.json"))
+    try Data("cask \"fixture\" do\nend\n".utf8).write(
+      to: metadata.appendingPathComponent("fixture.rb"))
+    XCTAssertNil(HomebrewAllowList.installedArtifacts(caskroom: root), "Ruby caskfiles are refused")
   }
 
   /// Sol R2-002: brew exits 0 but Updater rejects the result; the app and brew's Caskroom
@@ -368,7 +472,10 @@ final class HomebrewTest: XCTestCase {
     XCTAssertEqual(try FixtureApp.digest(setup.installed), appBefore)
     XCTAssertEqual(try FixtureApp.digest(record), recordBefore, "Caskroom says 1.0 again")
     XCTAssertEqual(
-      try FileManager.default.contentsOfDirectory(atPath: record.path), ["1.0"])
+      try FileManager.default.contentsOfDirectory(atPath: record.path).filter {
+        !$0.hasPrefix(".")
+      },
+      ["1.0"])
     await setup.homebrew.invalidate()
     let bundle = try XCTUnwrap(BundleCollector.collectBundle(at: setup.installed))
     let retry = try await HomebrewCheckerOperation(
@@ -408,7 +515,7 @@ final class HomebrewTest: XCTestCase {
     let unowned = try FixtureApp.make(
       in: root.appendingPathComponent("Copy"), version: "1.0", extraInfo: feed)
     let stub = try BrewStub(in: root)
-    try stub.describe(["fixture": ([owned], false)], outdated: ["fixture": "1.1"])
+    try stub.describe(["fixture": owned], outdated: ["fixture": "1.1"])
     let homebrew = stub.client(logs: root.appendingPathComponent("logs"))
     let ownedBundle = try XCTUnwrap(BundleCollector.collectBundle(at: owned))
     let unownedBundle = try XCTUnwrap(BundleCollector.collectBundle(at: unowned))
@@ -431,5 +538,128 @@ final class HomebrewTest: XCTestCase {
     XCTAssertEqual(app(owned)?.source, .homebrew)
     XCTAssertEqual(app(owned)?.capability, .install)
     XCTAssertNotEqual(app(unowned)?.source, .homebrew, "the unowned copy keeps its Sparkle route")
+  }
+
+  /// Sol R2-103: brew is never stopped part way; the job waits for it and keeps the lock.
+  func testSlowBrewIsWaitedForWhileHoldingTheLock() async throws {
+    let setup = try makeSetup()
+    try setup.stub.flag("delay", "1.2")
+    let queue = UpdateQueue(history: setup.history)
+    let bundle = try XCTUnwrap(BundleCollector.collectBundle(at: setup.installed))
+    let operation = HomebrewUpgradeOperation(
+      app: bundle, token: "fixture",
+      expectedVersion: Version(versionNumber: "1.1", buildNumber: nil))
+    operation.homebrew = setup.homebrew
+    operation.lifecycle = .notRunning
+    operation.requiresTeam = false
+    let done = expectation(description: "finished")
+    operation.completionBlock = { done.fulfill() }
+    queue.submit(operation)
+    try await Task.sleep(for: .milliseconds(800))
+    XCTAssertFalse(operation.isFinished, "brew is still running")
+    XCTAssertTrue(queue.contains(setup.installed), "the job keeps its lock")
+    guard case .installing = operation.progressState else {
+      return XCTFail("the row shows the job is still working")
+    }
+    await fulfillment(of: [done], timeout: 30)
+    XCTAssertNil(operation.error)
+  }
+
+  /// Sol R2-104: fetch first with the app untouched, then quit, then upgrade from the cache.
+  /// An app reopened during a slow download that then refuses to quit means needs-quit,
+  /// with nothing changed and no upgrade run.
+  func testFetchComesBeforeTheQuitAndARefusalChangesNothing() async throws {
+    let setup = try makeSetup()
+    let before = try FixtureApp.digest(setup.installed)
+    try setup.stub.flag("fetchdelay", "0.6")
+    let reopened = Mutex(false)
+    let quitAsked = Mutex<Double?>(nil)
+    let lifecycle = AppLifecycle(
+      runningApps: { _ in
+        reopened.withLock { $0 }
+          ? [
+            .init(
+              terminate: { quitAsked.withLock { $0 = Date().timeIntervalSince1970 } },
+              isTerminated: { false })
+          ] : []
+      },
+      confirmQuit: { _ in true }, reopen: { _ in }, timeout: .milliseconds(200))
+    let queue = UpdateQueue(history: setup.history)
+    let bundle = try XCTUnwrap(BundleCollector.collectBundle(at: setup.installed))
+    let operation = HomebrewUpgradeOperation(
+      app: bundle, token: "fixture",
+      expectedVersion: Version(versionNumber: "1.1", buildNumber: nil))
+    operation.homebrew = setup.homebrew
+    operation.lifecycle = lifecycle
+    operation.requiresTeam = false
+    let done = expectation(description: "finished")
+    operation.completionBlock = { done.fulfill() }
+    queue.submit(operation)
+    try await Task.sleep(for: .milliseconds(200))
+    reopened.withLock { $0 = true }  // the user opens the app while it downloads
+    await fulfillment(of: [done], timeout: 30)
+    guard case AppDownloadError.applicationStillRunning? = operation.error else {
+      return XCTFail("Expected needs-quit, got \(String(describing: operation.error))")
+    }
+    XCTAssertEqual(try FixtureApp.digest(setup.installed), before)
+    let calls = try setup.stub.calls()
+    XCTAssertFalse(calls.contains { $0.arguments.hasPrefix("upgrade") }, "no upgrade ran")
+    let fetch = try XCTUnwrap(calls.first { $0.arguments.hasPrefix("fetch") })
+    XCTAssertGreaterThanOrEqual(
+      try XCTUnwrap(quitAsked.withLock { $0 }), fetch.end, "quit after fetch")
+
+    // The normal order: fetch, then upgrade.
+    let fresh = try makeSetup()
+    _ = try await upgrade(fresh)
+    let order = try fresh.stub.calls().map {
+      $0.arguments.split(separator: " ").first.map(String.init) ?? ""
+    }
+    let fetchIndex = try XCTUnwrap(order.firstIndex(of: "fetch"))
+    let upgradeIndex = try XCTUnwrap(order.firstIndex(of: "upgrade"))
+    XCTAssertLessThan(fetchIndex, upgradeIndex)
+  }
+
+  /// Sol R2-106: the app and the Caskroom record are restored separately; a failed record
+  /// move is reported with the surviving paths, and the app is reopened only afterwards.
+  @MainActor
+  func testCompanionRestoreFailuresReportWhatSurvived() async throws {
+    for failingMove in [1, 2] {
+      let root = try disposableDirectory()
+      let app = try FixtureApp.make(in: root.appendingPathComponent("App"), version: "1.0")
+      let record = root.appendingPathComponent("Caskroom/fixture")
+      try FileManager.default.createDirectory(
+        at: record.appendingPathComponent("1.0"), withIntermediateDirectories: true)
+      let appBefore = try FixtureApp.digest(app)
+      let moves = Mutex(0)
+      let guardian = ExternalInstallGuard(target: app) { from, to in
+        let move = moves.withLock {
+          $0 += 1
+          return $0
+        }
+        if move == failingMove { throw CocoaError(.fileWriteNoPermission) }
+        try FileManager.default.moveItem(at: from, to: to)
+      }
+      try guardian.takeClone(companions: [record])
+      let target = FakeTarget(running: false)
+      guardian.noteQuit(wasRunning: true)
+      // What brew did: new app version and a new Caskroom record.
+      let payload = try FixtureApp.make(in: root.appendingPathComponent("payload"), version: "1.1")
+      try FileManager.default.removeItem(at: app)
+      try FileManager.default.copyItem(at: payload, to: app)
+      try FileManager.default.removeItem(at: record.appendingPathComponent("1.0"))
+      try FileManager.default.createDirectory(
+        at: record.appendingPathComponent("1.1"), withIntermediateDirectories: true)
+      let result = await guardian.settle(
+        error: HomebrewError.failed(reason: "x", logPath: "/tmp/x"), expected: nil,
+        requiresTeam: false, lifecycle: target.lifecycle(), restoreOnInstallerFailure: true)
+      guard case ReplacementError.incompleteRestore(let records)? = result else {
+        return XCTFail(
+          "move \(failingMove): expected an incomplete restore, got \(String(describing: result))")
+      }
+      XCTAssertTrue(records.contains(record.path), records)
+      XCTAssertTrue(records.contains("previous record kept at"), records)
+      XCTAssertEqual(try FixtureApp.digest(app), appBefore, "the app itself was restored")
+      XCTAssertEqual(target.reopens.withLock { $0 }, 1, "reopened after settlement")
+    }
   }
 }

@@ -34,7 +34,8 @@ final class HomebrewCheckerOperation: Sendable {
     let current = (try? await homebrew.outdatedVersion(of: cask.token)) ?? nil
     let remote = current.map(VersionParser.parse(combinedVersionNumber:)) ?? bundle.version
     let action: App.Update.Action
-    if scope.installs(cask, at: bundle.fileURL) {
+    // `version :latest` casks cannot be checked against a version afterwards.
+    if current != "latest", scope.installs(cask, at: bundle.fileURL) {
       // Cask versions can carry a build suffix the bundle lacks; check the version number.
       let expected = Version(versionNumber: remote.versionNumber, buildNumber: nil)
       action = .builtIn { app in
@@ -42,8 +43,8 @@ final class HomebrewCheckerOperation: Sendable {
           HomebrewUpgradeOperation(app: app, token: cask.token, expectedVersion: expected))
       }
     } else {
-      // Admin casks, several apps, or quit/signal hooks reaching other copies: the user runs
-      // brew in Terminal, with the exact command ready on the clipboard.
+      // Anything outside the allow list (admin steps, scripts, several apps, hooks reaching
+      // other copies, :latest): the user runs brew in Terminal with the command copied.
       let command = adminCommand(for: cask.token)
       action = .external(label: handOffLabel) { _ in
         Task { @MainActor in

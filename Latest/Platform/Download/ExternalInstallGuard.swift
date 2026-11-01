@@ -21,7 +21,18 @@ final class ExternalInstallGuard: Sendable {
   /// first is still restoring.
   private let settlement = Mutex<Task<Error?, Never>?>(nil)
 
-  init(target: URL) { self.target = target }
+  /// Moves a companion record; injectable so tests can make either move fail.
+  private let companionMove: @Sendable (URL, URL) throws -> Void
+
+  init(
+    target: URL,
+    companionMove: @escaping @Sendable (URL, URL) throws -> Void = {
+      try FileManager.default.moveItem(at: $0, to: $1)
+    }
+  ) {
+    self.target = target
+    self.companionMove = companionMove
+  }
 
   /// Clones into a private folder on the target's volume. `companions` are cloned too and
   /// restored together with the app.
@@ -98,26 +109,41 @@ final class ExternalInstallGuard: Sendable {
           at: target, original: saved.original, expected: expected, requiresTeam: requiresTeam)
         try? FileManager.default.removeItem(at: saved.directory)
       } catch let failure {
+        // The app and each companion record are restored separately, so a failure reports
+        // exactly what survived where.
+        var appRestored = false
         do {
           try await lifecycle.quit(
             at: target, name: target.deletingPathExtension().lastPathComponent)
           try ReplacementTransaction.restore(
             target, backupDirectory: saved.directory, originalIdentity: saved.original)
-          for (index, companion) in saved.companions.enumerated() {
+          appRestored = true
+        } catch {}
+        var incomplete = [String]()
+        for (index, companion) in saved.companions.enumerated() {
+          let aside = saved.directory.appendingPathComponent("failed-companion-\(index)")
+          do {
             if FileManager.default.fileExists(atPath: companion.live.path) {
-              try FileManager.default.moveItem(
-                at: companion.live,
-                to: saved.directory.appendingPathComponent("failed-companion-\(index)"))
+              try companionMove(companion.live, aside)
             }
-            try FileManager.default.moveItem(at: companion.saved, to: companion.live)
+            try companionMove(companion.saved, companion.live)
+          } catch {
+            incomplete.append(
+              "\(companion.live.path) (previous record kept at \(companion.saved.path))")
           }
+        }
+        if !appRestored {
+          result = ReplacementError.restoreFailed(
+            saved.directory.appendingPathComponent(ReplacementTransaction.backupName).path)
+        } else if !incomplete.isEmpty {
+          result = ReplacementError.incompleteRestore(incomplete.joined(separator: "; "))
+        } else {
           try? FileManager.default.removeItem(at: saved.directory)
           // The installer's own error (with its log) explains more than the check that caught it.
           result = error ?? failure
-        } catch {
-          result = ReplacementError.restoreFailed(
-            saved.directory.appendingPathComponent(ReplacementTransaction.backupName).path)
         }
+        // A bundle that could not be restored is not reopened.
+        if !appRestored { quitByUpdater.withLock { $0 = false } }
       }
     }
     reopenIfQuit(lifecycle)

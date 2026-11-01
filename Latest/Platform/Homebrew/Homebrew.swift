@@ -7,14 +7,69 @@ struct InstalledCask: Sendable, Equatable {
   let token: String
   /// Canonical paths of the cask's `app` artifacts.
   let apps: [String]
-  /// Package installers and system-level uninstall steps need sudo, which Updater does not
-  /// provide in this round.
-  let needsAdministrator: Bool
-  /// Bundle IDs brew's uninstall step quits during an upgrade; it quits them by ID, so any
-  /// copy with that ID can be hit.
+  /// Both the installed definition (what the upgrade uninstalls) and the current one (what
+  /// it installs) passed the allow list. Anything else hands off.
+  let allowListed: Bool
+  /// Bundle IDs either definition's `uninstall quit:` names; brew quits them by ID.
   var quits: [String] = []
-  /// brew's uninstall step sends signals, which can kill any process with the bundle ID.
-  var signals = false
+}
+
+/// What brew may do during an upgrade without Updater handing off: one `app` artifact, an
+/// optional `zap` (only runs with --zap), and an optional `uninstall` whose only directive is
+/// `quit:`. Any other artifact or directive (pkg, installer, script, launchctl, signal,
+/// delete, rmdir, flight blocks, binaries...) or `version :latest` is refused.
+enum HomebrewAllowList {
+  /// nil if the artifacts are outside the allow list; otherwise the bundle IDs quit.
+  static func quits(in artifacts: [[String: Any]]) -> [String]? {
+    var apps = 0
+    var quits = [String]()
+    for artifact in artifacts {
+      let keys = Set(artifact.keys)
+      if keys == ["app"] || keys == ["app", "target"] {
+        apps += 1
+      } else if keys == ["zap"] {
+        continue
+      } else if keys == ["uninstall"], let steps = artifact["uninstall"] as? [[String: Any]] {
+        for step in steps {
+          guard Set(step.keys) == ["quit"] else { return nil }
+          if let one = step["quit"] as? String {
+            quits.append(one)
+          } else if let many = step["quit"] as? [String] {
+            quits += many
+          } else {
+            return nil
+          }
+        }
+      } else {
+        return nil
+      }
+    }
+    return apps == 1 ? quits : nil
+  }
+
+  /// The installed definition brew uses to uninstall the old version: the install receipt's
+  /// `uninstall_artifacts` (casks loaded from the API keep an empty caskfile), or else a
+  /// stored JSON caskfile with artifacts. A Ruby caskfile cannot be read, so it is refused.
+  static func installedArtifacts(caskroom: URL) -> [[String: Any]]? {
+    let metadata = caskroom.appendingPathComponent(".metadata")
+    if let data = try? Data(contentsOf: metadata.appendingPathComponent("INSTALL_RECEIPT.json")),
+      let receipt = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    {
+      guard receipt["uninstall_flight_blocks"] as? Bool == false else { return nil }
+      return receipt["uninstall_artifacts"] as? [[String: Any]]
+    }
+    let caskfiles =
+      FileManager.default.enumerator(at: metadata, includingPropertiesForKeys: nil)?
+      .compactMap { $0 as? URL }.filter {
+        $0.deletingLastPathComponent().lastPathComponent == "Casks"
+      }
+      ?? []
+    guard caskfiles.count == 1, let caskfile = caskfiles.first, caskfile.pathExtension == "json",
+      let data = try? Data(contentsOf: caskfile),
+      let cask = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    else { return nil }
+    return cask["artifacts"] as? [[String: Any]]
+  }
 }
 
 enum HomebrewError: LocalizedError, Equatable {
@@ -40,7 +95,6 @@ actor Homebrew {
   let brew: URL?
   private let environment: [String: String]
   private let logDirectory: URL
-  private let timeout: Duration
   /// The last scheduled invocation; each new one waits for it, across suspensions.
   private var tail: Task<Void, Never>?
   private var detection: (date: Date, installed: [InstalledCask], outdated: [String: String])?
@@ -49,13 +103,11 @@ actor Homebrew {
     brew: URL?, environment: [String: String] = [:],
     logDirectory: URL = FileManager.default.urls(
       for: .applicationSupportDirectory, in: .userDomainMask)[0]
-      .appendingPathComponent("Updater/logs"),
-    timeout: Duration = .seconds(1_800)
+      .appendingPathComponent("Updater/logs")
   ) {
     self.brew = brew
     self.environment = environment
     self.logDirectory = logDirectory
-    self.timeout = timeout
   }
 
   /// Fixed locations only; PATH is never consulted.
@@ -93,7 +145,8 @@ actor Homebrew {
   {
     if !fresh, let detection, Date().timeIntervalSince(detection.date) < 60 { return detection }
     let installed = try Self.parseInstalled(
-      try await output(["info", "--cask", "--json=v2", "--installed"]))
+      try await output(["info", "--cask", "--json=v2", "--installed"]),
+      caskroom: { [self] token in caskroom(of: token) })
     let outdated = try Self.parseOutdated(
       try await output(["outdated", "--cask", "--greedy", "--json=v2"]))
     let result = (Date(), installed, outdated)
@@ -101,7 +154,9 @@ actor Homebrew {
     return result
   }
 
-  static func parseInstalled(_ data: Data) throws -> [InstalledCask] {
+  /// `brew info --installed` gives the current definition (its `version` is the current
+  /// one); the installed definition comes from each cask's Caskroom metadata.
+  static func parseInstalled(_ data: Data, caskroom: (String) -> URL?) throws -> [InstalledCask] {
     guard
       let casks = (try JSONSerialization.jsonObject(with: data) as? [String: Any])?["casks"]
         as? [[String: Any]]
@@ -113,20 +168,14 @@ actor Homebrew {
         guard artifact["app"] != nil, let target = artifact["target"] as? String else { return nil }
         return canonical(URL(fileURLWithPath: target))
       }
-      let needsAdministrator = artifacts.contains { artifact in
-        artifact["pkg"] != nil || artifact["installer"] != nil
-          || ["pkgutil", "kext", "early_script"].contains {
-            "\(artifact["uninstall"] ?? "")".contains($0)
-          }
-      }
-      let uninstall = artifacts.compactMap { $0["uninstall"] as? [[String: Any]] }.joined()
-      let quits = uninstall.flatMap { step -> [String] in
-        if let one = step["quit"] as? String { return [one] }
-        return step["quit"] as? [String] ?? []
-      }
+      let installed = caskroom(token).flatMap(HomebrewAllowList.installedArtifacts)
+      let current = HomebrewAllowList.quits(in: artifacts)
+      let previous = installed.flatMap(HomebrewAllowList.quits)
+      let latest =
+        cask["version"] as? String == "latest" || cask["installed"] as? String == "latest"
       return InstalledCask(
-        token: token, apps: apps, needsAdministrator: needsAdministrator, quits: quits,
-        signals: uninstall.contains { $0["signal"] != nil })
+        token: token, apps: apps, allowListed: current != nil && previous != nil && !latest,
+        quits: (current ?? []) + (previous ?? []))
     }
   }
 
@@ -154,11 +203,7 @@ actor Homebrew {
   /// and the log path on failure; a sudo prompt fails at once because stdin is closed.
   func upgrade(_ token: String) async throws -> URL {
     let log = try newLog(named: "brew-upgrade-\(token)")
-    let (brew, env, timeout) = (try requireBrew(), processEnvironment, timeout)
-    let status = try await serialized {
-      try await Self.execute(
-        brew, ["upgrade", "--cask", token], log: log, env: env, timeout: timeout)
-    }
+    let status = try await run(["upgrade", "--cask", token], log: log)
     detection = nil
     guard status == 0 else {
       let output = (try? String(contentsOf: log, encoding: .utf8)) ?? ""
@@ -176,10 +221,7 @@ actor Homebrew {
 
   private func output(_ arguments: [String]) async throws -> Data {
     let log = try newLog(named: "brew-" + arguments.prefix(1).joined())
-    let (brew, env) = (try requireBrew(), processEnvironment)
-    let status = try await serialized {
-      try await Self.execute(brew, arguments, log: log, env: env, timeout: .seconds(120))
-    }
+    let status = try await run(arguments, log: log)
     let data = try Data(contentsOf: log)
     guard status == 0 else {
       throw HomebrewError.failed(reason: "brew \(arguments[0]) failed.", logPath: log.path)
@@ -188,6 +230,21 @@ actor Homebrew {
     // brew prints warnings before the JSON on stderr; take the JSON object.
     guard let start = data.firstIndex(of: UInt8(ascii: "{")) else { return data }
     return data[start...]
+  }
+
+  /// Downloads the update into brew's cache without touching the installed app, so the
+  /// quit and the upgrade that follow are short.
+  func fetch(_ token: String) async throws {
+    let log = try newLog(named: "brew-fetch-\(token)")
+    guard try await run(["fetch", "--cask", token], log: log) == 0 else {
+      throw HomebrewError.failed(reason: "brew fetch --cask \(token) failed.", logPath: log.path)
+    }
+  }
+
+  /// brew is never interrupted: the job waits for it to exit, holding its lock.
+  private func run(_ arguments: [String], log: URL) async throws -> Int32 {
+    let (brew, env) = (try requireBrew(), processEnvironment)
+    return try await serialized { try await Self.execute(brew, arguments, log: log, env: env) }
   }
 
   private func requireBrew() throws -> URL {
@@ -227,7 +284,7 @@ actor Homebrew {
   }
 
   private static func execute(
-    _ brew: URL, _ arguments: [String], log: URL, env: [String: String], timeout: Duration
+    _ brew: URL, _ arguments: [String], log: URL, env: [String: String]
   ) async throws -> Int32 {
     // Homebrew refuses root, and Updater never escalates it.
     guard geteuid() != 0 else { throw HomebrewError.unavailable }
@@ -241,12 +298,6 @@ actor Homebrew {
     process.standardInput = FileHandle.nullDevice
     process.standardOutput = handle
     process.standardError = handle
-    // A hung brew is asked to stop (SIGTERM, never SIGKILL); the clone covers what it left.
-    let deadline = Task.detached {
-      try? await Task.sleep(for: timeout)
-      if process.isRunning { process.terminate() }
-    }
-    defer { deadline.cancel() }
     return try await withCheckedThrowingContinuation { continuation in
       process.terminationHandler = { continuation.resume(returning: $0.terminationStatus) }
       do { try process.run() } catch {

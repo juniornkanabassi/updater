@@ -56,12 +56,15 @@ enum ReplacementError: LocalizedError, Equatable {
   case verificationFailed(String)
   case restoreFailed(String)
   case outcomeUnknown(String)
+  case incompleteRestore(String)
 
   var errorDescription: String? {
     switch self {
     case .verificationFailed(let reason): "The update was rolled back. \(reason)"
     case .restoreFailed(let backup):
       "The update failed and the original could not be restored. It was kept at \(backup)."
+    case .incompleteRestore(let records):
+      "The update failed. The app was restored, but Homebrew's record is incomplete, so brew may disagree with the disk: \(records)."
     case .outcomeUnknown(let backup):
       "Installer connection lost; your original is kept at \(backup)."
     }

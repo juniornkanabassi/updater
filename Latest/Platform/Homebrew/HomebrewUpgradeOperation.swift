@@ -2,8 +2,9 @@
 
 import AppKit
 
-/// Whether `brew upgrade` of a cask stays on the selected copy: one app, no admin steps, no
-/// signals, and every bundle ID its uninstall step quits has no other copy on disk or running.
+/// Whether `brew upgrade` of a cask stays on the selected copy: both definitions are on the
+/// allow list, the one app is this bundle, and `uninstall quit:` names only this bundle's ID,
+/// which has no other copy on disk or running.
 struct HomebrewScope: Sendable {
   var copies: @Sendable (String) throws -> Set<String> = { try AppStoreInstallGate.live.walk($0) }
   var runningPaths: @Sendable (String) -> [String] = { identifier in
@@ -13,13 +14,19 @@ struct HomebrewScope: Sendable {
   static let live = HomebrewScope()
 
   func installs(_ cask: InstalledCask, at app: URL) -> Bool {
-    guard cask.apps.count == 1, !cask.needsAdministrator, !cask.signals else { return false }
     let selected = Homebrew.canonical(app)
-    return cask.quits.allSatisfy { identifier in
-      guard let found = try? copies(identifier) else { return false }
-      return found.allSatisfy { Homebrew.canonical(URL(fileURLWithPath: $0)) == selected }
-        && runningPaths(identifier).allSatisfy { $0 == selected }
-    }
+    guard cask.allowListed, cask.apps == [selected] else { return false }
+    guard !cask.quits.isEmpty else { return true }
+    guard
+      let data = try? Data(contentsOf: app.appendingPathComponent("Contents/Info.plist")),
+      let info = try? PropertyListSerialization.propertyList(from: data, format: nil)
+        as? [String: Any],
+      let identifier = info["CFBundleIdentifier"] as? String,
+      cask.quits.allSatisfy({ $0 == identifier }),
+      let found = try? copies(identifier)
+    else { return false }
+    return found.allSatisfy { Homebrew.canonical(URL(fileURLWithPath: $0)) == selected }
+      && runningPaths(identifier).allSatisfy { $0 == selected }
   }
 }
 
@@ -58,6 +65,10 @@ final class HomebrewUpgradeOperation: UpdateOperation, @unchecked Sendable {
         self.outcomeOverride = .handedOff
         return self.finish()
       }
+      guard !self.isCancelled else { return self.finish() }
+      // Download first, with the app untouched and still usable; only then quit, so it
+      // cannot be reopened during a long download before brew replaces it.
+      do { try await self.homebrew.fetch(self.token) } catch { return self.finish(with: error) }
       guard !self.isCancelled else { return self.finish() }
       do {
         // The cask's own quit stanza may also run; Updater's bounded quit comes first.
