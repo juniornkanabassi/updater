@@ -31,19 +31,22 @@ if /usr/bin/pgrep -f "$DEST/Contents/MacOS/Updater" > /dev/null; then
 fi
 
 WORK=$(mktemp -d "$INSTALL_ROOT/.updater-install.XXXXXX")
-STAGE="$WORK/Updater.app"; BACKUP="$INSTALL_ROOT/.Updater.app.previous.$RANDOM"
-trap '/bin/rm -rf "$WORK"' EXIT
+STAGE="$WORK/Updater.app"; BACKUP="$WORK/previous/Updater.app"; mkdir "$WORK/previous"
+# One install at a time for this destination.
+LOCK="$INSTALL_ROOT/.updater-install.lock"
+/bin/mkdir "$LOCK" 2>/dev/null || { print -u2 "Another Updater install is running ($LOCK)."; /bin/rm -rf "$WORK"; exit 1; }
+KEEP_WORK=0
+trap '/bin/rmdir "$LOCK"; (( KEEP_WORK )) || /bin/rm -rf "$WORK"' EXIT
 /usr/bin/ditto "$SOURCE_APP" "$STAGE"
 verify_signed "$STAGE"
 if [[ -e "$DEST" ]]; then /bin/mv "$DEST" "$BACKUP"; fi
 if ! /bin/mv "$STAGE" "$DEST"; then
-  if [[ -e "$BACKUP" ]] && /bin/mv "$BACKUP" "$DEST"; then print -u2 "Could not install $DEST; the previous app was restored."; else print -u2 "Could not install $DEST. A previous copy may remain at $BACKUP."; fi
+  if [[ -e "$BACKUP" ]] && /bin/mv "$BACKUP" "$DEST"; then print -u2 "Could not install $DEST; the previous app was restored."; else KEEP_WORK=1; print -u2 "Could not install $DEST. The previous copy is kept at $BACKUP."; fi
   exit 1
 fi
 if ! verify_signed "$DEST"; then
   /bin/rm -rf "$DEST"
-  if [[ -e "$BACKUP" ]] && /bin/mv "$BACKUP" "$DEST"; then print -u2 "Installed signature failed to verify; the previous app was restored."; else print -u2 "Installed signature failed to verify. A previous copy may remain at $BACKUP."; fi
+  if [[ -e "$BACKUP" ]] && /bin/mv "$BACKUP" "$DEST"; then print -u2 "Installed signature failed to verify; the previous app was restored."; else KEEP_WORK=1; print -u2 "Installed signature failed to verify. The previous copy is kept at $BACKUP."; fi
   exit 1
 fi
-[[ ! -e "$BACKUP" ]] || /bin/rm -rf "$BACKUP"
 print "Installed Updater $(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$DEST/Contents/Info.plist") at $DEST"

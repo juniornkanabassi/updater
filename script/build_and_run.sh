@@ -37,9 +37,11 @@ APP_BUNDLE="$DERIVED_DATA/Build/Products/$CONFIGURATION/$APP_NAME.app"
 mkdir -p "$BUILD_DIR" "$MODULE_CACHE"
 
 # Quit only this build of Updater (Sparkle ships its own "Updater" executable, so never kill by name).
-if /usr/bin/pgrep -f "^$APP_BUNDLE/Contents/MacOS/$APP_NAME" >/dev/null; then
-  /usr/bin/osascript -e 'tell application id "com.juniornkanabassi.Updater" to quit' >/dev/null 2>&1 || true
-  for _ in {1..20}; do /usr/bin/pgrep -f "^$APP_BUNDLE/Contents/MacOS/$APP_NAME" >/dev/null || break; sleep 0.5; done
+RUNNING_PID="$(/usr/bin/pgrep -f "^$APP_BUNDLE/Contents/MacOS/$APP_NAME" | head -1 || true)"
+if [[ -n "$RUNNING_PID" ]]; then
+  kill -TERM "$RUNNING_PID" 2>/dev/null || true  # NSApplication treats SIGTERM as a normal quit request
+  for _ in {1..20}; do kill -0 "$RUNNING_PID" 2>/dev/null || break; sleep 0.5; done
+  if kill -0 "$RUNNING_PID" 2>/dev/null; then echo "Updater ($RUNNING_PID) did not quit; not rebuilding." >&2; exit 1; fi
 fi
 
 rm -rf "$RESULT_BUNDLE"
