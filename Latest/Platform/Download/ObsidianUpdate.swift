@@ -1,18 +1,13 @@
-import CryptoKit
 import Foundation
-import Security
 
 enum ObsidianUpdate {
   struct Release: Decodable, Sendable {
     let minimumVersion: String
     let latestVersion: String
-    let downloadUrl: URL
-    let hash: String
-    let signature: String
     var isEarlyAccess = false
 
     private enum CodingKeys: String, CodingKey {
-      case minimumVersion, latestVersion, downloadUrl, hash, signature
+      case minimumVersion, latestVersion
     }
   }
 
@@ -38,21 +33,7 @@ enum ObsidianUpdate {
     return manifest.stable
   }
 
-  /// Obsidian's payload lives in ~/Library/Application Support/obsidian and is shared by
-  /// every installed copy, so Updater installs it only when the selected app is the one
-  /// and only copy.
-  static func payloadIsExclusive(for app: URL, copies: () throws -> Set<String>) -> Bool {
-    (try? copies()) == [app.standardizedFileURL.path]
-  }
-
-  static let liveCopies: @Sendable () throws -> Set<String> = {
-    try AppStoreInstallGate.copies(
-      of: "md.obsidian", in: AppDirectoryStore(updateHandler: {}).URLs)
-  }
-
-  static func check(
-    _ bundle: App.Bundle, copies: @Sendable () throws -> Set<String> = liveCopies
-  ) async throws -> App.Update {
+  static func check(_ bundle: App.Bundle) async throws -> App.Update {
     var request = URLRequest(
       url: URL(
         string:
@@ -69,21 +50,18 @@ enum ObsidianUpdate {
     let settings = (try? Data(contentsOf: settingsURL)).flatMap {
       (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any]
     }
-    let release = try release(
-      from: data, includesEarlyAccess: settings?["insider"] as? Bool == true)
+    return try update(
+      for: bundle,
+      release: release(from: data, includesEarlyAccess: settings?["insider"] as? Bool == true))
+  }
+
+  /// Always a hand-off. Obsidian's update is a payload in ~/Library/Application Support/obsidian
+  /// shared by every installed copy, so Updater cannot prove it touches only the selected app.
+  /// A compatible launcher updates itself; an outdated one needs Obsidian's installer page.
+  static func update(for bundle: App.Bundle, release: Release) throws -> App.Update {
     let version = Version(versionNumber: release.latestVersion, buildNumber: nil)
-    let compatible = try installerIsCompatible(bundle, with: release)
-    let canInstall =
-      compatible && !release.isEarlyAccess
-      && payloadIsExclusive(for: bundle.fileURL, copies: copies)
     let action: App.Update.Action
-    if canInstall {
-      action = .builtIn { app in
-        UpdateQueue.shared.addOperation(ObsidianUpdateOperation(app: app, release: release))
-      }
-    } else if compatible {
-      // Early-access downloads need Obsidian's authenticated session, and a payload
-      // shared by several copies is Obsidian's own to update. Hand off to its updater.
+    if try installerIsCompatible(bundle, with: release) {
       action = .external(label: bundle.name) { app in
         Task { @MainActor in MacApplicationWorkspace.shared.openApplication(at: app.fileURL) }
       }
@@ -95,8 +73,7 @@ enum ObsidianUpdate {
       }
     }
     return App.Update(
-      app: bundle, remoteVersion: version, minimumOSVersion: nil,
-      source: canInstall ? .directDownload : .vendor, date: nil,
+      app: bundle, remoteVersion: version, minimumOSVersion: nil, source: .vendor, date: nil,
       releaseNotes: ReleaseNotesSourceCatalog.releaseNotes(for: bundle, remoteVersion: version),
       updateAction: action)
   }
@@ -109,95 +86,5 @@ enum ObsidianUpdate {
       versionNumber: information?["CFBundleShortVersionString"] as? String, buildNumber: nil)
     let minimum = Version(versionNumber: release.minimumVersion, buildNumber: nil)
     return [.samePrecedence, .newer].contains(installer.comparisonForUpdate(to: minimum))
-  }
-
-  static func verify(_ data: Data, release: Release) throws {
-    guard
-      SHA256.hash(data: data).withUnsafeBytes({ Data($0).base64EncodedString() }) == release.hash,
-      let certificateData = Data(base64Encoded: certificate),
-      let certificate = SecCertificateCreateWithData(nil, certificateData as CFData),
-      let key = SecCertificateCopyKey(certificate),
-      let signature = Data(base64Encoded: release.signature),
-      SecKeyVerifySignature(
-        key, .rsaSignatureMessagePKCS1v15SHA256, data as CFData, signature as CFData, nil)
-    else { throw AppDownloadError.checksumMismatch }
-  }
-
-  // Obsidian's public payload-signing certificate, shipped by its desktop launcher.
-  private static let certificate =
-    "MIIDjzCCAnegAwIBAgIJAOFHLJ2gTCBzMA0GCSqGSIb3DQEBCwUAMF4xCzAJBgNVBAYTAlVTMRMwEQYDVQQIDApTb21lLVN0YXRlMREwDwYDVQQKDAhEeW5hbGlzdDERMA8GA1UECwwIRHluYWxpc3QxFDASBgNVBAMMC2R5bmFsaXN0LmlvMB4XDTE2MDUxNjAyMTA1NFoXDTQwMDUxMDAyMTA1NFowXjELMAkGA1UEBhMCVVMxEzARBgNVBAgMClNvbWUtU3RhdGUxETAPBgNVBAoMCER5bmFsaXN0MREwDwYDVQQLDAhEeW5hbGlzdDEUMBIGA1UEAwwLZHluYWxpc3QuaW8wggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDcodSNp30B0oE+2vRUdr//SGfbDow+67OtGuRYQSjn86bn55fQXhMJb5xgZ0natiCriCyllLWgPf+4PnxGRSJZGbm38QSArb0MWR8/yXA+q+7nZisIsN2dXih8B3APImxJ4A50nsK/C+fl7nYdo04iz3oerP0UhLDrsLbL+9rdmshjB1boLPf6QpAAC57OTPQpFBd2hFoS6xAnIb708SHOndsrWDIFEFVCPDYcme3WF5jznuT05OFGMIX8SZe2jXpg2Vco/1oKRPC7mYFN5B0JTZ7mOH48vB/zPNIsVz8KHh3P9Ru2fC2r3nPDXFGKzcUZneJmXh4LIUVqwdEPw7hvAgMBAAGjUDBOMB0GA1UdDgQWBBTF2xMx8xVDZ2wteJPsHUe0OCu18TAfBgNVHSMEGDAWgBTF2xMx8xVDZ2wteJPsHUe0OCu18TAMBgNVHRMEBTADAQH/MA0GCSqGSIb3DQEBCwUAA4IBAQB6rgBF+DvDHifP+U6ZFqJ4mX1nalEXEPI1jvRZaOheKpkOEBbhkCAosbBEmYxfj8xay1GGgB9nkJk2dodRsGVhrZz+CwGR+hSEfYDQwMBvmzm3OcETfEtvwEAU1P93prbxul2oSWP48AVDDYKepxTZvW/yZcnoHI9XzhLNMYIEvOs+wKWAOF0+BjsIukQouaXs6gklul2J99IqpdPhw2l4l7mkPx8htCbTE47GTraHt2i2mwyBZSKbfqzi73Fj5SFRtZlWJDNPKoWxcFg291B7IHumd5jwAUdVJit3K5Tgt/q4OzwokcDZcrh5lJg0+Kstsz4RDWDbfzTNJuKnoueR"
-}
-
-final class ObsidianUpdateOperation: DownloadUpdateOperation, @unchecked Sendable {
-  private let release: ObsidianUpdate.Release
-  /// The payload folder is shared by every copy, so the lock is the folder, not the URL.
-  override var lockKey: String { "obsidianPayload" }
-  var copies = ObsidianUpdate.liveCopies
-  var openApplication: @MainActor @Sendable (URL) -> Void = {
-    MacApplicationWorkspace.shared.openApplication(at: $0)
-  }
-
-  /// Rechecked under the payload lock right before writing: a second copy may have
-  /// appeared since discovery. Otherwise hand off to Obsidian's own updater.
-  func confirmExclusivePayload() -> Bool {
-    guard ObsidianUpdate.payloadIsExclusive(for: app.fileURL, copies: copies) else {
-      outcomeOverride = .handedOff
-      Task { @MainActor [app, openApplication] in openApplication(app.fileURL) }
-      return false
-    }
-    return true
-  }
-
-  init(app: App.Bundle, release: ObsidianUpdate.Release) {
-    self.release = release
-    super.init(app: app)
-  }
-
-  override func performUpdate() async throws {
-    guard !release.isEarlyAccess,
-      release.latestVersion.range(of: #"^[0-9]+\.[0-9]+\.[0-9]+$"#, options: .regularExpression)
-        != nil,
-      try ObsidianUpdate.installerIsCompatible(app, with: release)
-    else { throw AppDownloadError.invalidMetadata }
-    let version = Version(versionNumber: release.latestVersion, buildNumber: nil)
-    guard app.version.comparisonForUpdate(to: version) == .older else {
-      throw AppDownloadError.versionMismatch
-    }
-    expectedVersion = version
-    let manager = FileManager.default
-    let work = manager.temporaryDirectory.appendingPathComponent(
-      "Updater-Obsidian-" + UUID().uuidString)
-    try manager.createDirectory(at: work, withIntermediateDirectories: true)
-    defer { try? manager.removeItem(at: work) }
-    let archive = try await download(
-      from: release.downloadUrl, into: work, maximumSize: 128 * 1_024 * 1_024)
-    try ObsidianUpdate.verify(Data(contentsOf: archive, options: .mappedIfSafe), release: release)
-    progressState = .extracting(progress: nil)
-    _ = try await InstallerCommand.run("/usr/bin/gzip", ["-d", archive.path])
-    let payload = archive.deletingPathExtension()
-    guard InstalledAppVersion.asarVersion(at: payload) == release.latestVersion else {
-      throw AppDownloadError.versionMismatch
-    }
-    let support = manager.homeDirectoryForCurrentUser.appendingPathComponent(
-      "Library/Application Support/obsidian")
-    let stage = support.appendingPathComponent(".latest-update-" + UUID().uuidString)
-    try manager.createDirectory(at: stage, withIntermediateDirectories: true)
-    defer { Self.removeStageUnlessRecoveryIsNeeded(stage) }
-    let candidate = stage.appendingPathComponent("candidate.asar")
-    try manager.copyItem(at: payload, to: candidate)
-    let target = support.appendingPathComponent("obsidian-\(release.latestVersion).asar")
-    try await withApplicationClosed { [self] in
-      // The vendor may have completed the same update while Latest was downloading.
-      if InstalledAppVersion.asarVersion(at: target) == release.latestVersion { return }
-      guard let current = BundleCollector.collectBundle(at: app.fileURL),
-        current.version.comparisonForUpdate(to: version) == .older,
-        try ObsidianUpdate.installerIsCompatible(current, with: release)
-      else { throw AppDownloadError.versionMismatch }
-      guard confirmExclusivePayload() else { return }
-      try beginCommit()
-      progressState = .installing
-      // Replace a partial same-name payload too; the previous usable version stays intact.
-      try Self.replaceItem(at: target, with: candidate, backupDirectory: stage)
-    }
   }
 }

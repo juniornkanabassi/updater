@@ -145,6 +145,27 @@ final class UpdateQueueTest: XCTestCase {
     XCTAssertEqual((error as? URLError)?.code, .cannotWriteToFile)
   }
 
+  /// Root cause of the "start the receiver simultaneously" crash: finishing an operation from
+  /// another thread while start() is still running announced a readiness change, and the
+  /// queue could start it again. Production installers finish from background tasks too.
+  func testFinishingDuringStartNeverStartsTheOperationAgain() async {
+    XCTAssertFalse(
+      StatefulOperation.keyPathsForValuesAffectingValue(forKey: "isReady").contains("state"),
+      "state changes are not readiness changes")
+    let queue = UpdateQueue()
+    queue.maxConcurrentOperationCount = 8
+    for _ in 0..<200 {
+      let finished = expectation(description: "finished")
+      // Finishes from another thread while its own start() is still on the stack, as a
+      // fast-failing background installer does.
+      let operation = RacingOperation()
+      operation.completionBlock = { finished.fulfill() }
+      queue.addOperation(operation)
+      await fulfillment(of: [finished], timeout: 2)
+      XCTAssertEqual(operation.starts.withLock { $0 }, 1)
+    }
+  }
+
   func testBothPerAppFeedsReceiveSubsequentUpdates() async {
     let queue = UpdateQueue()
     let identifier = URL(fileURLWithPath: "/Applications/Feeds-\(UUID().uuidString).app")
@@ -185,5 +206,25 @@ private final class TestUpdateOperation: UpdateOperation, @unchecked Sendable {
 
   func complete() {
     finish()
+  }
+}
+
+private final class RacingOperation: UpdateOperation, @unchecked Sendable {
+  let starts = Mutex(0)
+  init() {
+    super.init(
+      bundleIdentifier: "com.example.race",
+      appIdentifier: URL(fileURLWithPath: "/tmp/Race-\(UUID()).app"))
+  }
+  override func execute() {
+    starts.withLock { $0 += 1 }
+    super.execute()
+    let done = DispatchSemaphore(value: 0)
+    DispatchQueue.global().async {
+      self.finish(with: URLError(.cannotWriteToFile))
+      self.finish()  // a second finish must not announce anything again
+      done.signal()
+    }
+    done.wait()  // start() is still running while the operation finishes
   }
 }

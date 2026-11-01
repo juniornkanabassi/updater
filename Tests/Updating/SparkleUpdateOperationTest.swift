@@ -312,6 +312,53 @@ final class SparkleUpdateOperationTest: XCTestCase {
     XCTAssertEqual(try FixtureApp.digest(app), before, "restored byte-for-byte")
   }
 
+  /// Sol R3 (fourth pass): finalizing is single-flight. A second finalizer during the
+  /// rollback waits for it, and completion is published once, after the restore.
+  func testConcurrentFinalizersWaitForOneRollbackAndPublishOnce() async throws {
+    let root = try disposableDirectory()
+    let app = try FixtureApp.make(in: root, version: "1.0")
+    let before = try FixtureApp.digest(app)
+    let operation = SparkleUpdateOperation(
+      bundleIdentifier: FixtureApp.identifier, appIdentifier: app)
+    operation.requiresTeam = false
+    // The relaunched bad version takes a moment to quit, keeping the rollback in flight.
+    let quitting = Mutex(true)
+    operation.lifecycle = AppLifecycle(
+      runningApps: { _ in
+        quitting.withLock { $0 }
+          ? [
+            .init(
+              terminate: {
+                DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) {
+                  quitting.withLock { $0 = false }
+                }
+              }, isTerminated: { !quitting.withLock { $0 } })
+          ] : []
+      },
+      confirmQuit: { _ in true }, reopen: { _ in }, timeout: .seconds(5))
+    try operation.takeBackup()
+    operation.expectedVersion = Version(versionNumber: "1.2", buildNumber: "1.2")
+    let payload = try FixtureApp.make(in: root.appendingPathComponent("payload"), version: "1.1")
+    try FileManager.default.removeItem(at: app)
+    try FileManager.default.copyItem(at: payload, to: app)
+    let completions = Mutex(0)
+    let restoredAtCompletion = Mutex(false)
+    operation.completionBlock = {
+      completions.withLock { $0 += 1 }
+      restoredAtCompletion.withLock { $0 = (try? FixtureApp.digest(app)) == before }
+    }
+    let first = Task { await operation.finalize(nil) }
+    try await Task.sleep(for: .milliseconds(50))
+    await operation.finalize(URLError(.cannotConnectToHost))  // a second, late finalizer
+    XCTAssertEqual(try FixtureApp.digest(app), before, "it returned only after the restore")
+    await first.value
+    for _ in 0..<100 where completions.withLock({ $0 }) == 0 {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    XCTAssertEqual(completions.withLock { $0 }, 1)
+    XCTAssertTrue(restoredAtCompletion.withLock { $0 })
+  }
+
   /// Sol R1 + R6 (second pass): a relaunched bad version is quit before the clone goes back,
   /// and the app Updater quit is reopened exactly once after a restore or an error, but not
   /// when Sparkle already relaunched it.

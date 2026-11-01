@@ -145,13 +145,6 @@ final class AppDownloadUpdateTest: XCTestCase {
       try AppDownloadUpdateOperation.validate(
         candidate: directory.appendingPathComponent("Delta.app"),
         replacing: delta, expectedVersion: release.version)
-      let obsidian = try ObsidianUpdate.release(
-        from: Data(
-          contentsOf: directory.deletingLastPathComponent().appendingPathComponent(
-            "obsidian-release.json")),
-        includesEarlyAccess: false)
-      try ObsidianUpdate.verify(
-        Data(contentsOf: directory.appendingPathComponent("obsidian.asar.gz")), release: obsidian)
     }.value
   }
 
@@ -221,38 +214,26 @@ final class AppDownloadUpdateTest: XCTestCase {
       FileManager.default.fileExists(atPath: stage.appendingPathComponent("original").path))
   }
 
-  /// Sol R6: Obsidian's payload is shared by every copy, so it installs only with one copy.
-  func testObsidianInstallsItsSharedPayloadOnlyWithASingleCopy() async {
-    let selected = URL(fileURLWithPath: "/Applications/Obsidian.app")
-    XCTAssertTrue(ObsidianUpdate.payloadIsExclusive(for: selected, copies: { [selected.path] }))
-    XCTAssertFalse(
-      ObsidianUpdate.payloadIsExclusive(
-        for: selected, copies: { [selected.path, "/Users/Shared/Obsidian.app"] }))
-    XCTAssertFalse(
-      ObsidianUpdate.payloadIsExclusive(for: selected, copies: { ["/Users/Shared/Obsidian.app"] }),
-      "the only copy must be the selected one")
-    XCTAssertFalse(
-      ObsidianUpdate.payloadIsExclusive(
-        for: selected, copies: { throw CocoaError(.fileReadNoPermission) }))
+  /// Sol R4 (fourth pass): Obsidian's payload is shared by every installed copy, so its
+  /// update is always handed to Obsidian's own updater, never installed by Updater.
+  func testObsidianIsAlwaysHandedOff() throws {
+    let root = try temporaryDirectory()
+    let app = try FixtureApp.make(
+      in: root, name: "Obsidian", identifier: "md.obsidian", version: "1.5.0", signed: false)
+    // Built directly: the collector would read the user's real Obsidian payload version.
     let bundle = App.Bundle(
-      version: Version(versionNumber: "1.0.0", buildNumber: nil), name: "Obsidian",
-      bundleIdentifier: "md.obsidian", fileURL: selected, source: .none)
-    let release = ObsidianUpdate.Release(
-      minimumVersion: "1.0.0", latestVersion: "1.1.0",
-      downloadUrl: URL(string: "https://example.com/p.asar.gz")!, hash: "h", signature: "s")
-    let operation = ObsidianUpdateOperation(app: bundle, release: release)
-    XCTAssertEqual(operation.lockKey, "obsidianPayload")
-    // Sol R3 (second pass): the pre-write recheck hands off if a copy appeared meanwhile.
-    let opened = Mutex<[URL]>([])
-    operation.openApplication = { url in opened.withLock { $0.append(url) } }
-    operation.copies = { [selected.path] }
-    XCTAssertTrue(operation.confirmExclusivePayload())
-    XCTAssertNil(operation.outcomeOverride)
-    operation.copies = { [selected.path, "/Users/Shared/Obsidian.app"] }
-    XCTAssertFalse(operation.confirmExclusivePayload())
-    XCTAssertEqual(operation.outcomeOverride, .handedOff)
-    for _ in 0..<50 where opened.withLock({ $0 }).isEmpty { await Task.yield() }
-    XCTAssertEqual(opened.withLock { $0 }, [selected])
+      version: Version(versionNumber: "1.5.0", buildNumber: nil), name: "Obsidian",
+      bundleIdentifier: "md.obsidian", fileURL: app, source: .none)
+    for minimum in ["1.0.0", "2.0.0"] {
+      let release = try JSONDecoder().decode(
+        ObsidianUpdate.Release.self,
+        from: Data(#"{"minimumVersion":"\#(minimum)","latestVersion":"1.6.0"}"#.utf8))
+      let update = try ObsidianUpdate.update(for: bundle, release: release)
+      XCTAssertEqual(
+        App(bundle: bundle, update: .success(update), isIgnored: false).capability, .handOff,
+        minimum)
+      XCTAssertEqual(update.source, .vendor)
+    }
   }
 
   func testObsidianPreservesStableAndExistingEarlyAccessChannels() throws {
@@ -268,7 +249,6 @@ final class AppDownloadUpdateTest: XCTestCase {
       from: data,
       includesEarlyAccess: true)
     XCTAssertEqual(beta.latestVersion, "1.14.4")
-    XCTAssertThrowsError(try ObsidianUpdate.verify(Data("tampered".utf8), release: beta))
   }
 
   func testCandidateCompatibilityRejectsNewerOSAndWrongArchitecture() throws {

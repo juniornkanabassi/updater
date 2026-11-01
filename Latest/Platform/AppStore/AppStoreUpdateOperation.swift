@@ -51,6 +51,9 @@ final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
   @MainActor private var observerIdentifier: String?
   @MainActor private var artifacts = AppStoreDownloadArtifacts()
   @MainActor private var isInstalling = false
+  /// The purchase returned downloads: CommerceKit now owns the job until it reports removal.
+  @MainActor private var awaitingDownload = false
+  @MainActor private var published = false
 
   /// Seams for tests: the gate runs before `prepare` (the helper) and any purchase.
   var installGate: @Sendable (URL, String) async -> Bool = {
@@ -72,6 +75,17 @@ final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
   }
   /// False only for ad-hoc signed test fixtures.
   var requiresTeam = true
+  /// Stops CommerceKit's purchase and download; tests cannot reach the App Store.
+  var cancelStoreActivity: @MainActor @Sendable (UInt64) -> Void = { identifier in
+    CKPurchaseController.shared().cancelPurchase(withProductID: NSNumber(value: identifier))
+    let queue = CKDownloadQueue.shared()
+    if let download = queue.download(forItemIdentifier: identifier) {
+      queue.cancelDownload(download, promptToConfirm: false, askToDelete: false)
+    }
+  }
+  var hasPendingDownload: @MainActor @Sendable (UInt64) -> Bool = {
+    CKDownloadQueue.shared().download(forItemIdentifier: $0) != nil
+  }
   /// Updater's own clone of the exact target: CommerceKit can install by itself on success.
   private let protection: ExternalInstallGuard
 
@@ -93,49 +107,47 @@ final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
 
   override func execute() {
     super.execute()
+    // This task owns the job until something else (the purchase or the download queue)
+    // takes over; cancel() only signals, and each step below checks it.
     Task { @MainActor in
-      guard !self.isCancelled else {
-        self.finish()
-        return
-      }
+      guard !self.isCancelled else { return self.finishOnMain() }
       // Fail closed before any helper or CommerceKit request if the install could land
       // on another copy of this app. Before macOS 26.1 CommerceKit installs by itself,
       // with no quit check, backup or verification, so that route always hands off.
       guard self.usesVerifiedHelperInstall, await self.allowsInstall() else {
         self.handOff()
-        self.finishOnMain()
-        return
+        return self.finishOnMain()
       }
-      guard !self.isCancelled, !self.isFinished else { return }
+      guard !self.isCancelled else { return self.finishOnMain() }
       // Recheck at execution time as well: approval or daemon health may have
       // changed while the operation waited in the queue.
       do { try await self.prepare() } catch {
-        guard !self.isCancelled, !self.isFinished else { return }
-        self.preparationFailed(error)
-        return
+        guard !self.isCancelled else { return self.finishOnMain() }
+        return self.preparationFailed(error)
       }
-      guard !self.isCancelled, !self.isFinished else { return }
+      guard !self.isCancelled else { return self.finishOnMain() }
       // Before CommerceKit or the helper can touch the app: quit it with a time limit
       // (a refusal means no purchase) and take Updater's own clone (none means no purchase).
+      // A quit that completed is always undone by reopening, however the job ends.
       do {
         self.protection.noteQuit(
           wasRunning: try await self.lifecycle.quit(
             at: self.installURL, name: self.installURL.deletingPathExtension().lastPathComponent))
       } catch is CancellationError {
-        self.finishOnMain()
-        return
+        return self.finishOnMain()
       } catch {
-        self.finish(with: error)
-        return
+        return self.finish(with: error)
       }
+      guard !self.isCancelled else { return self.finishOnMain() }
       do { try self.protection.takeClone() } catch {
         self.handOff()
-        self.finishOnMain()
-        return
+        return self.finishOnMain()
       }
-      guard !self.isCancelled, !self.isFinished else {
-        await self.finalize(nil)
-        return
+      // Discovery can change during preparation and the quit: check again right before
+      // the purchase, which is the first step that can change the app.
+      guard !self.isCancelled, await self.allowsInstall() else {
+        if !self.isCancelled { self.handOff() }
+        return await self.finalize(nil)
       }
       await self.purchase(self)
     }
@@ -162,6 +174,7 @@ final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
       appStoreUpdateLogger.notice(
         "Purchase completed=\(completed), downloads=\(downloads.count)"
       )
+      awaitingDownload = !downloads.isEmpty
       if downloads.isEmpty, !isFinished, !isInstalling {
         await finalize(LatestError.updateInfoUnavailable)
       }
@@ -176,8 +189,11 @@ final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
   /// and reopens an app Updater quit; then the result is published.
   @MainActor func finalize(_ error: Error?) async {
     guard !isFinished else { return }
+    // Every caller waits for the same settlement; the result is published once, after it.
     let result = await protection.settle(
       error: error, expected: expectedVersion, requiresTeam: requiresTeam, lifecycle: lifecycle)
+    guard !published else { return }
+    published = true
     if let result { finish(with: result) } else { finish() }
   }
 
@@ -211,19 +227,16 @@ final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
   override func cancel() {
     super.cancel()
     guard isCancelled else { return }
+    // Only a signal. Whoever owns the job (the execution task, the purchase, or the
+    // download queue's removal event) finishes it once nothing can still change the app,
+    // so the clone and the lock are kept until then.
     Task { @MainActor in
-      CKPurchaseController.shared().cancelPurchase(
-        withProductID: NSNumber(value: self.itemIdentifier))
-      self.cancelPendingDownload()
-      // installer cannot safely be interrupted halfway through replacing an app.
-      if !self.isInstalling { await self.finalize(nil) }
-    }
-  }
-
-  @MainActor private func cancelPendingDownload() {
-    let queue = CKDownloadQueue.shared()
-    if let download = queue.download(forItemIdentifier: itemIdentifier) {
-      queue.cancelDownload(download, promptToConfirm: false, askToDelete: false)
+      self.cancelStoreActivity(self.itemIdentifier)
+      // After the purchase, a cancelled download is reported as removed. With no download
+      // left to report, nothing else would finish the job.
+      if self.awaitingDownload, !self.isInstalling, !self.hasPendingDownload(self.itemIdentifier) {
+        await self.finalize(nil)
+      }
     }
   }
 

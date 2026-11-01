@@ -249,6 +249,8 @@ final class AppStoreInstallGateTest: XCTestCase {
     operation.requiresTeam = false
     operation.lifecycle = target.lifecycle(timeout: .milliseconds(300))
     operation.purchase = purchase
+    operation.cancelStoreActivity = { _ in }
+    operation.hasPendingDownload = { _ in true }
     operation.expectedVersion = Version(versionNumber: "1.1", buildNumber: nil)
     return operation
   }
@@ -318,5 +320,105 @@ final class AppStoreInstallGateTest: XCTestCase {
     await run(uncloneable)
     XCTAssertEqual(uncloneable.outcomeOverride, .handedOff)
     XCTAssertEqual(purchases.withLock { $0 }, 0)
+  }
+
+  /// Sol R2 (fourth pass): the gate runs again after preparation and the quit, right before
+  /// the purchase; failing then means no purchase, the clone discarded and the app reopened.
+  func testGateIsRecheckedRightBeforeThePurchase() async throws {
+    let root = try disposableDirectory()
+    let app = try FixtureApp.make(in: root, version: "1.0")
+    let before = try FixtureApp.digest(app)
+    let target = FakeTarget(running: true)
+    let purchases = Mutex(0)
+    let checks = Mutex(0)
+    let operation = nativeOperation(for: app, target: target) { _ in purchases.withLock { $0 += 1 }
+    }
+    operation.installGate = { _, _ in
+      checks.withLock {
+        $0 += 1
+        return $0 == 1
+      }
+    }
+    await run(operation)
+    XCTAssertEqual(checks.withLock { $0 }, 2)
+    XCTAssertEqual(purchases.withLock { $0 }, 0)
+    XCTAssertEqual(operation.outcomeOverride, .handedOff)
+    XCTAssertEqual(target.reopens.withLock { $0 }, 1)
+    XCTAssertEqual(try FixtureApp.digest(app), before)
+  }
+
+  /// Sol R1 (fourth pass): cancel only signals. A cancel during the quit waits for the quit
+  /// to finish and reopens the app; a cancel during CommerceKit's install keeps the clone
+  /// and the job until the install reports, then verifies and restores.
+  func testCancelWaitsForQuitAndNativeInstallToSettle() async throws {
+    let root = try disposableDirectory()
+    let app = try FixtureApp.make(in: root, version: "1.0")
+    let before = try FixtureApp.digest(app)
+
+    let slow = SlowQuitTarget()
+    let purchases = Mutex(0)
+    let quitting = nativeOperation(for: app, target: FakeTarget(running: false)) { _ in
+      purchases.withLock { $0 += 1 }
+    }
+    quitting.lifecycle = slow.lifecycle
+    let quitDone = expectation(description: "finished")
+    quitting.completionBlock = { quitDone.fulfill() }
+    let queue = UpdateQueue()
+    queue.addOperation(quitting)
+    while !slow.asked.withLock({ $0 }) { try await Task.sleep(for: .milliseconds(5)) }
+    quitting.cancel()
+    try await Task.sleep(for: .milliseconds(100))
+    XCTAssertFalse(quitting.isFinished, "the quit is still in progress")
+    XCTAssertTrue(queue.contains(app), "the target stays locked")
+    await fulfillment(of: [quitDone], timeout: 5)
+    XCTAssertEqual(purchases.withLock { $0 }, 0)
+    XCTAssertEqual(slow.reopens.withLock { $0 }, 1, "a completed quit is undone")
+
+    let release = AsyncStream<Void>.makeStream()
+    let payload = try FixtureApp.make(in: root.appendingPathComponent("payload"), version: "0.9")
+    let installing = nativeOperation(for: app, target: FakeTarget(running: false)) { operation in
+      for await _ in release.stream {}
+      // CommerceKit finished its install despite the cancel, and left a bad bundle.
+      try? FileManager.default.removeItem(at: app)
+      try? FileManager.default.copyItem(at: payload, to: app)
+      await operation.nativeInstallCompleted()
+    }
+    let installDone = expectation(description: "finished")
+    installing.completionBlock = { installDone.fulfill() }
+    queue.addOperation(installing)
+    try await Task.sleep(for: .milliseconds(300))
+    installing.cancel()
+    try await Task.sleep(for: .milliseconds(100))
+    XCTAssertFalse(installing.isFinished, "CommerceKit may still change the app")
+    release.continuation.finish()
+    await fulfillment(of: [installDone], timeout: 10)
+    XCTAssertEqual(try FixtureApp.digest(app), before, "verified and restored")
+  }
+}
+
+/// An app that takes a moment to quit after being asked.
+private final class SlowQuitTarget: Sendable {
+  let asked = Mutex(false)
+  let terminated = Mutex(false)
+  let reopens = Mutex(0)
+
+  var lifecycle: AppLifecycle {
+    AppLifecycle(
+      runningApps: { [self] _ in
+        terminated.withLock { $0 }
+          ? []
+          : [
+            .init(
+              terminate: { [self] in
+                asked.withLock { $0 = true }
+                DispatchQueue.global().asyncAfter(deadline: .now() + 0.4) {
+                  self.terminated.withLock { $0 = true }
+                }
+              }, isTerminated: { [self] in terminated.withLock { $0 } })
+          ]
+      },
+      confirmQuit: { _ in true },
+      reopen: { [self] _ in reopens.withLock { $0 += 1 } },
+      timeout: .seconds(5))
   }
 }

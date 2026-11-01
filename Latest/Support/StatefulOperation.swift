@@ -16,7 +16,10 @@ class StatefulOperation: Operation, @unchecked Sendable {
 
   override class func keyPathsForValuesAffectingValue(forKey key: String) -> Set<String> {
     switch key {
-    case "isFinished", "isExecuting", "isReady":
+    // Not isReady: readiness depends on dependencies only. Announcing a readiness change on
+    // every state change (including finishing while start() is still running) invites the
+    // queue to start the operation again.
+    case "isFinished", "isExecuting":
       return ["state"]
 
     default:
@@ -53,6 +56,8 @@ class StatefulOperation: Operation, @unchecked Sendable {
     }
 
     set(newState) {
+      // Announce real transitions only; a repeated finish must not re-announce the state.
+      guard stateLock.withLock({ _state != .finished && _state != newState }) else { return }
       self.willChangeValue(forKey: "state")
 
       self.stateLock.withLock {

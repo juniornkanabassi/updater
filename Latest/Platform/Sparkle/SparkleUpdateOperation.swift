@@ -26,6 +26,7 @@ final class SparkleUpdateOperation: UpdateOperation, @unchecked Sendable {
   var requiresTeam = true
   /// Updater's own clone of the exact target, taken before Sparkle can commit.
   private let protection: ExternalInstallGuard
+  @MainActor private var published = false
 
   override init(bundleIdentifier: String, appIdentifier: App.Bundle.Identifier) {
     protection = ExternalInstallGuard(target: appIdentifier)
@@ -81,8 +82,11 @@ final class SparkleUpdateOperation: UpdateOperation, @unchecked Sendable {
   /// URL (restoring the clone on failure) and reopens an app Updater quit, then the result
   /// is published.
   @MainActor func finalize(_ error: Error?) async {
+    // Every caller waits for the same settlement; the result is published once, after it.
     let result = await protection.settle(
       error: error, expected: expectedVersion, requiresTeam: requiresTeam, lifecycle: lifecycle)
+    guard !published else { return }
+    published = true
     if let result { finish(with: result) } else { finish() }
   }
 

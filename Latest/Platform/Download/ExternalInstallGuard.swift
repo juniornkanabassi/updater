@@ -10,6 +10,9 @@ final class ExternalInstallGuard: Sendable {
   let target: URL
   private let clone = Mutex<(directory: URL, original: BundleIdentity)?>(nil)
   private let quitByUpdater = Mutex(false)
+  /// The one settlement every caller awaits, so a second finalizer cannot return while the
+  /// first is still restoring.
+  private let settlement = Mutex<Task<Error?, Never>?>(nil)
 
   init(target: URL) { self.target = target }
 
@@ -42,6 +45,22 @@ final class ExternalInstallGuard: Sendable {
   /// restore failure naming where the clone was kept.
   @MainActor
   func settle(
+    error: Error?, expected: Version?, requiresTeam: Bool, lifecycle: AppLifecycle
+  ) async -> Error? {
+    let task = settlement.withLock { current -> Task<Error?, Never> in
+      if let current { return current }
+      let task = Task { @MainActor in
+        await self.performSettle(
+          error: error, expected: expected, requiresTeam: requiresTeam, lifecycle: lifecycle)
+      }
+      current = task
+      return task
+    }
+    return await task.value
+  }
+
+  @MainActor
+  private func performSettle(
     error: Error?, expected: Version?, requiresTeam: Bool, lifecycle: AppLifecycle
   ) async -> Error? {
     var result = error
