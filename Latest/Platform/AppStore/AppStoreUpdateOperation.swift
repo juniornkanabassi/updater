@@ -279,14 +279,15 @@ final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
   @MainActor func installThroughHelper(_ package: URL, receipt: Data) async {
     isInstalling = true
     do {
-      try await lifecycle.withApplicationClosed(
-        at: installURL, name: installURL.deletingPathExtension().lastPathComponent
-      ) { [self] in
-        try await installPreservedPackage(package, receipt: receipt)
-      }
+      // The app may have been reopened during the download. Quit it again, but leave the
+      // reopen to the guard: it happens after settlement, never while the outcome is unknown.
+      protection.noteQuit(
+        wasRunning: try await lifecycle.quit(
+          at: installURL, name: installURL.deletingPathExtension().lastPathComponent))
+      try await installPreservedPackage(package, receipt: receipt)
       await finalize(nil)
     } catch {
-      if case LatestError.installHelperCommunicationFailed = error {
+      if InstallHelper.isLostReply(error) {
         await finalizeAfterLostReply()
       } else {
         // The pre-install gate hands off by throwing a cancellation; that is not a failure.

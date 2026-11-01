@@ -14,16 +14,17 @@ enum FixtureApp {
   @discardableResult
   static func make(
     in directory: URL, name: String = "Fixture", identifier: String = identifier,
-    version: String, launches: Bool = true, signed: Bool = true
+    version: String, launches: Bool = true, signed: Bool = true, extraInfo: [String: Any] = [:]
   ) throws -> URL {
     let app = directory.appendingPathComponent(name + ".app")
     let macOS = app.appendingPathComponent("Contents/MacOS")
     try FileManager.default.createDirectory(at: macOS, withIntermediateDirectories: true)
-    let info: [String: Any] = [
+    var info: [String: Any] = [
       "CFBundleIdentifier": identifier, "CFBundleName": name, "CFBundleExecutable": name,
       "CFBundleShortVersionString": version, "CFBundleVersion": version,
       "CFBundlePackageType": "APPL", "LSBackgroundOnly": true, "LSMinimumSystemVersion": "26.0",
     ]
+    info.merge(extraInfo) { _, new in new }
     try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
       .write(to: app.appendingPathComponent("Contents/Info.plist"))
     try FileManager.default.copyItem(

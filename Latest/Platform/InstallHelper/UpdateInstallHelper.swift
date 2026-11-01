@@ -10,6 +10,10 @@ import Foundation
 import Security
 import ServiceManagement
 import Synchronization
+import os
+
+private let installHelperLogger = Logger(
+  subsystem: "com.juniornkanabassi.Updater", category: "InstallHelper")
 
 /// Manages the privileged helper daemon used to install App Store updates via XPC.
 enum InstallHelper {
@@ -104,6 +108,24 @@ enum InstallHelper {
 
   // MARK: - Package Installation
 
+  /// XPC transport errors (interrupted, invalidated, no proxy) mean the reply was lost while
+  /// the installer may still run. They become one error the caller handles as such; the
+  /// original is logged for diagnosis. Errors the helper itself reports are not passed here.
+  static func lostReply(_ error: Error) -> Error {
+    installHelperLogger.error(
+      "Install helper connection lost: \((error as NSError).domain, privacy: .public) \((error as NSError).code)"
+    )
+    return LatestError.installHelperCommunicationFailed
+  }
+
+  /// Also recognises a raw XPC transport error that reached the caller un-normalised.
+  static func isLostReply(_ error: Error) -> Bool {
+    if case LatestError.installHelperCommunicationFailed = error { return true }
+    let nsError = error as NSError
+    return nsError.domain == NSCocoaErrorDomain
+      && [NSXPCConnectionInterrupted, NSXPCConnectionInvalid].contains(nsError.code)
+  }
+
   /// Whether the running helper answers and reports no installation in progress; nil when
   /// it cannot be reached. Used after a lost reply, when the installer may still be running.
   static func isIdle() async -> Bool? {
@@ -151,7 +173,8 @@ enum InstallHelper {
 
       guard
         let proxy = connection.remoteObjectProxyWithErrorHandler({ error in
-          replyGate.resume(with: .failure(error))
+          // A transport failure is a lost reply, whichever handler reports it first.
+          replyGate.resume(with: .failure(lostReply(error)))
         }) as? UpdateInstallerProtocol
       else {
         replyGate.resume(with: .failure(LatestError.installHelperCommunicationFailed))

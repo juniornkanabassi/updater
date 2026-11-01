@@ -1,6 +1,27 @@
 // Copyright © 2026 Junior Nkana Bassi. Licensed under GPL-3.0; see LICENSE.md.
 
-import Foundation
+import AppKit
+
+/// Whether `brew upgrade` of a cask stays on the selected copy: one app, no admin steps, no
+/// signals, and every bundle ID its uninstall step quits has no other copy on disk or running.
+struct HomebrewScope: Sendable {
+  var copies: @Sendable (String) throws -> Set<String> = { try AppStoreInstallGate.live.walk($0) }
+  var runningPaths: @Sendable (String) -> [String] = { identifier in
+    NSRunningApplication.runningApplications(withBundleIdentifier: identifier)
+      .compactMap { $0.bundleURL.map(Homebrew.canonical) }
+  }
+  static let live = HomebrewScope()
+
+  func installs(_ cask: InstalledCask, at app: URL) -> Bool {
+    guard cask.apps.count == 1, !cask.needsAdministrator, !cask.signals else { return false }
+    let selected = Homebrew.canonical(app)
+    return cask.quits.allSatisfy { identifier in
+      guard let found = try? copies(identifier) else { return false }
+      return found.allSatisfy { Homebrew.canonical(URL(fileURLWithPath: $0)) == selected }
+        && runningPaths(identifier).allSatisfy { $0 == selected }
+    }
+  }
+}
 
 /// Runs `brew upgrade --cask <token>` for a cask that owns exactly this bundle, with the
 /// same protection as Sparkle and the App Store: quit first, Updater's own clone, full
@@ -9,6 +30,7 @@ final class HomebrewUpgradeOperation: UpdateOperation, @unchecked Sendable {
   private let token: String
   private let protection: ExternalInstallGuard
   var homebrew = Homebrew.shared
+  var scope = HomebrewScope.live
   var lifecycle = AppLifecycle.live
   /// False only for ad-hoc signed test fixtures.
   var requiresTeam = true
@@ -31,7 +53,7 @@ final class HomebrewUpgradeOperation: UpdateOperation, @unchecked Sendable {
       // Recheck ownership with a fresh brew scan: brew must still own exactly this URL and
       // nothing else, and must not need sudo.
       let cask = try? await self.homebrew.owningCask(of: self.appIdentifier, fresh: true)
-      guard let cask, cask.token == self.token, cask.apps.count == 1, !cask.needsAdministrator
+      guard let cask, cask.token == self.token, self.scope.installs(cask, at: self.appIdentifier)
       else {
         self.outcomeOverride = .handedOff
         return self.finish()
@@ -48,7 +70,9 @@ final class HomebrewUpgradeOperation: UpdateOperation, @unchecked Sendable {
       } catch {
         return self.finish(with: error)
       }
-      do { try self.protection.takeClone() } catch {
+      // brew's Caskroom record is cloned with the app so a rollback leaves them agreeing.
+      let caskroom = await self.homebrew.caskroom(of: self.token)
+      do { try self.protection.takeClone(companions: [caskroom].compactMap { $0 }) } catch {
         self.outcomeOverride = .handedOff
         return self.finish()
       }
@@ -68,7 +92,7 @@ final class HomebrewUpgradeOperation: UpdateOperation, @unchecked Sendable {
     // A failed brew run is undone whatever it left behind.
     let result = await protection.settle(
       error: error, expected: expectedVersion, requiresTeam: requiresTeam, lifecycle: lifecycle,
-      restoreIfChanged: true)
+      restoreOnInstallerFailure: true)
     guard !published else { return }
     published = true
     if let result { finish(with: result) } else { finish() }

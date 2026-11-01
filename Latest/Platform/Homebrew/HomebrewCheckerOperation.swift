@@ -6,7 +6,7 @@
 //  Copyright © 2022 Max Langer. All rights reserved.
 //
 
-import Foundation
+import AppKit
 
 /// Async update checking via Homebrew. The historical type name is retained to
 /// avoid needless source churn, but checking is no longer an Operation.
@@ -23,15 +23,18 @@ final class HomebrewCheckerOperation: Sendable {
   }
 
   /// A cask owns the app only if its installed app artifact is exactly this bundle. Then
-  /// Updater runs brew itself; otherwise the public catalogue route below applies.
-  private func ownedUpdate() async -> App.Update? {
+  /// brew is the update route, whatever other source the bundle has; Updater runs it only
+  /// when the upgrade provably stays on this copy, and otherwise hands off with the command.
+  static func ownedUpdate(
+    for bundle: App.Bundle, homebrew: Homebrew?, scope: HomebrewScope = .live
+  ) async -> App.Update? {
     guard let homebrew, let cask = try? await homebrew.owningCask(of: bundle.fileURL) else {
       return nil
     }
     let current = (try? await homebrew.outdatedVersion(of: cask.token)) ?? nil
     let remote = current.map(VersionParser.parse(combinedVersionNumber:)) ?? bundle.version
     let action: App.Update.Action
-    if cask.apps.count == 1, !cask.needsAdministrator {
+    if scope.installs(cask, at: bundle.fileURL) {
       // Cask versions can carry a build suffix the bundle lacks; check the version number.
       let expected = Version(versionNumber: remote.versionNumber, buildNumber: nil)
       action = .builtIn { app in
@@ -39,9 +42,13 @@ final class HomebrewCheckerOperation: Sendable {
           HomebrewUpgradeOperation(app: app, token: cask.token, expectedVersion: expected))
       }
     } else {
-      // Sudo casks and casks with several apps are not installed by Updater in this round.
-      action = .external(label: "Terminal") { _ in
+      // Admin casks, several apps, or quit/signal hooks reaching other copies: the user runs
+      // brew in Terminal, with the exact command ready on the clipboard.
+      let command = adminCommand(for: cask.token)
+      action = .external(label: handOffLabel) { _ in
         Task { @MainActor in
+          NSPasteboard.general.clearContents()
+          NSPasteboard.general.setString(command, forType: .string)
           MacApplicationWorkspace.shared.openApplication(
             at: URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app"))
         }
@@ -52,6 +59,11 @@ final class HomebrewCheckerOperation: Sendable {
       releaseNotes: ReleaseNotesSourceCatalog.releaseNotes(for: bundle, remoteVersion: remote),
       updateAction: action)
   }
+
+  /// Shown as "Open Terminal (brew command copied)".
+  static let handOffLabel = "Terminal (brew command copied)"
+
+  static func adminCommand(for token: String) -> String { "brew upgrade --cask \(token)" }
 
   func check() async throws -> App.Update {
     try Task.checkCancellation()
@@ -72,7 +84,7 @@ final class HomebrewCheckerOperation: Sendable {
           UpdateQueue.shared.addOperation(AppDownloadUpdateOperation(app: app, source: source))
         })
     }
-    if let owned = await ownedUpdate() { return owned }
+    if let owned = await Self.ownedUpdate(for: bundle, homebrew: homebrew) { return owned }
     guard let repository else {
       throw LatestError.updateInfoUnavailable
     }

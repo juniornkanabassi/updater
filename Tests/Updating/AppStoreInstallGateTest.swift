@@ -479,6 +479,78 @@ final class AppStoreInstallGateTest: XCTestCase {
       }
     }
   }
+
+  /// Queued Q1 (0.2.1 inspection): a raw XPC transport error, arriving before the
+  /// interruption handler, is still a lost reply: nothing is restored while unknown.
+  @MainActor
+  func testRawXPCTransportErrorIsTreatedAsALostReply() async throws {
+    let raw = NSError(domain: NSCocoaErrorDomain, code: NSXPCConnectionInterrupted)
+    XCTAssertTrue(InstallHelper.isLostReply(raw))
+    XCTAssertTrue(InstallHelper.isLostReply(InstallHelper.lostReply(raw)))
+    XCTAssertFalse(
+      InstallHelper.isLostReply(NSError(domain: "LatestInstallerErrorDomain", code: 1)),
+      "a failure the helper reports itself is not a lost reply")
+    let root = try disposableDirectory()
+    let app = try FixtureApp.make(in: root, version: "1.0")
+    let bad = try FixtureApp.make(in: root.appendingPathComponent("payload"), version: "0.9")
+    let badDigest = try FixtureApp.digest(bad)
+    let operation = nativeOperation(for: app, target: FakeTarget(running: false)) { _ in }
+    operation.helperPollInterval = .milliseconds(20)
+    operation.helperWaitLimit = .milliseconds(150)
+    operation.helperIsIdle = { nil }
+    operation.installPackage = { _, appURL, _, _ in
+      try FileManager.default.removeItem(at: appURL)
+      try FileManager.default.copyItem(at: bad, to: appURL)
+      throw raw
+    }
+    try operation.takeBackup()
+    await operation.installThroughHelper(
+      URL(fileURLWithPath: "/tmp/p.pkg"), receipt: Data("r".utf8))
+    for _ in 0..<100 where !operation.isFinished { try await Task.sleep(for: .milliseconds(10)) }
+    guard case ReplacementError.outcomeUnknown(let kept)? = operation.error else {
+      return XCTFail("Expected outcome-unknown, got \(String(describing: operation.error))")
+    }
+    XCTAssertEqual(try FixtureApp.digest(app), badDigest, "not restored blindly")
+    try? FileManager.default.removeItem(at: URL(fileURLWithPath: kept).deletingLastPathComponent())
+  }
+
+  /// Queued Q2 (0.2.1 inspection): an app reopened during the download is quit again before
+  /// the helper install, and reopened only after a confirmed settlement, never while the
+  /// outcome is unknown.
+  @MainActor
+  func testAppReopenedDuringDownloadIsReopenedOnlyAfterSettlement() async throws {
+    for helperComesBack in [false, true] {
+      let root = try disposableDirectory()
+      let app = try FixtureApp.make(in: root, version: "1.0")
+      let target = FakeTarget(running: true)  // the user reopened it during the download
+      let operation = nativeOperation(for: app, target: target) { _ in }
+      operation.helperPollInterval = .milliseconds(20)
+      operation.helperWaitLimit = .milliseconds(200)
+      let reopenedWhileUnknown = Mutex(false)
+      let polls = Mutex(0)
+      operation.helperIsIdle = {
+        if target.reopens.withLock({ $0 }) > 0 { reopenedWhileUnknown.withLock { $0 = true } }
+        let poll = polls.withLock {
+          $0 += 1
+          return $0
+        }
+        return helperComesBack && poll >= 3 ? true : nil
+      }
+      operation.installPackage = { _, _, _, _ in throw LatestError.installHelperCommunicationFailed
+      }
+      try operation.takeBackup()
+      await operation.installThroughHelper(
+        URL(fileURLWithPath: "/tmp/p.pkg"), receipt: Data("r".utf8))
+      for _ in 0..<100 where !operation.isFinished { try await Task.sleep(for: .milliseconds(10)) }
+      XCTAssertEqual(target.quits.withLock { $0 }, 1)
+      XCTAssertFalse(reopenedWhileUnknown.withLock { $0 }, "not reopened mid-install")
+      XCTAssertEqual(target.reopens.withLock { $0 }, helperComesBack ? 1 : 0)
+      if case ReplacementError.outcomeUnknown(let kept)? = operation.error {
+        try? FileManager.default.removeItem(
+          at: URL(fileURLWithPath: kept).deletingLastPathComponent())
+      }
+    }
+  }
 }
 
 /// An app that takes a moment to quit after being asked.

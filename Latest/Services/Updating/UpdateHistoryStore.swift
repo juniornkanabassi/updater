@@ -110,6 +110,8 @@ struct UpdateOutcomeError: LocalizedError, Sendable {
     switch outcome {
     case .failed(let reason, _): reason
     case .needsQuit: "The app did not quit, so it was not updated. Save your work and try again."
+    case .needsPermission(let kind) where kind == "administrator":
+      "This update needs administrator rights. Run the brew upgrade command in Terminal; Updater copies it for you."
     case .needsPermission:
       "Updater needs App Management permission to replace this app. Allow it in System Settings → Privacy & Security → App Management."
     case .updated, .noChange, .handedOff: nil

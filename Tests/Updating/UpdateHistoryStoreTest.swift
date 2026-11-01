@@ -67,6 +67,15 @@ final class UpdateHistoryStoreTest: XCTestCase {
     XCTAssertFalse(entry.describes(bundle("/tmp/B.app")))
   }
 
+  /// Sol R2-005: an administrator need reads as such, not as App Management.
+  func testAdministratorOutcomeHasItsOwnWording() {
+    let admin = UpdateOutcomeError(outcome: .needsPermission(kind: "administrator"))
+    XCTAssertTrue(admin?.errorDescription?.contains("administrator rights") == true)
+    XCTAssertFalse(admin?.errorDescription?.contains("App Management") == true)
+    let management = UpdateOutcomeError(outcome: .needsPermission(kind: "appManagement"))
+    XCTAssertTrue(management?.errorDescription?.contains("App Management") == true)
+  }
+
   @MainActor
   func testCapabilityFollowsTheSourceAction() {
     XCTAssertEqual(makeTestApp(name: "A", version: "1", remoteVersion: "2").capability, .install)

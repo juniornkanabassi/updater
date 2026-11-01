@@ -10,6 +10,11 @@ struct InstalledCask: Sendable, Equatable {
   /// Package installers and system-level uninstall steps need sudo, which Updater does not
   /// provide in this round.
   let needsAdministrator: Bool
+  /// Bundle IDs brew's uninstall step quits during an upgrade; it quits them by ID, so any
+  /// copy with that ID can be hit.
+  var quits: [String] = []
+  /// brew's uninstall step sends signals, which can kill any process with the bundle ID.
+  var signals = false
 }
 
 enum HomebrewError: LocalizedError, Equatable {
@@ -76,6 +81,12 @@ actor Homebrew {
 
   func invalidate() { detection = nil }
 
+  /// `<prefix>/Caskroom/<token>`, brew's record of the installed cask version.
+  func caskroom(of token: String) -> URL? {
+    brew?.deletingLastPathComponent().deletingLastPathComponent()
+      .appendingPathComponent("Caskroom/\(token)")
+  }
+
   /// One scan serves a whole check pass; refreshes older than a minute run brew again.
   private func detect(fresh: Bool) async throws
     -> (date: Date, installed: [InstalledCask], outdated: [String: String])
@@ -108,7 +119,14 @@ actor Homebrew {
             "\(artifact["uninstall"] ?? "")".contains($0)
           }
       }
-      return InstalledCask(token: token, apps: apps, needsAdministrator: needsAdministrator)
+      let uninstall = artifacts.compactMap { $0["uninstall"] as? [[String: Any]] }.joined()
+      let quits = uninstall.flatMap { step -> [String] in
+        if let one = step["quit"] as? String { return [one] }
+        return step["quit"] as? [String] ?? []
+      }
+      return InstalledCask(
+        token: token, apps: apps, needsAdministrator: needsAdministrator, quits: quits,
+        signals: uninstall.contains { $0["signal"] != nil })
     }
   }
 

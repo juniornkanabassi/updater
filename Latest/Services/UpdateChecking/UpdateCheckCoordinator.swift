@@ -363,6 +363,17 @@ extension UpdateCheckCoordinator {
 
   static func check(_ bundle: App.Bundle, repository: UpdateRepository?) async throws -> App.Update
   {
+    try await check(bundle, repository: repository, homebrew: .shared)
+  }
+
+  /// Verified Homebrew ownership comes first: a cask that owns this exact bundle is its
+  /// route, ahead of Sparkle or a direct download. Unowned copies keep their own route.
+  static func check(_ bundle: App.Bundle, repository: UpdateRepository?, homebrew: Homebrew?)
+    async throws -> App.Update
+  {
+    if let owned = await HomebrewCheckerOperation.ownedUpdate(for: bundle, homebrew: homebrew) {
+      return owned
+    }
     guard let checker = checker(for: bundle.source) else {
       throw LatestError.updateInfoUnavailable
     }
