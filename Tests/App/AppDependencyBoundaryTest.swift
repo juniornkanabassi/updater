@@ -157,41 +157,30 @@ final class AppDependencyBoundaryTest: XCTestCase {
     XCTAssertTrue(viewModel.selectedApp === refreshed)
   }
 
-  func testCommandsUseInjectedPreferencesAndWorkspace() throws {
+  func testCommandsUseInjectedPreferences() throws {
     let (settings, defaults, suiteName) = try makeSettings()
     defer { defaults.removePersistentDomain(forName: suiteName) }
-    let workspace = StubApplicationWorkspace()
     let commands = AppCommands(
       updateCheckingService: StubUpdateCheckingCommands(),
       updatesListViewModel: UpdatesListViewModel(
         settings: settings,
         appProvider: StubAppProvider(apps: []),
-        workspace: workspace
+        workspace: StubApplicationWorkspace()
       ),
       searchFocusController: SearchFocusController(),
-      settings: settings,
-      workspace: workspace
+      settings: settings
     )
 
     commands.changeSortOrder(.name)
     commands.showInstalledUpdates.toggle()
-    commands.visitWebsite()
 
     XCTAssertEqual(settings.sortOrder, .name)
     XCTAssertFalse(settings.showInstalledUpdates)
-    XCTAssertEqual(
-      workspace.openedURLs.map(\.absoluteString), ["https://github.com/Ertyoii/Latest"])
   }
 
-  func testAppUpdateActionOpensForkReleases() {
-    let workspace = StubApplicationWorkspace()
-    let controller = AppUpdateController(workspace: workspace)
-
-    controller.checkForAppUpdates()
-
-    XCTAssertEqual(
-      workspace.openedURLs.map(\.absoluteString), ["https://github.com/Ertyoii/Latest/releases"])
+  func testUpdaterHasNoSelfUpdateFeed() {
     XCTAssertNil(Bundle.main.object(forInfoDictionaryKey: "SUFeedURL"))
+    XCTAssertNil(Bundle.main.object(forInfoDictionaryKey: "SUPublicEDKey"))
   }
 
   private func makeSettings() throws -> (AppListSettings, UserDefaults, String) {

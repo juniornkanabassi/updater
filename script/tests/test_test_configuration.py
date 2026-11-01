@@ -88,7 +88,7 @@ class TestConfigurationTest(unittest.TestCase):
             data = plan(name)
             self.assertEqual(data["defaultOptions"]["environmentVariableEntries"],
                              [{"key": "LATEST_UI_TESTS", "value": foreground}])
-        scheme = ET.parse(ROOT / "Latest.xcodeproj/xcshareddata/xcschemes/Latest.xcscheme")
+        scheme = ET.parse(ROOT / "Latest.xcodeproj/xcshareddata/xcschemes/Updater.xcscheme")
         references = scheme.findall(".//TestPlanReference")
         self.assertEqual([ref.attrib["reference"] for ref in references if ref.attrib.get("default") == "YES"],
                          ["container:Tests/LatestIntegration.xctestplan"])

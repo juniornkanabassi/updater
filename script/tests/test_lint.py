@@ -80,7 +80,7 @@ exit 1
         self.assertEqual(result.returncode, 0, result.stderr)
         calls = [call.splitlines() for call in self.build_arguments.read_text().split("__CALL__\n")[1:]]
         self.assertEqual([call[call.index("-scheme") + 1] for call in calls],
-                         ["Latest", "Latest Unit Tests"])
+                         ["Updater", "Latest Unit Tests"])
         for index, arguments in enumerate(calls):
             self.assertIn("clean", arguments)
             self.assertIn("build-for-testing", arguments)

@@ -43,7 +43,7 @@ if [[ "$MODE" != all ]]; then
 fi
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BUILD_DIR="$ROOT_DIR/build"
+BUILD_DIR="${UPDATER_BUILD_DIR:-$ROOT_DIR/build}" # override to keep build products out of iCloud-synced folders
 DERIVED_DATA="$BUILD_DIR/DerivedData"
 MODULE_CACHE="$BUILD_DIR/ModuleCache"
 RUN_ID="$(date +%Y%m%d-%H%M%S)-$$"
@@ -53,7 +53,7 @@ mkdir -p "$BUILD_DIR" "$MODULE_CACHE"
 "$ROOT_DIR/script/check_structure.sh"
 
 run_lane() {
-  local lane="$1" scheme='Latest' target='Latest Tests'
+  local lane="$1" scheme='Updater' target='Latest Tests'
   local arguments=() filter selected_target has_selection=false
   export TEST_RUNNER_LATEST_UI_TESTS=0
   export LATEST_UI_TESTS=0

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP_PATH="${1:-$ROOT_DIR/build/DerivedData/Build/Products/Release/Latest Dev.app}"
+APP_PATH="${1:-$ROOT_DIR/build/DerivedData/Build/Products/Release/Updater.app}"
 INFO_PLIST="$APP_PATH/Contents/Info.plist"
 
 if [[ ! -d "$APP_PATH" || ! -f "$INFO_PLIST" ]]; then

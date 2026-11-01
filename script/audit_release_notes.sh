@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PROJECT="Latest.xcodeproj"
-SCHEME="Latest"
+SCHEME="Updater"
 CONFIGURATION="Debug"
 
 RUN_INSTALLED_AUDIT=false
@@ -71,7 +71,7 @@ echo "- Notion-style website chrome is rejected instead of rendered"
 echo "- Thunder-style binary/mojibake payloads and downloadable URLs are rejected"
 echo "- CodexBar: markdown headings and bullets still render cleanly"
 if [[ "$RUN_INSTALLED_AUDIT" == true ]]; then
-  echo "- Installed-app audit: every discoverable app is checked through Latest's update and release-note pipeline"
+  echo "- Installed-app audit: every discoverable app is checked through Updater's update and release-note pipeline"
 else
   echo "- Installed-app audit: skipped (pass --installed to opt in)"
 fi

@@ -25,7 +25,7 @@ trap 'rm -f "$FLAG_FILE"' EXIT
 
 xcodebuild \
   -project "$ROOT_DIR/Latest.xcodeproj" \
-  -scheme Latest \
+  -scheme Updater \
   -testPlan LatestAppBenchmarks \
   -configuration Release \
   -destination 'platform=macOS' \

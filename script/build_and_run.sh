@@ -14,11 +14,11 @@ case "$MODE" in
   run|--debug|debug|--logs|logs|--telemetry|telemetry|--verify|verify|--uat|uat) ;;
   *) usage >&2; exit 2 ;;
 esac
-APP_NAME="Latest Dev"
+APP_NAME="Updater"
 PROJECT="Latest.xcodeproj"
-SCHEME="Latest"
+SCHEME="Updater"
 CONFIGURATION="Debug"
-BUNDLE_ID="com.max-langer.Latest.dev"
+BUNDLE_ID="com.juniornkanabassi.Updater"
 SIGNING_ARGS=(CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="")
 if [[ "${2:-}" == "--signed" ]]; then
   SIGNING_ARGS=(CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES CODE_SIGN_IDENTITY="Apple Development")

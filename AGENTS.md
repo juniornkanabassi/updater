@@ -1,4 +1,4 @@
-# Latest
+# Updater (based on Latest)
 
 ## Scope and workflow
 

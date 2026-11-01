@@ -49,7 +49,7 @@ jobs:
       - name: Resolve pinned dependencies
         run: |
           xcodebuild -resolvePackageDependencies \
-            -project Latest.xcodeproj -scheme Latest \
+            -project Latest.xcodeproj -scheme Updater \
             -derivedDataPath build/DerivedData \
             -onlyUsePackageVersionsFromResolvedFile
           git diff --exit-code -- Latest.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved

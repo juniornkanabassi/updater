@@ -191,17 +191,17 @@ final class ReleaseNotesProviderTest: XCTestCase {
       return App(
         bundle: bundle, update: .failure(LatestError.releaseNotesUnavailable), isIgnored: false)
     }
-    let installed = app(identifier: "com.max-langer.Latest.dev", version: "0.59")
+    let installed = app(identifier: "com.juniornkanabassi.Updater", version: "0.59")
     let notes = try await releaseNotes(for: installed, provider: ReleaseNotesProvider())
     XCTAssertTrue(notes.string.contains("Latest Dev 0.59"))
     XCTAssertTrue(notes.string.contains("release-note margins"))
     XCTAssertFalse(installed.supported)
     XCTAssertNil(
       ReleaseNotesProvider.bundledReleaseNotes(
-        for: app(identifier: "com.max-langer.Latest.dev", version: "0.57")))
+        for: app(identifier: "com.juniornkanabassi.Updater", version: "0.57")))
     XCTAssertNil(
       ReleaseNotesProvider.bundledReleaseNotes(
-        for: app(identifier: "com.max-langer.Latest", version: "0.59")))
+        for: app(identifier: "com.juniornkanabassi.Updater.other", version: "0.59")))
   }
 
   func testReleaseNotesProviderBuildsGitHubWebURLFromAPIURL() throws {

@@ -75,7 +75,7 @@ class RunnerArgumentsTest(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 calls = self.invocations()
                 self.assertEqual(len(calls), 1)
-                self.assertEqual(calls[0][calls[0].index("-scheme") + 1], "Latest")
+                self.assertEqual(calls[0][calls[0].index("-scheme") + 1], "Updater")
                 self.assertEqual(calls[0][calls[0].index("-testPlan") + 1], plan)
                 for argument in filters:
                     self.assertIn(argument, calls[0])
@@ -87,7 +87,7 @@ class RunnerArgumentsTest(unittest.TestCase):
         calls = self.invocations()
         self.assertEqual(len(calls), 3)
         self.assertEqual([call[call.index("-scheme") + 1] for call in calls],
-                         ["Latest Unit Tests", "Latest", "Latest"])
+                         ["Latest Unit Tests", "Updater", "Updater"])
         self.assertEqual([call[call.index("-testPlan") + 1] for call in calls[1:]],
                          ["LatestIntegration", "LatestUI"])
         bundles = [call[call.index("-resultBundlePath") + 1] for call in calls]

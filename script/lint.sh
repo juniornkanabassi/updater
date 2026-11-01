@@ -47,7 +47,7 @@ echo "Building for declaration analysis; log: $BUILD_LOG"
 # Compile both modules so declaration analysis sees the callers moved out of
 # the app-hosted bundle. Separate products keep the second graph from pruning
 # frameworks needed by SourceKit when it analyzes the first graph.
-for scheme in Latest 'Latest Unit Tests'; do
+for scheme in Updater 'Latest Unit Tests'; do
   derived_data="$ROOT_DIR/build/LintDerivedData"
   if [[ "$scheme" == 'Latest Unit Tests' ]]; then
     derived_data="$ROOT_DIR/build/LintUnitDerivedData"

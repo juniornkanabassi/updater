@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PROJECT="Latest.xcodeproj"
-SCHEME="Latest"
+SCHEME="Updater"
 CONFIGURATION="Release"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
