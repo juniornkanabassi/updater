@@ -122,4 +122,89 @@ final class AppStoreInstallGateTest: XCTestCase {
     XCTAssertNil(operation.error)
     XCTAssertEqual(history.latestEntry(for: target)?.outcome, .handedOff)
   }
+
+  /// Sol R5: before macOS 26.1 CommerceKit installs without quit, backup or verification,
+  /// so even a passing gate hands off with no helper request.
+  func testNativeCommerceKitRouteHandsOff() async throws {
+    let helperCalls = Mutex(0)
+    let opened = Mutex<[URL]>([])
+    let operation = AppStoreUpdateOperation(
+      bundleIdentifier: identifier, installURL: target, appIdentifier: target,
+      appStoreIdentifier: 1)
+    operation.gate = .agreeing(on: target.path)
+    operation.usesVerifiedHelperInstall = false
+    operation.prepare = { helperCalls.withLock { $0 += 1 } }
+    operation.openURL = { url in opened.withLock { $0.append(url) } }
+    let done = expectation(description: "finished")
+    operation.completionBlock = { done.fulfill() }
+    UpdateQueue().addOperation(operation)
+    await fulfillment(of: [done], timeout: 5)
+    XCTAssertEqual(helperCalls.withLock { $0 }, 0)
+    XCTAssertEqual(operation.outcomeOverride, .handedOff)
+    XCTAssertEqual(opened.withLock { $0 }.count, 1)
+  }
+
+  /// Sol R3: the gate runs again right before the helper install, after download and quit.
+  @MainActor
+  func testGateIsRecheckedImmediatelyBeforeTheHelperInstall() async throws {
+    let installs = Mutex(0)
+    let operation = AppStoreUpdateOperation(
+      bundleIdentifier: identifier, installURL: target, appIdentifier: target,
+      appStoreIdentifier: 1)
+    var gate = AppStoreInstallGate.agreeing(on: target.path)
+    // A second copy appeared while the package downloaded.
+    gate.launchServicesURLs = { _ in
+      [
+        URL(fileURLWithPath: "/Applications/UpdaterGateFixture.app"),
+        URL(fileURLWithPath: "/Users/Shared/UpdaterGateFixture.app"),
+      ]
+    }
+    operation.gate = gate
+    operation.openURL = { _ in }
+    operation.installPackage = { _, appURL, _, _ in
+      installs.withLock { $0 += 1 }
+      return appURL
+    }
+    do {
+      try await operation.installPreservedPackage(
+        URL(fileURLWithPath: "/tmp/none.pkg"), receipt: Data("r".utf8))
+      XCTFail("A changed discovery must stop the install")
+    } catch {}
+    XCTAssertEqual(installs.withLock { $0 }, 0)
+    XCTAssertEqual(operation.outcomeOverride, .handedOff)
+    XCTAssertFalse(operation.isCommitting, "Nothing was committed")
+  }
+
+  /// Sol R8: unreadable candidates and inaccessible folders fail closed; only absent
+  /// optional folders are skipped.
+  func testFolderWalkFailsClosedOnUnreadableItems() throws {
+    let root = try disposableDirectory()
+    // An .app whose Info.plist cannot be read.
+    try FileManager.default.createDirectory(
+      at: root.appendingPathComponent("Broken.app/Contents"), withIntermediateDirectories: true)
+    XCTAssertThrowsError(try AppStoreInstallGate.copies(of: identifier, in: [root]))
+
+    let clean = try disposableDirectory()
+    XCTAssertEqual(
+      try AppStoreInstallGate.copies(of: identifier, in: [clean.appendingPathComponent("absent")]),
+      [], "an absent optional folder is skipped")
+    XCTAssertThrowsError(
+      try AppStoreInstallGate.copies(
+        of: identifier, in: [clean.appendingPathComponent("absent")],
+        required: [clean.appendingPathComponent("absent").path]),
+      "an absent required folder blocks")
+
+    // A folder that exists but cannot be entered.
+    let locked = clean.appendingPathComponent("locked")
+    try FileManager.default.createDirectory(
+      at: locked.appendingPathComponent("Applications"), withIntermediateDirectories: true)
+    try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: locked.path)
+    defer {
+      try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: locked.path)
+    }
+    XCTAssertThrowsError(
+      try AppStoreInstallGate.copies(
+        of: identifier, in: [locked.appendingPathComponent("Applications")]))
+    XCTAssertThrowsError(try AppStoreInstallGate.copies(of: identifier, in: [locked]))
+  }
 }

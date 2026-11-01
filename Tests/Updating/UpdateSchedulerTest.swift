@@ -28,6 +28,61 @@ final class UpdateSchedulerTest: XCTestCase {
     XCTAssertLessThan(other.start, first.end)
   }
 
+  /// Sol R4: cancelling waiting jobs must not let a later job overtake the running holder.
+  func testCancelledWaitersNeverLetALaterJobOvertakeTheHolder() async throws {
+    let queue = UpdateQueue()
+    let release = AsyncStream<Void>.makeStream()
+    let holder = GatedOperation(
+      url: URL(fileURLWithPath: "/tmp/H.app"), gate: release.stream, lock: "tool")
+    let started = StartLog()
+    let middle = MarkingOperation(name: "middle", lock: "tool", started: started)
+    let tail = MarkingOperation(name: "tail", lock: "tool", started: started)
+    queue.addOperation(holder)
+    while !holder.isExecuting { try await Task.sleep(for: .milliseconds(5)) }
+    queue.addOperation(middle)
+    queue.addOperation(tail)
+    middle.cancel()
+    try await Task.sleep(for: .milliseconds(200))
+    XCTAssertTrue(
+      started.names.withLock { $0 }.isEmpty, "tail waits for the holder, not the middle")
+    tail.cancel()
+    let late = MarkingOperation(name: "late", lock: "tool", started: started)
+    queue.addOperation(late)
+    try await Task.sleep(for: .milliseconds(200))
+    XCTAssertTrue(started.names.withLock { $0 }.isEmpty, "a newcomer waits for the holder too")
+    XCTAssertTrue(holder.isExecuting)
+    let done = expectation(description: "late finished")
+    late.completionBlock = { done.fulfill() }
+    release.continuation.finish()
+    await fulfillment(of: [done], timeout: 2)
+    XCTAssertEqual(started.names.withLock { $0 }, ["late"])
+  }
+
+  /// Sol R1: `updated` needs a newer on-disk version that reaches the expected one.
+  func testOutcomeRejectsDowngradesAndShortfalls() {
+    func outcome(_ before: String, _ after: String, expected: String?) -> UpdateOutcome? {
+      let url = URL(fileURLWithPath: "/tmp/Outcome.app")
+      func bundle(_ version: String) -> App.Bundle {
+        App.Bundle(
+          version: Version(versionNumber: version, buildNumber: nil), name: "Outcome",
+          bundleIdentifier: "com.example.outcome", fileURL: url, source: .sparkle,
+          modificationDate: .distantPast)
+      }
+      let operation = ScriptedOperation(url: url) {}
+      operation.expectedVersion = expected.map { Version(versionNumber: $0, buildNumber: nil) }
+      return UpdateQueue.outcome(of: operation, before: bundle(before), after: bundle(after))
+    }
+    XCTAssertEqual(outcome("1.0", "1.2", expected: "1.2"), .updated(from: "1.0", to: "1.2"))
+    XCTAssertEqual(outcome("1.0", "1.3", expected: "1.2"), .updated(from: "1.0", to: "1.3"))
+    XCTAssertEqual(outcome("1.0", "1.0", expected: "1.2"), .noChange)
+    guard case .failed = outcome("1.0", "1.1", expected: "1.2") else {
+      return XCTFail("Short of the expected version is a failure")
+    }
+    guard case .failed = outcome("1.0", "0.9", expected: nil) else {
+      return XCTFail("A downgrade is never an update")
+    }
+  }
+
   func testSecondSubmissionForTheSameURLReturnsTheRunningJob() async {
     let queue = UpdateQueue()
     let url = URL(fileURLWithPath: "/tmp/Dedup-\(UUID().uuidString).app")
@@ -142,8 +197,11 @@ private final class TimedOperation: UpdateOperation, @unchecked Sendable {
 
 private final class GatedOperation: UpdateOperation, @unchecked Sendable {
   private let gate: AsyncStream<Void>
-  init(url: URL, gate: AsyncStream<Void>) {
+  private let lock: String?
+  override var lockKey: String { lock ?? super.lockKey }
+  init(url: URL, gate: AsyncStream<Void>, lock: String? = nil) {
     self.gate = gate
+    self.lock = lock
     super.init(bundleIdentifier: "com.example.gated", appIdentifier: url)
   }
   override func execute() {
@@ -167,5 +225,29 @@ private final class ScriptedOperation: UpdateOperation, @unchecked Sendable {
       try body()
       finish()
     } catch { finish(with: error) }
+  }
+}
+
+private final class StartLog: Sendable {
+  let names = Mutex<[String]>([])
+}
+
+private final class MarkingOperation: UpdateOperation, @unchecked Sendable {
+  private let label: String
+  private let lock: String
+  private let log: StartLog
+  override var lockKey: String { lock }
+  init(name: String, lock: String, started: StartLog) {
+    label = name
+    self.lock = lock
+    log = started
+    super.init(
+      bundleIdentifier: "com.example.marking",
+      appIdentifier: URL(fileURLWithPath: "/tmp/Marking-\(name).app"))
+  }
+  override func execute() {
+    super.execute()
+    log.names.withLock { $0.append(label) }
+    finish()
   }
 }

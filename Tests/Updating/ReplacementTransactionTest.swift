@@ -95,6 +95,70 @@ final class ReplacementTransactionTest: XCTestCase {
     XCTAssertFalse(ReplacementTransaction.needsRecovery(staging))
   }
 
+  /// Sol R1 + R2: the helper's App Store sequence keeps the original until the installer
+  /// wrote this URL, the receipt exists, and the version is newer and at least the expected
+  /// one. Every failure, including the receipt step, restores the original byte-for-byte.
+  func testAppStorePackageInstallVerifiesVersionAndReceiptBeforeDiscardingTheBackup() throws {
+    let scenarios: [(name: String, installs: String, expected: String, receiptFails: Bool)] = [
+      ("below expected version", "1.1", "1.2", false),
+      ("downgrade", "0.9", "0.9", false),
+      ("unchanged", "1.0", "1.0", false),
+      ("receipt write fails", "1.2", "1.2", true),
+    ]
+    for scenario in scenarios {
+      let root = try disposableDirectory()
+      let app = try FixtureApp.make(in: root, version: "1.0")
+      let before = try FixtureApp.digest(app)
+      let staging = root.appendingPathComponent("staging")
+      try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+      let payload = try FixtureApp.make(
+        in: root.appendingPathComponent("payload"), version: scenario.installs)
+      XCTAssertThrowsError(
+        try AppStorePackageInstall.perform(
+          appURL: app, staging: staging, expectedVersion: scenario.expected, requiresTeam: false,
+          runInstaller: {
+            try FileManager.default.removeItem(at: app)
+            try FileManager.default.copyItem(at: payload, to: app)
+            return [app.standardizedFileURL.path]
+          },
+          writeReceipt: { receipt in
+            if scenario.receiptFails { throw CocoaError(.fileWriteNoPermission) }
+            try FileManager.default.createDirectory(
+              at: receipt.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("receipt".utf8).write(to: receipt)
+          }), scenario.name)
+      XCTAssertEqual(try FixtureApp.digest(app), before, scenario.name)
+      XCTAssertFalse(ReplacementTransaction.needsRecovery(staging), scenario.name)
+    }
+
+    // The installer registering a different copy is not an install of this URL.
+    let root = try disposableDirectory()
+    let app = try FixtureApp.make(in: root, version: "1.0")
+    let staging = root.appendingPathComponent("staging")
+    try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
+    XCTAssertThrowsError(
+      try AppStorePackageInstall.perform(
+        appURL: app, staging: staging, expectedVersion: "1.1", requiresTeam: false,
+        runInstaller: { ["/Applications/Fixture.app"] }, writeReceipt: { _ in }))
+
+    // Success: new version, receipt present, backup gone.
+    let payload = try FixtureApp.make(in: root.appendingPathComponent("payload"), version: "1.2")
+    try AppStorePackageInstall.perform(
+      appURL: app, staging: staging, expectedVersion: "1.2", requiresTeam: false,
+      runInstaller: {
+        try FileManager.default.removeItem(at: app)
+        try FileManager.default.copyItem(at: payload, to: app)
+        return [app.standardizedFileURL.path]
+      },
+      writeReceipt: { receipt in
+        try FileManager.default.createDirectory(
+          at: receipt.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("receipt".utf8).write(to: receipt)
+      })
+    XCTAssertEqual(try BundleIdentity.read(at: app, validate: false).shortVersion, "1.2")
+    XCTAssertFalse(ReplacementTransaction.needsRecovery(staging))
+  }
+
   @MainActor
   func testAppThatRefusesToQuitIsNeverReplacedOrReopened() async throws {
     let root = try disposableDirectory()

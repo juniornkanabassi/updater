@@ -227,7 +227,9 @@ final class AppStoreUpdateCheckerOperation: Sendable {
   init(
     with app: App.Bundle, session: URLSession = .shared,
     installable: @escaping @Sendable (URL, String) async -> Bool = {
-      await AppStoreInstallGate.live.allowsInstall(at: $0, bundleIdentifier: $1)
+      // Before 26.1 CommerceKit installs without Updater's checks: always hand off.
+      guard AppStoreUpdateOperation.requiresManualInstallation else { return false }
+      return await AppStoreInstallGate.live.allowsInstall(at: $0, bundleIdentifier: $1)
     }
   ) {
     self.app = app
@@ -373,10 +375,13 @@ extension AppStoreUpdateCheckerOperation {
             Self.openAppStorePage(for: entry)
           })
       } else {
-        // Native capability is stable; updateApp reads the preference when invoked.
-        .builtIn(block: { app in
-          Self.updateApp(app, entry: entry)
-        })
+        // The manual-update preference turns this into a hand-off, read at use so the
+        // label and Update All follow the current setting.
+        .conditional(
+          label: NSLocalizedString(
+            "AppStoreSource", comment: "The source name of apps loaded from the App Store."),
+          installs: { !AppStoreUpdateSettings.alwaysPerformManualUpdates.active },
+          block: { app in Self.updateApp(app, entry: entry) })
 
       }
 
@@ -395,7 +400,8 @@ extension AppStoreUpdateCheckerOperation {
         fallbackURL: entry.pageURL,
         preparation: { try await AppStoreUpdater.prepareForUpdates() }
       ) {
-        AppStoreUpdater.enqueueUpdate(for: app, appStoreIdentifier: entry.appStoreIdentifier)
+        AppStoreUpdater.enqueueUpdate(
+          for: app, appStoreIdentifier: entry.appStoreIdentifier, version: entry.versionNumber)
       }
     }
   }

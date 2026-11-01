@@ -28,16 +28,14 @@ final class UpdateInstaller: NSObject, UpdateInstallerProtocol {
   }
 
   func performInstallation(
-    ofPackage source: FileHandle, appURL: URL, receiptData: Data,
+    ofPackage source: FileHandle, appURL: URL, receiptData: Data, expectedVersion: String,
     reply: @escaping (URL?, Error?) -> Void
   ) {
     Self.installations.withLock { $0 += 1 }
     defer { Self.installations.withLock { $0 -= 1 } }
     defer { try? source.close() }
     do {
-      guard appURL.isFileURL, !receiptData.isEmpty,
-        let expectedIdentifier = Bundle(url: appURL)?.bundleIdentifier
-      else {
+      guard appURL.isFileURL, !receiptData.isEmpty, !expectedVersion.isEmpty else {
         throw failure("The App Store package, installed app, or receipt is unavailable.")
       }
       let volume =
@@ -70,41 +68,33 @@ final class UpdateInstaller: NSObject, UpdateInstallerProtocol {
         else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
       }
       // The decision that this exact URL may be replaced was made by the app before
-      // purchasing. Here PackageKit must have written to that URL, with the same identity,
-      // or the original copy is put back.
-      let original = try BundleIdentity.read(at: appURL, validate: false)
-      try ReplacementTransaction.perform(
-        at: appURL, backupDirectory: staging, copyingOriginal: true,
-        install: {
+      // purchasing. Installer, receipt and permissions all happen inside the transaction,
+      // and the original comes back unless the result is the expected signed version.
+      try AppStorePackageInstall.perform(
+        appURL: appURL, staging: staging, expectedVersion: expectedVersion,
+        runInstaller: {
           let output = try performCommand(
             "/usr/sbin/installer",
             arguments: ["-dumplog", "-pkg", package.path, "-target", volume.path])
           let expression = try NSRegularExpression(
             pattern: "PackageKit: Registered bundle (\\S+) for uid 0")
           let range = NSRange(output.startIndex..<output.endIndex, in: output)
-          let registered = expression.matches(in: output, range: range).compactMap {
-            match -> String? in
+          return expression.matches(in: output, range: range).compactMap { match in
             guard let range = Range(match.range(at: 1), in: output) else { return nil }
             return URL(string: String(output[range]))?.standardizedFileURL.path
           }
-          guard registered.contains(appURL.standardizedFileURL.path) else {
-            throw failure("The installer did not register \(appURL.path) (\(expectedIdentifier)).")
-          }
         },
-        verify: { url in _ = try original.verifyReplacement(at: url) })
+        writeReceipt: { destination in
+          // Derived from the installed bundle, never a caller-provided path.
+          try fileManager.createDirectory(
+            at: destination.deletingLastPathComponent(),
+            withIntermediateDirectories: true, attributes: [.posixPermissions: 0o755])
+          try receiptData.write(to: destination, options: .atomic)
+          try fileManager.setAttributes(
+            [.ownerAccountID: 0, .groupOwnerAccountID: 0, .posixPermissions: 0o644],
+            ofItemAtPath: destination.path)
+        })
       let installedURL = appURL
-      // Derive the receipt path from the actual installed bundle. Never use a
-      // caller-provided receipt path as an arbitrary privileged write target.
-      let destination = installedURL.appendingPathComponent("Contents/_MASReceipt/receipt")
-      try fileManager.createDirectory(
-        at: destination.deletingLastPathComponent(),
-        withIntermediateDirectories: true, attributes: [.posixPermissions: 0o755])
-      try receiptData.write(to: destination, options: .atomic)
-      try fileManager.setAttributes(
-        [
-          .ownerAccountID: 0, .groupOwnerAccountID: 0,
-          .posixPermissions: 0o644,
-        ], ofItemAtPath: destination.path)
       reply(installedURL, nil)
     } catch { reply(nil, error) }
   }

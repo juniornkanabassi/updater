@@ -103,6 +103,13 @@ class UpdateOperation: StatefulOperation, @unchecked Sendable {
     set { outcomeStorage.withLock { $0 = newValue } }
   }
 
+  private let expectedStorage = Mutex<Version?>(nil)
+  /// The version the installer promised, when known; an outcome below it is a failure.
+  var expectedVersion: Version? {
+    get { expectedStorage.withLock { $0 } }
+    set { expectedStorage.withLock { $0 = newValue } }
+  }
+
   /// Update mechanisms that wait for an app to quit can offer another quit request.
   @MainActor func retryTermination() {}
 

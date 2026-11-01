@@ -35,7 +35,10 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
   private let operationIndexLock = NSLock()
 
   private var operationsByIdentifier = [App.Bundle.Identifier: UpdateOperation]()
-  private var lastOperationByLock = [String: UpdateOperation]()
+  /// Unfinished jobs per lock, in submission order. A new job depends on all of them: a
+  /// cancelled waiter becomes ready at once, so depending only on the last one would let
+  /// the newcomer overtake the running holder.
+  private var operationsByLock = [String: [UpdateOperation]]()
 
   // MARK: - Public Methods
 
@@ -61,7 +64,7 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
     if let operation = self.operation(for: identifier) { return operation.progressState }
     guard let entry = history?.latestEntry(for: identifier),
       UpdateOutcomeError(outcome: entry.outcome) != nil,
-      readBundle(identifier).map({ Self.display($0.version) }) == entry.installedVersion
+      let current = readBundle(identifier), entry.describes(current)
     else { return .none }
     return .error(UpdateOutcomeError(outcome: entry.outcome)!)
   }
@@ -101,10 +104,7 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
 
   /// Hand-offs happen outside the queue; record them so the row can say so.
   func recordHandOff(of app: App) {
-    history?.record(
-      UpdateHistoryEntry(
-        appPath: app.fileURL.path, bundleIdentifier: app.bundleIdentifier,
-        installedVersion: Self.display(app.version), outcome: .handedOff))
+    history?.record(UpdateHistoryEntry(bundle: app.bundle, outcome: .handedOff))
   }
 
   private func recordOutcome(of operation: UpdateOperation, before: App.Bundle?) {
@@ -112,10 +112,7 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
       let outcome = Self.outcome(
         of: operation, before: before, after: readBundle(operation.appIdentifier))
     else { return }
-    history.record(
-      UpdateHistoryEntry(
-        appPath: operation.appIdentifier.path, bundleIdentifier: before.bundleIdentifier,
-        installedVersion: Self.display(before.version), outcome: outcome))
+    history.record(UpdateHistoryEntry(bundle: before, outcome: outcome))
   }
 
   /// Success is never taken from the installer's word: `updated` needs the version on
@@ -124,7 +121,8 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
     -> UpdateOutcome?
   {
     if let outcome = operation.outcomeOverride { return outcome }
-    if operation.isCancelled, operation.error == nil || operation.error is CancellationError {
+    // User cancellation or a declined quit prompt is not an outcome.
+    if operation.error is CancellationError || (operation.isCancelled && operation.error == nil) {
       return nil
     }
     if let error = operation.error {
@@ -141,8 +139,23 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
     guard let after else {
       return .failed(reason: "The app is no longer at \(before.fileURL.path).", logPath: nil)
     }
-    return after.version == before.version
-      ? .noChange : .updated(from: display(before.version), to: display(after.version))
+    if after.version == before.version { return .noChange }
+    switch before.version.comparisonForUpdate(to: after.version) {
+    case .older:
+      do {
+        try ReplacementTransaction.verifyVersion(
+          installed: after.version, previous: before.version, expected: operation.expectedVersion)
+        return .updated(from: display(before.version), to: display(after.version))
+      } catch {
+        return .failed(reason: error.localizedDescription, logPath: nil)
+      }
+    case .samePrecedence: return .noChange
+    case .newer, .unavailable:
+      return .failed(
+        reason:
+          "The installed version changed from \(display(before.version)) to \(display(after.version)), which is not an update.",
+        logPath: nil)
+    }
   }
 
   static func display(_ version: Version) -> String {
@@ -248,18 +261,18 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
       }
 
       operationsByIdentifier[operation.appIdentifier] = operation
-      if let previous = lastOperationByLock[operation.lockKey], !previous.isFinished {
-        operation.addDependency(previous)
-      }
-      lastOperationByLock[operation.lockKey] = operation
+      let holders = (operationsByLock[operation.lockKey] ?? []).filter { !$0.isFinished }
+      holders.forEach(operation.addDependency)
+      operationsByLock[operation.lockKey] = holders + [operation]
       return nil
     }
   }
 
   private func removeIndexedOperation(_ operation: UpdateOperation) {
     operationIndexLock.withLock {
-      if lastOperationByLock[operation.lockKey] === operation {
-        lastOperationByLock[operation.lockKey] = nil
+      operationsByLock[operation.lockKey]?.removeAll { $0 === operation }
+      if operationsByLock[operation.lockKey]?.isEmpty == true {
+        operationsByLock[operation.lockKey] = nil
       }
       guard operationsByIdentifier[operation.appIdentifier] === operation else {
         return

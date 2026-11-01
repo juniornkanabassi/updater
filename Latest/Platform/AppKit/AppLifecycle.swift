@@ -54,6 +54,23 @@ struct AppLifecycle: Sendable {
   }
 }
 
+extension AppLifecycle {
+  /// Quits the app for an installer that relaunches it itself (Sparkle). Throws if the
+  /// user declines or the app is still open at the timeout. Never force-kills.
+  @MainActor
+  func quit(at url: URL, name: String) async throws {
+    let running = runningApps(url)
+    guard !running.isEmpty else { return }
+    guard confirmQuit(name) else { throw CancellationError() }
+    running.forEach { $0.terminate() }
+    let deadline = ContinuousClock.now + timeout
+    while !running.allSatisfy({ $0.isTerminated() }) {
+      guard ContinuousClock.now < deadline else { throw AppDownloadError.applicationStillRunning }
+      try? await Task.sleep(for: .milliseconds(200))
+    }
+  }
+}
+
 /// Quit cannot be recalled after sending terminate(). Wait for its outcome even
 /// after cancellation, then reopen the surviving app without starting an install.
 @MainActor

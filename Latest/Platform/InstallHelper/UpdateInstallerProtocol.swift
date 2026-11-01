@@ -18,7 +18,7 @@ import Security
   // Invoked through the XPC proxy across the app/helper module boundary.
   // swiftlint:disable:next unused_declaration
   func performInstallation(
-    ofPackage package: FileHandle, appURL: URL, receiptData: Data,
+    ofPackage package: FileHandle, appURL: URL, receiptData: Data, expectedVersion: String,
     reply: @escaping (URL?, Error?) -> Void)
 }
 

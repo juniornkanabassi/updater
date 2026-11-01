@@ -123,3 +123,53 @@ enum ReplacementTransaction {
     (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true
   }
 }
+
+extension ReplacementTransaction {
+  /// An install counts only if it moved forward from `previous` and reached `expected`.
+  static func verifyVersion(installed: Version, previous: Version, expected: Version?) throws {
+    guard previous.comparisonForUpdate(to: installed) == .older else {
+      throw ReplacementError.verificationFailed(
+        "The installed version \(installed.versionNumber ?? "?") is not newer than \(previous.versionNumber ?? "?")."
+      )
+    }
+    if let expected, installed.comparisonForUpdate(to: expected) == .older {
+      throw ReplacementError.verificationFailed(
+        "The installed version \(installed.versionNumber ?? "?") is older than \(expected.versionNumber ?? "?")."
+      )
+    }
+  }
+}
+
+/// The helper's App Store install. PackageKit replaces the bundle in place, so the original
+/// is cloned aside and discarded only after the installer, the receipt and the installed
+/// identity and version all check out.
+enum AppStorePackageInstall {
+  static func perform(
+    appURL: URL, staging: URL, expectedVersion: String, requiresTeam: Bool = true,
+    runInstaller: () throws -> [String], writeReceipt: (URL) throws -> Void
+  ) throws {
+    let original = try BundleIdentity.read(at: appURL, validate: false)
+    let previous = Version(
+      versionNumber: original.shortVersion, buildNumber: original.bundleVersion)
+    let receipt = appURL.appendingPathComponent("Contents/_MASReceipt/receipt")
+    try ReplacementTransaction.perform(
+      at: appURL, backupDirectory: staging, copyingOriginal: true,
+      install: {
+        guard try runInstaller().contains(appURL.standardizedFileURL.path) else {
+          throw ReplacementError.verificationFailed(
+            "The installer did not write to \(appURL.path).")
+        }
+        try writeReceipt(receipt)
+      },
+      verify: { url in
+        let installed = try original.verifyReplacement(at: url, requiresTeam: requiresTeam)
+        try ReplacementTransaction.verifyVersion(
+          installed: Version(
+            versionNumber: installed.shortVersion, buildNumber: installed.bundleVersion),
+          previous: previous, expected: Version(versionNumber: expectedVersion, buildNumber: nil))
+        guard FileManager.default.fileExists(atPath: receipt.path) else {
+          throw ReplacementError.verificationFailed("The App Store receipt was not written.")
+        }
+      })
+  }
+}

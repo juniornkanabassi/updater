@@ -23,6 +23,7 @@ final class AppDownloadUpdateOperation: DownloadUpdateOperation, @unchecked Send
 
   override func performUpdate() async throws {
     let release = try await fetchRelease()
+    expectedVersion = release.version
     guard app.version.comparisonForUpdate(to: release.version) == .older else {
       throw AppDownloadError.versionMismatch
     }

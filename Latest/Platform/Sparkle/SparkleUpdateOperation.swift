@@ -20,6 +20,8 @@ final class SparkleUpdateOperation: UpdateOperation, @unchecked Sendable {
   @MainActor private var progressTask: Task<Void, Never>?
   @MainActor private var expectedContentLength: UInt64 = 0
   @MainActor private var receivedLength: UInt64 = 0
+  /// Quits the target before Sparkle installs; injectable so tests never quit a real app.
+  var lifecycle = AppLifecycle.live
   /// Opens an information-only item's page; injectable so tests open nothing.
   var openURL: @MainActor @Sendable (URL) -> Void = { MacApplicationWorkspace.shared.open($0) }
 
@@ -110,6 +112,8 @@ extension SparkleUpdateOperation: SPUUserDriver {
   @MainActor func handleUpdateFound(
     _ appcastItem: SUAppcastItem, reply: @escaping (SPUUserUpdateChoice) -> Void
   ) {
+    expectedVersion = Version(
+      versionNumber: appcastItem.displayVersionString, buildNumber: appcastItem.versionString)
     // The feed may have turned informational since the check: never reply .install.
     if appcastItem.isInformationOnlyUpdate {
       reply(.dismiss)
@@ -211,6 +215,32 @@ extension SparkleUpdateOperation: SPUUserDriver {
       reply(.skip)
       return
     }
+    // A running target is quit by Updater first, with a time limit. Sparkle's own
+    // terminate request waits without end, so a refusal would leave the job pending
+    // and the install deferred to whenever the app later quits.
+    if !lifecycle.runningApps(appIdentifier).isEmpty {
+      Task { @MainActor in
+        do {
+          try await lifecycle.quit(
+            at: appIdentifier, name: appIdentifier.deletingPathExtension().lastPathComponent)
+        } catch {
+          // .skip cancels the installation; .dismiss would defer it.
+          reply(.skip)
+          if error is CancellationError { finish() } else { finish(with: error) }
+          return
+        }
+        install(reply)
+      }
+      return
+    }
+    install(reply)
+  }
+
+  @MainActor private func install(_ reply: @escaping (SPUUserUpdateChoice) -> Void) {
+    guard !isFinished else {
+      reply(.skip)
+      return
+    }
     do {
       try beginCommit()
       cancelProgressNotification()
@@ -232,6 +262,15 @@ extension SparkleUpdateOperation: SPUUserDriver {
     cancelProgressNotification()
     terminationRetry = applicationTerminated ? nil : retryTerminatingApplication
     progressState = applicationTerminated ? .installing : .waitingForQuit
+    guard !applicationTerminated else { return }
+    // Retries stay available for the quit time limit; then the job ends as needing a quit
+    // instead of waiting for ever. Sparkle's installer may still finish if the app quits
+    // later, which the next disk read picks up.
+    Task { @MainActor [timeout = lifecycle.timeout] in
+      try? await Task.sleep(for: timeout)
+      guard !self.isFinished, case .waitingForQuit = self.progressState else { return }
+      self.finish(with: AppDownloadError.applicationStillRunning)
+    }
   }
 
   // MARK: - Ignored Methods

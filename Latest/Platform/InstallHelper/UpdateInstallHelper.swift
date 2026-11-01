@@ -105,17 +105,18 @@ enum InstallHelper {
   // MARK: - Package Installation
 
   /// Installs an App Store update package at the given target URL via the privileged helper.
-  static func installPackage(at url: URL, appURL: URL, receiptData: Data)
-    async throws -> URL
-  {
+  static func installPackage(
+    at url: URL, appURL: URL, receiptData: Data, expectedVersion: String
+  ) async throws -> URL {
     return try await readiness.install {
-      try await performInstallation(at: url, appURL: appURL, receiptData: receiptData)
+      try await performInstallation(
+        at: url, appURL: appURL, receiptData: receiptData, expectedVersion: expectedVersion)
     }
   }
 
-  private static func performInstallation(at url: URL, appURL: URL, receiptData: Data)
-    async throws -> URL
-  {
+  private static func performInstallation(
+    at url: URL, appURL: URL, receiptData: Data, expectedVersion: String
+  ) async throws -> URL {
     // Transfer an open descriptor: the root daemon cannot reopen files in the
     // user's protected temporary directory on current macOS releases.
     let package = try FileHandle(forReadingFrom: url)
@@ -151,7 +152,8 @@ enum InstallHelper {
       }
 
       proxy.performInstallation(
-        ofPackage: package, appURL: appURL, receiptData: receiptData
+        ofPackage: package, appURL: appURL, receiptData: receiptData,
+        expectedVersion: expectedVersion
       ) { installedURL, error in
         if let error {
           replyGate.resume(with: .failure(error))

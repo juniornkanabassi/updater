@@ -68,7 +68,7 @@ extension App {
 
     /// The name of the external updater used to update this app.
     var externalUpdaterName: String? {
-      if case .external(let label, _) = updateAction { label } else { nil }
+      updateAction.handOffLabel
     }
 
     // MARK: - Sanitization
@@ -146,13 +146,35 @@ extension App.Update {
     /// No updater is available to update this app. An external program will be launched to perform the update.
     case external(label: String, block: UpdateAction)
 
+    /// Built in while `installs()` holds, otherwise a hand-off to `label` (the App Store's
+    /// manual-update preference). Evaluated at use, so the label follows the preference.
+    case conditional(label: String, installs: @Sendable () -> Bool, block: UpdateAction)
+
+    /// Whether this action is currently performed within Updater.
+    var installs: Bool {
+      switch self {
+      case .builtIn: true
+      case .external: false
+      case .conditional(_, let installs, _): installs()
+      }
+    }
+
+    /// The external updater's name while the action is a hand-off.
+    var handOffLabel: String? {
+      switch self {
+      case .builtIn: nil
+      case .external(let label, _): label
+      case .conditional(let label, let installs, _): installs() ? nil : label
+      }
+    }
+
     /// Performs the update for the given bundle.
     func perform(with bundle: App.Bundle, isBulkUpdate: Bool) {
       switch self {
       case .builtIn(let block):
         block(bundle)
-      case .external(_, let block):
-        if !isBulkUpdate { block(bundle) }
+      case .external(_, let block), .conditional(_, _, let block):
+        if installs || !isBulkUpdate { block(bundle) }
       }
     }
   }

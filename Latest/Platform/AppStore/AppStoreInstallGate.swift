@@ -40,10 +40,18 @@ struct AppStoreInstallGate: Sendable {
   }
 
   /// Every `.app` with this bundle ID under the folders, without descending into bundles.
-  /// Unreadable folders throw, so a copy that cannot be seen blocks the install.
-  static func copies(of bundleIdentifier: String, in folders: [URL]) throws -> Set<String> {
+  /// A missing optional folder is skipped. A missing required folder, a folder that exists
+  /// but cannot be read, or an app whose Info.plist cannot be read throws, so a copy that
+  /// cannot be seen blocks the install.
+  static func copies(of bundleIdentifier: String, in folders: [URL], required: Set<String> = [])
+    throws -> Set<String>
+  {
     var found = Set<String>()
-    for folder in folders where FileManager.default.fileExists(atPath: folder.path) {
+    for folder in folders {
+      guard try exists(folder) else {
+        if required.contains(folder.path) { throw CocoaError(.fileNoSuchFile) }
+        continue
+      }
       var failure: Error?
       let enumerator = FileManager.default.enumerator(
         at: folder, includingPropertiesForKeys: nil, options: [.skipsPackageDescendants]
@@ -52,27 +60,38 @@ struct AppStoreInstallGate: Sendable {
         return false
       }
       while let item = enumerator?.nextObject() as? URL {
-        guard item.pathExtension == "app",
-          let data = try? Data(contentsOf: item.appendingPathComponent("Contents/Info.plist")),
-          let info = try? PropertyListSerialization.propertyList(from: data, format: nil)
-            as? [String: Any],
-          info["CFBundleIdentifier"] as? String == bundleIdentifier
-        else { continue }
-        found.insert(item.standardizedFileURL.path)
+        guard item.pathExtension == "app" else { continue }
+        let data = try Data(contentsOf: item.appendingPathComponent("Contents/Info.plist"))
+        guard
+          let info = try PropertyListSerialization.propertyList(from: data, format: nil)
+            as? [String: Any]
+        else { throw CocoaError(.propertyListReadCorrupt) }
+        if info["CFBundleIdentifier"] as? String == bundleIdentifier {
+          found.insert(item.standardizedFileURL.path)
+        }
       }
       if let failure { throw failure }
     }
     return found
   }
 
+  /// Absent (ENOENT) is false; any other failure, such as no permission, throws.
+  private static func exists(_ url: URL) throws -> Bool {
+    var info = stat()
+    if stat(url.path, &info) == 0 { return true }
+    if errno == ENOENT { return false }
+    throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+  }
+
   static let live = AppStoreInstallGate(
     walk: { identifier in
-      let users = (try? FileManager.default.contentsOfDirectory(atPath: "/Users")) ?? []
+      let users = try FileManager.default.contentsOfDirectory(atPath: "/Users")
+        .filter { !$0.hasPrefix(".") }
       let folders =
         [URL(fileURLWithPath: "/Applications")]
         + users.map { URL(fileURLWithPath: "/Users/\($0)/Applications") }
         + AppDirectoryStore(updateHandler: {}).URLs
-      return try copies(of: identifier, in: folders)
+      return try copies(of: identifier, in: folders, required: ["/Applications"])
     },
     launchServicesURLs: { identifier in
       (LSCopyApplicationURLsForBundleIdentifier(identifier as CFString, nil)?

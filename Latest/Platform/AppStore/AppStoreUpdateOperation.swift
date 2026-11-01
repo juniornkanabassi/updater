@@ -30,13 +30,14 @@ enum AppStoreUpdater {
   }
 
   /// Enqueues an App Store update operation.
-  static func enqueueUpdate(for app: App.Bundle, appStoreIdentifier: UInt64) {
+  static func enqueueUpdate(for app: App.Bundle, appStoreIdentifier: UInt64, version: String) {
     let operation = AppStoreUpdateOperation(
       bundleIdentifier: app.bundleIdentifier,
       installURL: app.fileURL,
       appIdentifier: app.identifier,
       appStoreIdentifier: appStoreIdentifier
     )
+    operation.expectedVersion = Version(versionNumber: version, buildNumber: nil)
     UpdateQueue.shared.addOperation(operation)
   }
 
@@ -56,6 +57,12 @@ final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
   var prepare: @Sendable () async throws -> Void = { try await AppStoreUpdater.prepareForUpdates() }
   var openURL: @MainActor @Sendable (URL) -> Void = { NSWorkspace.shared.open($0) }
   var lifecycle = AppLifecycle.live
+  /// The helper route (macOS 26.1+) is the only one with quit, backup and verification.
+  var usesVerifiedHelperInstall = AppStoreUpdateOperation.requiresManualInstallation
+  var installPackage: @Sendable (URL, URL, Data, String) async throws -> URL = {
+    try await InstallHelper.installPackage(
+      at: $0, appURL: $1, receiptData: $2, expectedVersion: $3)
+  }
 
   /// Every App Store job goes through the one helper and download queue.
   override var lockKey: String { "appStoreHelper" }
@@ -79,13 +86,11 @@ final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
         self.finish()
         return
       }
-      // Fail closed before any helper or CommerceKit request if the install could
-      // land on another copy of this app.
-      guard
-        await self.gate.allowsInstall(at: self.installURL, bundleIdentifier: self.bundleIdentifier)
-      else {
-        self.outcomeOverride = .handedOff
-        self.openURL(URL(string: "macappstore://showUpdatesPage")!)
+      // Fail closed before any helper or CommerceKit request if the install could land
+      // on another copy of this app. Before macOS 26.1 CommerceKit installs by itself,
+      // with no quit check, backup or verification, so that route always hands off.
+      guard self.usesVerifiedHelperInstall, await self.allowsInstall() else {
+        self.handOff()
         self.finishOnMain()
         return
       }
@@ -128,6 +133,15 @@ final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
     }
   }
 
+  @MainActor private func allowsInstall() async -> Bool {
+    await gate.allowsInstall(at: installURL, bundleIdentifier: bundleIdentifier)
+  }
+
+  @MainActor private func handOff() {
+    outcomeOverride = .handedOff
+    openURL(URL(string: "macappstore://showUpdatesPage")!)
+  }
+
   @MainActor private func preparationFailed(_ error: Error) {
     // No purchase has started. Remove the waiting operation without publishing
     // an update failure or a successful-install notification, then offer recovery.
@@ -137,11 +151,12 @@ final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
     UpdateInstallHelperAlert.shared.prepare(
       fallbackURL: fallback,
       error: error as? InstallHelperError ?? .unavailable(error.localizedDescription)
-    ) { [bundleIdentifier, installURL, appIdentifier, itemIdentifier] in
-      UpdateQueue.shared.addOperation(
-        AppStoreUpdateOperation(
-          bundleIdentifier: bundleIdentifier, installURL: installURL,
-          appIdentifier: appIdentifier, appStoreIdentifier: itemIdentifier))
+    ) { [bundleIdentifier, installURL, appIdentifier, itemIdentifier, expectedVersion] in
+      let retry = AppStoreUpdateOperation(
+        bundleIdentifier: bundleIdentifier, installURL: installURL,
+        appIdentifier: appIdentifier, appStoreIdentifier: itemIdentifier)
+      retry.expectedVersion = expectedVersion
+      UpdateQueue.shared.addOperation(retry)
     }
   }
 
@@ -228,19 +243,27 @@ final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
         try await installPreservedPackage(package, receipt: receipt)
       }
       finish()
+    } catch  where outcomeOverride == .handedOff {
+      finish()
     } catch {
       finish(with: error)
     }
   }
 
-  @MainActor private func installPreservedPackage(_ package: URL, receipt: Data) async throws {
+  /// Rechecks the exact target right before the helper mutates anything: copies can
+  /// appear while the download ran or while the app was quitting.
+  @MainActor func installPreservedPackage(_ package: URL, receipt: Data) async throws {
+    guard await allowsInstall() else {
+      handOff()
+      throw CancellationError()
+    }
     try beginCommit()
     progressState = .installing
     appStoreUpdateLogger.notice(
       "Installing preserved package: bytes=\((try? package.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)"
     )
-    let installedURL = try await InstallHelper.installPackage(
-      at: package, appURL: installURL, receiptData: receipt)
+    let installedURL = try await installPackage(
+      package, installURL, receipt, expectedVersion?.versionNumber ?? "")
     // Refresh Spotlight and LaunchServices after restoring the App Store receipt.
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/mdimport")

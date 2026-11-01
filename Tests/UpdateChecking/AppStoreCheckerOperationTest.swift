@@ -75,10 +75,15 @@ class AppStoreCheckerOperationTest: XCTestCase {
     let update = try await AppStoreUpdateCheckerOperation(
       with: app, session: session, installable: { _, _ in true }
     ).check()
-    guard case .builtIn = update.updateAction else {
-      return XCTFail(
-        "A native app must retain its update capability when manual mode later changes")
-    }
+    // Sol R9: under the manual preference the native action is a hand-off, and it becomes
+    // an install again as soon as the preference is turned off, without a recheck.
+    let checked = App(bundle: app, update: .success(update), isIgnored: false)
+    XCTAssertEqual(checked.capability, .handOff)
+    XCTAssertEqual(checked.externalUpdaterName, "Mac App Store")
+    arguments[AppStoreUpdateSettings.alwaysPerformManualUpdates.rawValue] = false
+    defaults.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain)
+    XCTAssertEqual(checked.capability, .install)
+    XCTAssertNil(checked.externalUpdaterName)
     // The same app at a path the install could miss is handed off to the App Store.
     let gated = try await AppStoreUpdateCheckerOperation(with: app, session: session).check()
     guard case .external = gated.updateAction else {

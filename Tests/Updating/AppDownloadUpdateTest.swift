@@ -221,6 +221,26 @@ final class AppDownloadUpdateTest: XCTestCase {
       FileManager.default.fileExists(atPath: stage.appendingPathComponent("original").path))
   }
 
+  /// Sol R6: Obsidian's payload is shared by every copy, so it installs only with one copy.
+  func testObsidianInstallsItsSharedPayloadOnlyWithASingleCopy() {
+    XCTAssertTrue(ObsidianUpdate.payloadIsExclusive(copies: { ["/Applications/Obsidian.app"] }))
+    XCTAssertFalse(
+      ObsidianUpdate.payloadIsExclusive(copies: {
+        ["/Applications/Obsidian.app", "/Users/Shared/Obsidian.app"]
+      }))
+    XCTAssertFalse(
+      ObsidianUpdate.payloadIsExclusive(copies: { throw CocoaError(.fileReadNoPermission) }))
+    let bundle = App.Bundle(
+      version: Version(versionNumber: "1.0.0", buildNumber: nil), name: "Obsidian",
+      bundleIdentifier: "md.obsidian", fileURL: URL(fileURLWithPath: "/tmp/Obsidian.app"),
+      source: .none)
+    let release = ObsidianUpdate.Release(
+      minimumVersion: "1.0.0", latestVersion: "1.1.0",
+      downloadUrl: URL(string: "https://example.com/p.asar.gz")!, hash: "h", signature: "s")
+    XCTAssertEqual(
+      ObsidianUpdateOperation(app: bundle, release: release).lockKey, "obsidianPayload")
+  }
+
   func testObsidianPreservesStableAndExistingEarlyAccessChannels() throws {
     let data = Data(
       #"{"minimumVersion":"1.1.9","latestVersion":"1.13.7","downloadUrl":"https://example.com/public.asar.gz","hash":"hash","signature":"signature","beta":{"minimumVersion":"1.1.9","latestVersion":"1.14.4","downloadUrl":"https://example.com/beta.asar.gz","hash":"hash","signature":"signature"}}"#

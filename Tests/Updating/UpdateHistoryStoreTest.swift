@@ -8,27 +8,29 @@ import XCTest
 #endif
 
 final class UpdateHistoryStoreTest: XCTestCase {
+  private func bundle(
+    _ path: String, id: String = "com.example.fixture", version: String = "1.0",
+    build: String? = "100"
+  ) -> App.Bundle {
+    App.Bundle(
+      version: Version(versionNumber: version, buildNumber: build), name: "Fixture",
+      bundleIdentifier: id, fileURL: URL(fileURLWithPath: path), source: .sparkle,
+      modificationDate: .distantPast)
+  }
+
   func testOutcomesPersistAcrossStoreInstancesAndSkipTornLines() throws {
     let directory = FileManager.default.temporaryDirectory
       .appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
     let file = directory.appendingPathComponent("Updater/history.jsonl")
-    let app = URL(fileURLWithPath: "/tmp/Fixture.app")
-    let other = URL(fileURLWithPath: "/tmp/Other/Fixture.app")
+    let app = bundle("/tmp/Fixture.app")
+    let other = bundle("/tmp/Other/Fixture.app")
 
     let store = UpdateHistoryStore(fileURL: file)
+    store.record(UpdateHistoryEntry(bundle: app, outcome: .updated(from: "0.9", to: "1.0")))
     store.record(
-      UpdateHistoryEntry(
-        appPath: app.path, bundleIdentifier: "com.example.fixture", installedVersion: "1.0",
-        outcome: .updated(from: "0.9", to: "1.0")))
-    store.record(
-      UpdateHistoryEntry(
-        appPath: app.path, bundleIdentifier: "com.example.fixture", installedVersion: "1.0",
-        outcome: .failed(reason: "Signature changed", logPath: nil)))
-    store.record(
-      UpdateHistoryEntry(
-        appPath: other.path, bundleIdentifier: "com.example.fixture", installedVersion: "1.0",
-        outcome: .handedOff))
+      UpdateHistoryEntry(bundle: app, outcome: .failed(reason: "Signature changed", logPath: nil)))
+    store.record(UpdateHistoryEntry(bundle: other, outcome: .handedOff))
     // Simulate a crash mid-write.
     let handle = try FileHandle(forWritingTo: file)
     try handle.seekToEnd()
@@ -37,9 +39,26 @@ final class UpdateHistoryStoreTest: XCTestCase {
 
     let reloaded = UpdateHistoryStore(fileURL: file)
     XCTAssertEqual(
-      reloaded.latestEntry(for: app)?.outcome, .failed(reason: "Signature changed", logPath: nil))
-    XCTAssertEqual(reloaded.latestEntry(for: other)?.outcome, .handedOff)
+      reloaded.latestEntry(for: app.fileURL)?.outcome,
+      .failed(reason: "Signature changed", logPath: nil))
+    XCTAssertEqual(reloaded.latestEntry(for: other.fileURL)?.outcome, .handedOff)
     XCTAssertNil(reloaded.latestEntry(for: URL(fileURLWithPath: "/tmp/Missing.app")))
+
+    // Sol R10: an entry appended after the torn fragment must survive the next reload.
+    reloaded.record(UpdateHistoryEntry(bundle: app, outcome: .needsQuit))
+    XCTAssertEqual(
+      UpdateHistoryStore(fileURL: file).latestEntry(for: app.fileURL)?.outcome, .needsQuit)
+  }
+
+  /// Sol R11: a recorded outcome describes one product at one full version (short + build).
+  func testEntryMatchesOnlyTheSameProductPathAndFullVersion() {
+    let entry = UpdateHistoryEntry(
+      bundle: bundle("/tmp/A.app"), outcome: .failed(reason: "x", logPath: nil))
+    XCTAssertTrue(entry.describes(bundle("/tmp/A.app")))
+    XCTAssertFalse(entry.describes(bundle("/tmp/A.app", build: "101")), "new build")
+    XCTAssertFalse(entry.describes(bundle("/tmp/A.app", id: "com.example.other")), "other app")
+    XCTAssertFalse(entry.describes(bundle("/tmp/A.app", version: "1.1")))
+    XCTAssertFalse(entry.describes(bundle("/tmp/B.app")))
   }
 
   @MainActor

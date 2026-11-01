@@ -151,6 +151,10 @@ final class SparkleUpdateOperationTest: XCTestCase {
     queue.isSuspended = true
     let operation = SparkleUpdateOperation(
       bundleIdentifier: app.bundleIdentifier, appIdentifier: app.identifier)
+    // Not running, and a quit limit longer than this test: retries stay available.
+    operation.lifecycle = AppLifecycle(
+      runningApps: { _ in [] }, confirmQuit: { _ in true }, reopen: { _ in },
+      timeout: .seconds(60))
     queue.addOperation(operation)
     defer {
       operation.finish()
@@ -199,6 +203,43 @@ final class SparkleUpdateOperationTest: XCTestCase {
     XCTAssertEqual(opened.withLock { $0 }, [URL(string: "https://example.com/release")!])
     XCTAssertEqual(operation.outcomeOverride, .handedOff)
     XCTAssertTrue(operation.isFinished)
+  }
+
+  /// Sol R7: a running target that refuses to quit within the limit gets no install and no
+  /// deferred install (.skip), and the job ends as needing a quit.
+  func testRefusedQuitBeforeInstallSkipsAndFinishes() async throws {
+    let operation = makeOperation()
+    operation.lifecycle = AppLifecycle(
+      runningApps: { _ in [.init(terminate: {}, isTerminated: { false })] },
+      confirmQuit: { _ in true }, reopen: { _ in }, timeout: .milliseconds(200))
+    let replied = expectation(description: "Sparkle got its answer")
+    operation.showReady { choice in
+      XCTAssertEqual(choice, .skip)
+      replied.fulfill()
+    }
+    await fulfillment(of: [replied], timeout: 3)
+    XCTAssertTrue(operation.isFinished)
+    let before = App.Bundle(
+      version: Version(versionNumber: "1", buildNumber: nil), name: "Sparkle",
+      bundleIdentifier: "test.sparkle", fileURL: operation.appIdentifier, source: .sparkle,
+      modificationDate: .distantPast)
+    XCTAssertEqual(UpdateQueue.outcome(of: operation, before: before, after: before), .needsQuit)
+  }
+
+  /// Sol R7: if Sparkle itself is left waiting for the app, the wait is bounded too.
+  func testWaitingForQuitEndsAtTheTimeLimit() async throws {
+    let operation = makeOperation()
+    operation.lifecycle = AppLifecycle(
+      runningApps: { _ in [] }, confirmQuit: { _ in true }, reopen: { _ in },
+      timeout: .milliseconds(200))
+    operation.showInstallingUpdate(
+      withApplicationTerminated: false, retryTerminatingApplication: {})
+    XCTAssertFalse(operation.isFinished, "retry stays available inside the limit")
+    for _ in 0..<100 where !operation.isFinished { try await Task.sleep(for: .milliseconds(20)) }
+    XCTAssertTrue(operation.isFinished)
+    guard case AppDownloadError.applicationStillRunning? = operation.error else {
+      return XCTFail("Expected needs-quit, got \(String(describing: operation.error))")
+    }
   }
 
   private func makeOperation() -> SparkleUpdateOperation {

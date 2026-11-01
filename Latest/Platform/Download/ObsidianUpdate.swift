@@ -38,7 +38,20 @@ enum ObsidianUpdate {
     return manifest.stable
   }
 
-  static func check(_ bundle: App.Bundle) async throws -> App.Update {
+  /// Obsidian's payload lives in ~/Library/Application Support/obsidian and is shared by
+  /// every installed copy, so Updater installs it only when exactly one copy exists.
+  static func payloadIsExclusive(copies: () throws -> Set<String>) -> Bool {
+    (try? copies())?.count == 1
+  }
+
+  static let liveCopies: @Sendable () throws -> Set<String> = {
+    try AppStoreInstallGate.copies(
+      of: "md.obsidian", in: AppDirectoryStore(updateHandler: {}).URLs)
+  }
+
+  static func check(
+    _ bundle: App.Bundle, copies: @Sendable () throws -> Set<String> = liveCopies
+  ) async throws -> App.Update {
     var request = URLRequest(
       url: URL(
         string:
@@ -59,15 +72,16 @@ enum ObsidianUpdate {
       from: data, includesEarlyAccess: settings?["insider"] as? Bool == true)
     let version = Version(versionNumber: release.latestVersion, buildNumber: nil)
     let compatible = try installerIsCompatible(bundle, with: release)
-    let canInstall = compatible && !release.isEarlyAccess
+    let canInstall =
+      compatible && !release.isEarlyAccess && payloadIsExclusive(copies: copies)
     let action: App.Update.Action
     if canInstall {
       action = .builtIn { app in
         UpdateQueue.shared.addOperation(ObsidianUpdateOperation(app: app, release: release))
       }
-    } else if release.isEarlyAccess && compatible {
-      // Catalyst downloads require Obsidian's authenticated session. Keep its
-      // credentials in Obsidian and let its own updater download these releases.
+    } else if compatible {
+      // Early-access downloads need Obsidian's authenticated session, and a payload
+      // shared by several copies is Obsidian's own to update. Hand off to its updater.
       action = .external(label: bundle.name) { app in
         Task { @MainActor in MacApplicationWorkspace.shared.openApplication(at: app.fileURL) }
       }
@@ -114,6 +128,8 @@ enum ObsidianUpdate {
 
 final class ObsidianUpdateOperation: DownloadUpdateOperation, @unchecked Sendable {
   private let release: ObsidianUpdate.Release
+  /// The payload folder is shared by every copy, so the lock is the folder, not the URL.
+  override var lockKey: String { "obsidianPayload" }
 
   init(app: App.Bundle, release: ObsidianUpdate.Release) {
     self.release = release
@@ -130,6 +146,7 @@ final class ObsidianUpdateOperation: DownloadUpdateOperation, @unchecked Sendabl
     guard app.version.comparisonForUpdate(to: version) == .older else {
       throw AppDownloadError.versionMismatch
     }
+    expectedVersion = version
     let manager = FileManager.default
     let work = manager.temporaryDirectory.appendingPathComponent(
       "Updater-Obsidian-" + UUID().uuidString)
