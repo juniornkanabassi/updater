@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		A11009010000000000000001 /* com.max-langer.Latest.dev.UpdateInstaller.plist in CopyFiles */ = {isa = PBXBuildFile; fileRef = A11009010000000000000002 /* com.max-langer.Latest.dev.UpdateInstaller.plist */; };
+		A11009010000000000000001 /* com.juniornkanabassi.Updater.helper.daemon.plist in CopyFiles */ = {isa = PBXBuildFile; fileRef = A11009010000000000000002 /* com.juniornkanabassi.Updater.helper.daemon.plist */; };
 		04DB211D3099FDA076EC8F2F /* ReleaseNotesVersionSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A492B900BB42DB5CA9C73A45 /* ReleaseNotesVersionSelection.swift */; };
 		04F39C68659809071B935212 /* VersionParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50E4EB062B17DACB00A70A7D /* VersionParser.swift */; };
 		0521C977004E6C5E1CE255D2 /* InstallHelperTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF47380B4D5A5B6A192C0071 /* InstallHelperTest.swift */; };
@@ -43,8 +43,8 @@
 		505062242F0DBECC00998F84 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 505062202F0DBECC00998F84 /* main.swift */; };
 		505062252F0DBECC00998F84 /* UpdateInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 505062212F0DBECC00998F84 /* UpdateInstaller.swift */; };
 		505062262F0DBEE000998F84 /* UpdateInstallerProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 505062222F0DBECC00998F84 /* UpdateInstallerProtocol.swift */; };
-		505062292F0DBF0D00998F84 /* com.max-langer.latest.UpdateInstaller.plist in CopyFiles */ = {isa = PBXBuildFile; fileRef = 5050621F2F0DBECC00998F84 /* com.max-langer.latest.UpdateInstaller.plist */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
-		5050622A2F0DBFD300998F84 /* LatestUpdateInstaller in Resources */ = {isa = PBXBuildFile; fileRef = 505062112F0DBE5900998F84 /* LatestUpdateInstaller */; };
+		505062292F0DBF0D00998F84 /* com.juniornkanabassi.Updater.helper.plist in CopyFiles */ = {isa = PBXBuildFile; fileRef = 5050621F2F0DBECC00998F84 /* com.juniornkanabassi.Updater.helper.plist */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		5050622A2F0DBFD300998F84 /* UpdaterInstaller in Resources */ = {isa = PBXBuildFile; fileRef = 505062112F0DBE5900998F84 /* UpdaterInstaller */; };
 		5058BA3A21202BA7003F332B /* IconCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5058BA3921202BA7003F332B /* IconCache.swift */; };
 		5058E9C327863FC80028F564 /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5058E9C227863FC80028F564 /* App.swift */; };
 		506A8F6722EC14CC00C755AF /* LatestError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 506A8F6622EC14CC00C755AF /* LatestError.swift */; };
@@ -53,7 +53,6 @@
 		507375572789AB0300F371D8 /* AppListSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 507375562789AB0300F371D8 /* AppListSnapshot.swift */; };
 		50737559278B0A7400F371D8 /* AppListSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50737558278B0A7400F371D8 /* AppListSettings.swift */; };
 		5083BD322F2EA93F00D087C7 /* AppStoreUpdateSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5083BD312F2EA93F00D087C7 /* AppStoreUpdateSettings.swift */; };
-		508605292E78B077009235D2 /* App.icon in Resources */ = {isa = PBXBuildFile; fileRef = 508605282E78B077009235D2 /* App.icon */; };
 		5087CD2D22F6E06B0013354C /* SparkleUpdateOperation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5087CD2C22F6E06B0013354C /* SparkleUpdateOperation.swift */; };
 		508D4E682FBA0A5C00C0D3C1 /* AppStoreCheckerOperationTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 508D4E672FBA0A5C00C0D3C1 /* AppStoreCheckerOperationTest.swift */; };
 		508D4E6A2FBC000000000001 /* AppDataStoreTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 508D4E692FBC000000000001 /* AppDataStoreTest.swift */; };
@@ -110,7 +109,6 @@
 		52A001012FE0000000000001 /* ReleaseNotesMemoryCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52A000012FE0000000000001 /* ReleaseNotesMemoryCache.swift */; };
 		52A001022FE0000000000001 /* ReleaseNotesPersistentCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52A000022FE0000000000001 /* ReleaseNotesPersistentCache.swift */; };
 		52A001032FE0000000000001 /* ReleaseNotesMarkup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52A000032FE0000000000001 /* ReleaseNotesMarkup.swift */; };
-		52A001042FE0000000000001 /* AppUpdateController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52A000042FE0000000000001 /* AppUpdateController.swift */; };
 		52A001052FE0000000000001 /* ApplicationAppearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52A000052FE0000000000001 /* ApplicationAppearance.swift */; };
 		52A001062FE0000000000001 /* LatestRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52A000062FE0000000000001 /* LatestRootView.swift */; };
 		52A001072FE0000000000001 /* UpdatesToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52A000072FE0000000000001 /* UpdatesToolbar.swift */; };
@@ -221,8 +219,8 @@
 			dstPath = Contents/Library/LaunchDaemons;
 			dstSubfolderSpec = 1;
 			files = (
-				505062292F0DBF0D00998F84 /* com.max-langer.latest.UpdateInstaller.plist in CopyFiles */,
-				A11009010000000000000001 /* com.max-langer.Latest.dev.UpdateInstaller.plist in CopyFiles */,
+				505062292F0DBF0D00998F84 /* com.juniornkanabassi.Updater.helper.plist in CopyFiles */,
+				A11009010000000000000001 /* com.juniornkanabassi.Updater.helper.daemon.plist in CopyFiles */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -238,7 +236,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		A11009010000000000000002 /* com.max-langer.Latest.dev.UpdateInstaller.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "com.max-langer.Latest.dev.UpdateInstaller.plist"; sourceTree = "<group>"; };
+		A11009010000000000000002 /* com.juniornkanabassi.Updater.helper.daemon.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "com.juniornkanabassi.Updater.helper.daemon.plist"; sourceTree = "<group>"; };
 		002A891730B3DDB4A59CA5A1 /* ToolbarProgressPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolbarProgressPresentation.swift; sourceTree = "<group>"; };
 		0267A1D6626D912543A3A797 /* UpdateActionPresentationTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateActionPresentationTest.swift; sourceTree = "<group>"; };
 		07D1435C388987B25D471273 /* WindowCaptureSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowCaptureSupport.swift; sourceTree = "<group>"; };
@@ -272,7 +270,7 @@
 		502217B42804BB400043366B /* ko */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ko; path = ko.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		502572EC287CA64900E5ECAF /* pt-PT */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "pt-PT"; path = "pt-PT.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
 		502572ED287CA65300E5ECAF /* pt-PT */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "pt-PT"; path = "pt-PT.lproj/Localizable.strings"; sourceTree = "<group>"; };
-		50290E711E53EB6A00133E3D /* Latest Dev.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Latest Dev.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		50290E711E53EB6A00133E3D /* Updater.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Updater.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		50290E781E53EB6A00133E3D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		50290E7D1E53EB6A00133E3D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		50290E831E53EB7900133E3D /* Latest.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Latest.entitlements; sourceTree = "<group>"; };
@@ -290,8 +288,8 @@
 		5040D45A28DBB753009BF379 /* HomebrewCheckerOperation.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = HomebrewCheckerOperation.swift; sourceTree = "<group>"; };
 		5048573F22C81DCF00C52C48 /* CommerceKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CommerceKit.framework; path = ../../../../../../System/Library/PrivateFrameworks/CommerceKit.framework; sourceTree = "<group>"; };
 		5048574122C81DF800C52C48 /* StoreFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = StoreFoundation.framework; path = ../../../../../../System/Library/PrivateFrameworks/StoreFoundation.framework; sourceTree = "<group>"; };
-		505062112F0DBE5900998F84 /* LatestUpdateInstaller */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = LatestUpdateInstaller; sourceTree = BUILT_PRODUCTS_DIR; };
-		5050621F2F0DBECC00998F84 /* com.max-langer.latest.UpdateInstaller.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "com.max-langer.latest.UpdateInstaller.plist"; sourceTree = "<group>"; };
+		505062112F0DBE5900998F84 /* UpdaterInstaller */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = UpdaterInstaller; sourceTree = BUILT_PRODUCTS_DIR; };
+		5050621F2F0DBECC00998F84 /* com.juniornkanabassi.Updater.helper.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "com.juniornkanabassi.Updater.helper.plist"; sourceTree = "<group>"; };
 		505062202F0DBECC00998F84 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		505062212F0DBECC00998F84 /* UpdateInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateInstaller.swift; sourceTree = "<group>"; };
 		505062222F0DBECC00998F84 /* UpdateInstallerProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateInstallerProtocol.swift; sourceTree = "<group>"; };
@@ -315,7 +313,6 @@
 		507AEF05284E0F1500A5CCBC /* ru */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ru; path = ru.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		507AEF07284E0F1D00A5CCBC /* ru */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ru; path = ru.lproj/Localizable.strings; sourceTree = "<group>"; };
 		5083BD312F2EA93F00D087C7 /* AppStoreUpdateSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStoreUpdateSettings.swift; sourceTree = "<group>"; };
-		508605282E78B077009235D2 /* App.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = App.icon; sourceTree = "<group>"; };
 		5087CD2C22F6E06B0013354C /* SparkleUpdateOperation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SparkleUpdateOperation.swift; sourceTree = "<group>"; };
 		508D4E652FBD000000000001 /* AppListSnapshotTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppListSnapshotTest.swift; sourceTree = "<group>"; };
 		508D4E672FBA0A5C00C0D3C1 /* AppStoreCheckerOperationTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStoreCheckerOperationTest.swift; sourceTree = "<group>"; };
@@ -434,7 +431,6 @@
 		52A000012FE0000000000001 /* ReleaseNotesMemoryCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseNotesMemoryCache.swift; sourceTree = "<group>"; };
 		52A000022FE0000000000001 /* ReleaseNotesPersistentCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseNotesPersistentCache.swift; sourceTree = "<group>"; };
 		52A000032FE0000000000001 /* ReleaseNotesMarkup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseNotesMarkup.swift; sourceTree = "<group>"; };
-		52A000042FE0000000000001 /* AppUpdateController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdateController.swift; sourceTree = "<group>"; };
 		52A000052FE0000000000001 /* ApplicationAppearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApplicationAppearance.swift; sourceTree = "<group>"; };
 		52A000062FE0000000000001 /* LatestRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LatestRootView.swift; sourceTree = "<group>"; };
 		52A000072FE0000000000001 /* UpdatesToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdatesToolbar.swift; sourceTree = "<group>"; };
@@ -567,9 +563,9 @@
 			isa = PBXGroup;
 			children = (
 				7CCF35F698578974F2170F54 /* Latest Unit Tests.xctest */,
-				50290E711E53EB6A00133E3D /* Latest Dev.app */,
+				50290E711E53EB6A00133E3D /* Updater.app */,
 				50C81D691FBADC5900324C2E /* Latest Tests.xctest */,
-				505062112F0DBE5900998F84 /* LatestUpdateInstaller */,
+				505062112F0DBE5900998F84 /* UpdaterInstaller */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -602,8 +598,8 @@
 		5050621E2F0DBEB700998F84 /* UpdateInstaller */ = {
 			isa = PBXGroup;
 			children = (
-				5050621F2F0DBECC00998F84 /* com.max-langer.latest.UpdateInstaller.plist */,
-				A11009010000000000000002 /* com.max-langer.Latest.dev.UpdateInstaller.plist */,
+				5050621F2F0DBECC00998F84 /* com.juniornkanabassi.Updater.helper.plist */,
+				A11009010000000000000002 /* com.juniornkanabassi.Updater.helper.daemon.plist */,
 				505062202F0DBECC00998F84 /* main.swift */,
 				505062212F0DBECC00998F84 /* UpdateInstaller.swift */,
 			);
@@ -613,7 +609,6 @@
 		5095120C1FF3623B003D2D7F /* Resources */ = {
 			isa = PBXGroup;
 			children = (
-				508605282E78B077009235D2 /* App.icon */,
 				50290E831E53EB7900133E3D /* Latest.entitlements */,
 				50290E781E53EB6A00133E3D /* Assets.xcassets */,
 				50290E7D1E53EB6A00133E3D /* Info.plist */,
@@ -903,7 +898,6 @@
 		52C000112FE0000000000001 /* Sparkle */ = {
 			isa = PBXGroup;
 			children = (
-				52A000042FE0000000000001 /* AppUpdateController.swift */,
 				50D6EF5E281461A3002D7006 /* SparkleFeed.swift */,
 				50C9F10B234641E000FD1802 /* SparkleCheckerOperation.swift */,
 				5087CD2C22F6E06B0013354C /* SparkleUpdateOperation.swift */,
@@ -1096,7 +1090,6 @@
 				50290E6E1E53EB6A00133E3D /* Frameworks */,
 				50290E6F1E53EB6A00133E3D /* Resources */,
 				505062062F0DA89A00998F84 /* CopyFiles */,
-				50EAB06122B51AA200685775 /* Update Build Number */,
 			);
 			buildRules = (
 			);
@@ -1108,7 +1101,7 @@
 				509B30ED28DBB17D00DDAA2E /* Sparkle */,
 			);
 			productName = Latest;
-			productReference = 50290E711E53EB6A00133E3D /* Latest Dev.app */;
+			productReference = 50290E711E53EB6A00133E3D /* Updater.app */;
 			productType = "com.apple.product-type.application";
 		};
 		505062102F0DBE5900998F84 /* UpdateInstaller */ = {
@@ -1127,7 +1120,7 @@
 			packageProductDependencies = (
 			);
 			productName = UpdateInstaller;
-			productReference = 505062112F0DBE5900998F84 /* LatestUpdateInstaller */;
+			productReference = 505062112F0DBE5900998F84 /* UpdaterInstaller */;
 			productType = "com.apple.product-type.tool";
 		};
 		50C81D681FBADC5900324C2E /* Latest Tests */ = {
@@ -1263,7 +1256,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				5050622A2F0DBFD300998F84 /* LatestUpdateInstaller in Resources */,
+				5050622A2F0DBFD300998F84 /* UpdaterInstaller in Resources */,
 				50BC19E328230D41005945E8 /* InfoPlist.strings in Resources */,
 				50290E791E53EB6A00133E3D /* Assets.xcassets in Resources */,
 				50FEB8812B1D2402006FB75D /* ExcludedAppIdentifiers.plist in Resources */,
@@ -1271,7 +1264,6 @@
 				FA691397FB78445BB28E4188 /* LatestReleaseNotes.json in Resources */,
 				51D000012FC7000000000001 /* UpdateSources.json in Resources */,
 				501EA9821EB1BA4400D05821 /* Localizable.strings in Resources */,
-				508605292E78B077009235D2 /* App.icon in Resources */,
 				50A86BBD27EA6BF4007A5F80 /* SparkleLicense.txt in Resources */,
 				53A001052FFF000000000001 /* LICENSE.md in Resources */,
 			);
@@ -1292,30 +1284,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
-
-/* Begin PBXShellScriptBuildPhase section */
-		50EAB06122B51AA200685775 /* Update Build Number */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 12;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"$(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)",
-			);
-			name = "Update Build Number";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "#!/bin/bash\nset -euo pipefail\n\nnumber_of_commits=$(/usr/bin/git -C \"$SRCROOT\" rev-list HEAD --count)\n\ntarget_plist=\"$TARGET_BUILD_DIR/$INFOPLIST_PATH\"\ndsym_plist=\"$DWARF_DSYM_FOLDER_PATH/$DWARF_DSYM_FILE_NAME/Contents/Info.plist\"\n\nfor plist in \"$target_plist\" \"$dsym_plist\"; do\nif [ -f \"$plist\" ]; then\ncurrent_version=$(/usr/libexec/PlistBuddy -c \"Print :CFBundleVersion\" \"$plist\" 2>/dev/null || true)\nif [ \"$current_version\" != \"$number_of_commits\" ]; then\n/usr/libexec/PlistBuddy -c \"Set :CFBundleVersion $number_of_commits\" \"$plist\"\nfi\nfi\ndone\n";
-			showEnvVarsInLog = 0;
-		};
-/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		50290E6D1E53EB6A00133E3D /* Sources */ = {
@@ -1418,7 +1386,6 @@
 				52E001012FE1000000000001 /* ApplicationWorkspace.swift in Sources */,
 				52E001022FE1000000000001 /* AppStoreUpdateService.swift in Sources */,
 				52E001032FE1000000000001 /* InstallHelperService.swift in Sources */,
-				52A001042FE0000000000001 /* AppUpdateController.swift in Sources */,
 				52A001052FE0000000000001 /* ApplicationAppearance.swift in Sources */,
 				52A001062FE0000000000001 /* LatestRootView.swift in Sources */,
 				52A001072FE0000000000001 /* UpdatesToolbar.swift in Sources */,
@@ -1631,7 +1598,7 @@
 					"$(inherited)",
 					"@loader_path/../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest-UnitTests";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.juniornkanabassi.Updater-UnitTests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_STRICT_CONCURRENCY = complete;
@@ -1678,7 +1645,7 @@
 				COPY_PHASE_STRIP = NO;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = VFABJ5RE5Q;
+				DEVELOPMENT_TEAM = M6L2VW4W5Z;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -1747,7 +1714,7 @@
 				COPY_PHASE_STRIP = NO;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = VFABJ5RE5Q;
+				DEVELOPMENT_TEAM = M6L2VW4W5Z;
 				ENABLE_CODE_COVERAGE = NO;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -1775,16 +1742,17 @@
 		50290E811E53EB6A00133E3D /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = App;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1464;
+				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
-				DEVELOPMENT_TEAM = D87N659XLV;
+				DWARF_DSYM_FILE_NAME = "UpdaterApp.app.dSYM"; /* Sparkle ships its own Updater.app.dSYM */
+				DEVELOPMENT_TEAM = M6L2VW4W5Z;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				FRAMEWORK_SEARCH_PATHS = (
@@ -1800,10 +1768,10 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.94;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest.dev";
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.juniornkanabassi.Updater";
 				PRODUCT_MODULE_NAME = Latest;
-				PRODUCT_NAME = "Latest Dev";
+				PRODUCT_NAME = "Updater";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_INCLUDE_PATHS = "$(inherited) $(SRCROOT)/Frameworks/CommerceKit $(SRCROOT)/Frameworks/StoreFoundation";
@@ -1816,17 +1784,18 @@
 		50290E821E53EB6A00133E3D /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = App;
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_COVERAGE_MAPPING = NO;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CLANG_ENABLE_OBJC_WEAK = YES;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1464;
+				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
-				DEVELOPMENT_TEAM = D87N659XLV;
+				DWARF_DSYM_FILE_NAME = "UpdaterApp.app.dSYM"; /* Sparkle ships its own Updater.app.dSYM */
+				DEVELOPMENT_TEAM = M6L2VW4W5Z;
 				ENABLE_CODE_COVERAGE = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -1843,10 +1812,10 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.94;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest.dev";
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.juniornkanabassi.Updater";
 				PRODUCT_MODULE_NAME = Latest;
-				PRODUCT_NAME = "Latest Dev";
+				PRODUCT_NAME = "Updater";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_INCLUDE_PATHS = "$(inherited) $(SRCROOT)/Frameworks/CommerceKit $(SRCROOT)/Frameworks/StoreFoundation";
@@ -1867,18 +1836,19 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
-				DEVELOPMENT_TEAM = D87N659XLV;
+				DEVELOPMENT_TEAM = M6L2VW4W5Z;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "$(SRCROOT)/UpdateInstaller/Info.plist";
 				INFOPLIST_OUTPUT_FORMAT = binary;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
-				OTHER_CODE_SIGN_FLAGS = "--identifier com.max-langer.latest.UpdateInstaller";
-				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.latest.UpdateInstaller";
-				PRODUCT_NAME = LatestUpdateInstaller;
+				OTHER_CODE_SIGN_FLAGS = "--identifier com.juniornkanabassi.Updater.helper";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.juniornkanabassi.Updater.helper";
+				PRODUCT_NAME = UpdaterInstaller;
 				SKIP_INSTALL = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -1900,17 +1870,18 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
-				DEVELOPMENT_TEAM = D87N659XLV;
+				DEVELOPMENT_TEAM = M6L2VW4W5Z;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "$(SRCROOT)/UpdateInstaller/Info.plist";
 				INFOPLIST_OUTPUT_FORMAT = binary;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MTL_FAST_MATH = YES;
-				OTHER_CODE_SIGN_FLAGS = "--identifier com.max-langer.latest.UpdateInstaller";
-				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.latest.UpdateInstaller";
-				PRODUCT_NAME = LatestUpdateInstaller;
+				OTHER_CODE_SIGN_FLAGS = "--identifier com.juniornkanabassi.Updater.helper";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.juniornkanabassi.Updater.helper";
+				PRODUCT_NAME = UpdaterInstaller;
 				SKIP_INSTALL = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_STRICT_CONCURRENCY = complete;
@@ -1930,7 +1901,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = D87N659XLV;
+				DEVELOPMENT_TEAM = M6L2VW4W5Z;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					/System/Library/PrivateFrameworks,
@@ -1942,7 +1913,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest-Tests";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.juniornkanabassi.Updater-Tests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) LATEST_HOSTED_TESTS";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -1950,7 +1921,7 @@
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Latest Dev.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Latest Dev";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Updater.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Updater";
 			};
 			name = Debug;
 		};
@@ -1965,7 +1936,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = D87N659XLV;
+				DEVELOPMENT_TEAM = M6L2VW4W5Z;
 				FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
 					/System/Library/PrivateFrameworks,
@@ -1977,7 +1948,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest-Tests";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.juniornkanabassi.Updater-Tests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) LATEST_HOSTED_TESTS";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -1985,7 +1956,7 @@
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Latest Dev.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Latest Dev";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Updater.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Updater";
 			};
 			name = Release;
 		};
@@ -1999,7 +1970,7 @@
 					"$(inherited)",
 					"@loader_path/../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "com.max-langer.Latest-UnitTests";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.juniornkanabassi.Updater-UnitTests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_STRICT_CONCURRENCY = complete;

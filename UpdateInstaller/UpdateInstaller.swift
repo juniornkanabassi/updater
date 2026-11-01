@@ -46,7 +46,7 @@ final class UpdateInstaller: NSObject, UpdateInstallerProtocol {
       // input in the daemon's private directory and keep it until installation ends.
       let fileManager = FileManager.default
       let staging = URL(fileURLWithPath: "/private/tmp", isDirectory: true)
-        .appendingPathComponent("LatestUpdateInstaller-" + UUID().uuidString)
+        .appendingPathComponent("UpdaterInstaller-" + UUID().uuidString)
       try fileManager.createDirectory(
         at: staging, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
       defer { try? fileManager.removeItem(at: staging) }

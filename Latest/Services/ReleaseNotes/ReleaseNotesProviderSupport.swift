@@ -40,7 +40,7 @@ extension ReleaseNotesProvider {
   /// Local fork builds have no appcast. Match the installed version exactly,
   /// independently of updater support, and never substitute upstream notes.
   static func bundledReleaseNotes(for app: App) -> String? {
-    guard app.bundleIdentifier == "com.max-langer.Latest.dev",
+    guard app.bundleIdentifier == "com.juniornkanabassi.Updater",
       !app.updateAvailable, app.releaseNotes == nil,
       let version = app.version.versionNumber
     else { return nil }

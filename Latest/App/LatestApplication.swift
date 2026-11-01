@@ -14,7 +14,6 @@ struct LatestApplication: SwiftUI.App {
   private var appearanceRawValue = ApplicationAppearance.system.rawValue
 
   @StateObject private var environment: AppEnvironment
-  private let appUpdateController = AppUpdateController()
 
   init() {
     _environment = StateObject(wrappedValue: .live())
@@ -35,8 +34,7 @@ struct LatestApplication: SwiftUI.App {
       LatestCommands(
         appCommands: environment.commands,
         updatesViewModel: environment.updatesListViewModel,
-        updateCheckingService: environment.updateCheckingService,
-        appUpdateController: appUpdateController
+        updateCheckingService: environment.updateCheckingService
       )
     }
 
@@ -46,7 +44,7 @@ struct LatestApplication: SwiftUI.App {
     }
     .windowResizability(.contentSize)
 
-    Window("About Latest", id: "about") {
+    Window("About Updater", id: "about") {
       AboutView()
         .modifier(ApplicationAppearanceModifier(appearance: appearance))
         .windowMinimizeBehavior(.disabled)
@@ -77,7 +75,7 @@ struct LatestMainWindowScene<Content: View>: Scene {
   @ViewBuilder var content: Content
 
   var body: some Scene {
-    Window("Latest", id: id) {
+    Window("Updater", id: id) {
       content.frame(
         minWidth: VisualMetrics.mainWindowMinWidth,
         minHeight: VisualMetrics.mainWindowMinHeight)

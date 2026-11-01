@@ -13,11 +13,11 @@ import Foundation
 import OSLog
 
 let releaseNotesLogger = Logger(
-  subsystem: Bundle.main.bundleIdentifier ?? "com.max-langer.Latest",
+  subsystem: Bundle.main.bundleIdentifier ?? "com.juniornkanabassi.Updater",
   category: "ReleaseNotes"
 )
 let releaseNotesSignposter = OSSignposter(
-  subsystem: Bundle.main.bundleIdentifier ?? "com.max-langer.Latest",
+  subsystem: Bundle.main.bundleIdentifier ?? "com.juniornkanabassi.Updater",
   category: "ReleaseNotesPerformance"
 )
 
@@ -744,7 +744,7 @@ class ReleaseNotesProvider {
       request.cachePolicy = .useProtocolCachePolicy
       request.timeoutInterval = 6
       request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-      request.setValue("Latest", forHTTPHeaderField: "User-Agent")
+      request.setValue("Updater", forHTTPHeaderField: "User-Agent")
 
       let result = try await URLSessionReleaseNotesHTTPDataLoader().load(
         request,

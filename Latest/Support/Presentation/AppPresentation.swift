@@ -115,12 +115,12 @@ extension App.Source.SupportState {
   var label: String {
     switch self {
     case .full:
-      NSLocalizedString("SupportedLabel", comment: "A label for apps fully supported by Latest.")
+      NSLocalizedString("SupportedLabel", comment: "A label for apps fully supported by Updater.")
     case .limited:
       NSLocalizedString(
-        "LimitedSupportLabel", comment: "A label for apps partially supported by Latest.")
+        "LimitedSupportLabel", comment: "A label for apps partially supported by Updater.")
     case .none:
-      NSLocalizedString("UnsupportedLabel", comment: "A label for apps not supported by Latest.")
+      NSLocalizedString("UnsupportedLabel", comment: "A label for apps not supported by Updater.")
     }
   }
 

@@ -12,7 +12,7 @@ import StoreFoundation
 import os
 
 private let appStoreUpdateLogger = Logger(
-  subsystem: "com.max-langer.Latest.dev", category: "AppStoreUpdates")
+  subsystem: "com.juniornkanabassi.Updater", category: "AppStoreUpdates")
 
 /// Public boundary for App Store updates backed by private Apple frameworks.
 enum AppStoreUpdater {

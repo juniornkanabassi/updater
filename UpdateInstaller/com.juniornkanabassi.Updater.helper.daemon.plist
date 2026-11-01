@@ -1,21 +1,22 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- SpawnConstraint cannot use build-setting substitution: team-identifier must match DEVELOPMENT_TEAM (M6L2VW4W5Z). build.sh checks it. -->
 <plist version="1.0">
 <dict>
 	<key>SpawnConstraint</key>
 	<dict>
 		<key>team-identifier</key>
-		<string>D87N659XLV</string>
+		<string>M6L2VW4W5Z</string>
 		<key>signing-identifier</key>
-		<string>com.max-langer.latest.UpdateInstaller</string>
+		<string>com.juniornkanabassi.Updater.helper</string>
 	</dict>
 	<key>BundleProgram</key>
-	<string>Contents/Resources/LatestUpdateInstaller</string>
+	<string>Contents/Resources/UpdaterInstaller</string>
 	<key>Label</key>
-	<string>com.max-langer.Latest.dev.UpdateInstaller</string>
+	<string>com.juniornkanabassi.Updater.helper.daemon</string>
 	<key>MachServices</key>
 	<dict>
-		<key>com.max-langer.latest.UpdateInstaller</key>
+		<key>com.juniornkanabassi.Updater.helper</key>
 		<true/>
 	</dict>
 	<key>RunAtLoad</key>

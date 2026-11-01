@@ -89,7 +89,7 @@ enum InstallHelper {
         throw LatestError.custom(
           title: "Update Helper Requires a Signed Build",
           description:
-            "This copy of Latest or its helper does not have the required code signature. Use a signed build of Latest, then enable the helper again."
+            "This copy of Updater or its helper does not have the required code signature. Use a signed build of Updater, then enable the helper again."
         )
       }
       return code
@@ -97,7 +97,7 @@ enum InstallHelper {
     _ = try verifiedCode(
       at: Bundle.main.bundleURL, requirement: UpdateInstallerIdentity.appRequirement)
     let helper = try verifiedCode(
-      at: Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/LatestUpdateInstaller"),
+      at: Bundle.main.bundleURL.appendingPathComponent("Contents/Resources/UpdaterInstaller"),
       requirement: UpdateInstallerIdentity.helperRequirement)
     return try UpdateInstallerIdentity.signature(of: helper)
   }

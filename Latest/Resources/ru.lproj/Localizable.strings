@@ -111,7 +111,7 @@
 /* An explanatory text indicating where the update will be performed. The placeholder will be filled with the name of the external updater (App Store, App Name). The text will appear below the Update button, so that it reads: "Update in XY" */
 "ExternalUpdateActionWithAppName" = "в %@";
 
-/* Action to update a given app outside of Latest. The placeholder is filled with the name of the external updater. (App Store, App Name) */
+/* Action to update a given app outside of Updater. The placeholder is filled with the name of the external updater. (App Store, App Name) */
 "ExternalUpdateAction" = "Обновить в %@";
 "UnsupportedLabel" = "Не поддерживается";
 "LimitedSupportLabel" = "Ограниченная поддержка";

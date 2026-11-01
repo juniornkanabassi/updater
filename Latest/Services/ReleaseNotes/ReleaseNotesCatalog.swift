@@ -532,7 +532,7 @@ final class ReleaseNotesCatalogDiskCache: Sendable {
     -> ReleaseNotesCatalogDiskCache
   {
     let url = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
-      .appendingPathComponent(bundleIdentifier ?? "com.max-langer.Latest", isDirectory: true)
+      .appendingPathComponent(bundleIdentifier ?? "com.juniornkanabassi.Updater", isDirectory: true)
       .appendingPathComponent("ReleaseNotesCatalog", isDirectory: false)
       .appendingPathExtension("plist")
     return ReleaseNotesCatalogDiskCache(url: url)

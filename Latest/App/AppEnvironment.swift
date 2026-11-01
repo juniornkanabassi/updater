@@ -67,8 +67,7 @@ final class AppEnvironment: ObservableObject {
       updateCheckingService: updateCheckingService,
       updatesListViewModel: updatesListViewModel,
       searchFocusController: searchFocusController,
-      settings: settings,
-      workspace: workspace
+      settings: settings
     )
   }
 

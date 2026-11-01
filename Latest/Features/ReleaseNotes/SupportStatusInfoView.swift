@@ -59,8 +59,6 @@ struct SupportStatusButton: View {
 }
 
 struct SupportStatusInfoView: View {
-  private static let issueURL = URL(string: "https://github.com/mangerlahn/Latest/issues")!
-
   let app: App
 
   var body: some View {
@@ -81,35 +79,13 @@ struct SupportStatusInfoView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
       }
       .frame(width: 300)
-
-      if showsReportIssue {
-        Link(destination: Self.issueURL) {
-          Text(
-            NSLocalizedString(
-              "pNJ-Hl-Qxz.title",
-              tableName: "Main",
-              value: "Report Issue…",
-              comment: "Button title in the support status popover"
-            ))
-        }
-        .buttonStyle(.bordered)
-        .controlSize(.small)
-      }
     }
     .padding(.top, 12)
     .padding(.leading, 5)
     .padding(.trailing, 15)
     .padding(.bottom, 15)
-    .frame(width: 325, height: contentHeight, alignment: .top)
+    .frame(width: 325, height: 98, alignment: .top)
     .accessibilityElement(children: .contain)
-  }
-
-  private var contentHeight: CGFloat {
-    showsReportIssue ? 132 : 98
-  }
-
-  private var showsReportIssue: Bool {
-    if case .full = app.source.supportState { true } else { false }
   }
 
   private var supportDescription: String {

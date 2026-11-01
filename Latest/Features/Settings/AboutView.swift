@@ -7,7 +7,7 @@ import SwiftUI
 struct AboutView: View {
   private static let icon: CGImage? = {
     guard
-      let url = Bundle.main.url(forResource: "App", withExtension: "icns"),
+      let url = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
       let source = CGImageSourceCreateWithURL(url as CFURL, nil)
     else { return nil }
     let index =
@@ -36,19 +36,23 @@ struct AboutView: View {
       }
       .scaledToFit()
       .frame(width: 80, height: 80)
-      .accessibilityLabel("Latest icon")
+      .accessibilityLabel("Updater icon")
       .padding(.bottom, 8)
 
-      Text("Latest")
+      Text("Updater")
         .font(.title2.bold())
 
       Text("Version \(version)")
         .foregroundStyle(.secondary)
 
-      Text("© 2026 Max Langer & ertyoii")
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .padding(.top, 12)
+      VStack(spacing: 2) {
+        Text("Based on Latest by Max Langer and the Ertyoii fork")
+        Text("Licensed under GPL-3.0")
+      }
+      .font(.caption)
+      .foregroundStyle(.secondary)
+      .multilineTextAlignment(.center)
+      .padding(.top, 12)
     }
     .padding(24)
     .frame(width: 320)

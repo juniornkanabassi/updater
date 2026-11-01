@@ -53,7 +53,7 @@ struct GeneralSettingsView: View {
         VStack(alignment: .leading, spacing: 14) {
           preferenceOption(
             title: "Apps with limited support",
-            description: "Update information may be inaccurate. Update these apps outside Latest.",
+            description: "Update information may be inaccurate. Update these apps outside Updater.",
             isOn: limitedSupportBinding
           )
 
@@ -88,7 +88,7 @@ struct GeneralSettingsView: View {
       HStack(spacing: 12) {
         VStack(alignment: .leading, spacing: 4) {
           Text("App Store updates")
-          Text("Enable a helper to update App Store apps within Latest.")
+          Text("Enable a helper to update App Store apps within Updater.")
             .font(.caption)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)

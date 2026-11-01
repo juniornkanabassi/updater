@@ -20,28 +20,21 @@ extension UpdateCheckingService: UpdateCheckingCommandHandling {}
 
 @MainActor
 final class AppCommands {
-  private enum ExternalURL {
-    static let website = URL(string: "https://github.com/Ertyoii/Latest")
-  }
-
   private let updateCheckingService: UpdateCheckingCommandHandling
   private let updatesListViewModel: UpdatesListViewModel
   private let searchFocusController: SearchFocusController
   private let settings: any AppListSettingsProviding
-  private let workspace: any ApplicationWorkspace
 
   init(
     updateCheckingService: UpdateCheckingCommandHandling,
     updatesListViewModel: UpdatesListViewModel,
     searchFocusController: SearchFocusController,
-    settings: any AppListSettingsProviding = AppListSettings.shared,
-    workspace: any ApplicationWorkspace = MacApplicationWorkspace.shared
+    settings: any AppListSettingsProviding = AppListSettings.shared
   ) {
     self.updateCheckingService = updateCheckingService
     self.updatesListViewModel = updatesListViewModel
     self.searchFocusController = searchFocusController
     self.settings = settings
-    self.workspace = workspace
   }
 
   func reload() {
@@ -84,11 +77,6 @@ final class AppCommands {
     searchFocusController.focus()
   }
 
-  func visitWebsite() {
-    guard let url = ExternalURL.website else { return }
-    workspace.open(url)
-  }
-
   func changeSortOrder(_ order: AppListSettings.SortOptions) {
     settings.sortOrder = order
   }
@@ -113,22 +101,15 @@ struct LatestCommands: Commands {
   let appCommands: AppCommands
   @ObservedObject var updatesViewModel: UpdatesListViewModel
   @ObservedObject var updateCheckingService: UpdateCheckingService
-  let appUpdateController: AppUpdateController
 
   var body: some Commands {
     CommandGroup(replacing: .appInfo) {
-      Button("About Latest") {
+      Button("About Updater") {
         openWindow(id: "about")
       }
     }
 
     CommandMenu("Updates") {
-      Button("View Latest Releases…") {
-        appUpdateController.checkForAppUpdates()
-      }
-
-      Divider()
-
       Button("Check Installed Apps") {
         appCommands.reload()
       }
@@ -175,10 +156,6 @@ struct LatestCommands: Commands {
     CommandGroup(after: .help) {
       Button("Licenses…") {
         openWindow(id: "licenses")
-      }
-
-      Button("Latest on GitHub") {
-        appCommands.visitWebsite()
       }
     }
   }
@@ -232,7 +209,7 @@ private struct SelectedAppCommandButtons: View {
       return String(
         format: NSLocalizedString(
           "ExternalUpdateAction",
-          comment: "Action to update a given app outside of Latest."
+          comment: "Action to update a given app outside of Updater."
         ),
         externalUpdater
       )

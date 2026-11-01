@@ -37,7 +37,7 @@
 /* Description of button that opens an error dialogue. */
 "ErrorButtonAccessibilityTitle" = "Error while updating app";
 
-/* Action to update a given app outside of Latest. The placeholder is filled with the name of the external updater. (App Store, App Name) */
+/* Action to update a given app outside of Updater. The placeholder is filled with the name of the external updater. (App Store, App Name) */
 "ExternalUpdateAction" = "Update in %@";
 
 /* An explanatory text indicating where the update will be performed. The placeholder will be filled with the name of the external updater (App Store, App Name). The text will appear below the Update button, so that it reads: "Update in XY" */
@@ -130,22 +130,22 @@
 /* The source name for apps loaded from third-party websites. */
 "WebSource" = "Web";
 
-/* A compact label used for apps which are partially supported by Latest. */
+/* A compact label used for apps which are partially supported by Updater. */
 "LimitedSupportCompactLabel" = "Limited";
 
-/* A label used for apps which are partially supported by Latest. */
+/* A label used for apps which are partially supported by Updater. */
 "LimitedSupportLabel" = "Limited support";
 
-/* A compact label used for apps which are fully supported by Latest. */
+/* A compact label used for apps which are fully supported by Updater. */
 "SupportedCompactLabel" = "Supported";
 
-/* A label used for apps which are fully supported by Latest. */
+/* A label used for apps which are fully supported by Updater. */
 "SupportedLabel" = "Supported";
 
-/* A compact label used for apps which are not supported by Latest. */
+/* A compact label used for apps which are not supported by Updater. */
 "UnsupportedCompactLabel" = "Unsupported";
 
-/* A label used for apps which are not supported by Latest. */
+/* A label used for apps which are not supported by Updater. */
 "UnsupportedLabel" = "No support";
 
 /* Tool tip of a toolbar button that checks for updates */
@@ -155,10 +155,10 @@
 "UpdateAllToolbarItemToolTip" = "Update all Apps";
 
 /* Shown when the update helper is not installed. */
-"InstallHelperNotFoundErrorDescription" = "To install App Store updates within Latest, a helper must be installed. If you don't want to install the helper, you can update apps via the App Store manually.";
+"InstallHelperNotFoundErrorDescription" = "To install App Store updates within Updater, a helper must be installed. If you don't want to install the helper, you can update apps via the App Store manually.";
 
 /* Shown when the update helper is installed but disabled, requiring approval. */
-"InstallHelperRequiresApprovalErrorDescription" = "Enable the update helper in Settings to install updates within Latest.";
+"InstallHelperRequiresApprovalErrorDescription" = "Enable the update helper in Settings to install updates within Updater.";
 
 /* Title of the alert prompting to install or enable the update helper */
 "UpdateInstallHelperAlert.Title" = "Update Helper Required";

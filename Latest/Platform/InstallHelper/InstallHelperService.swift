@@ -108,7 +108,7 @@ actor InstallHelperReadiness {
       !outcomeUnknown || health?.isInstalling == false
     else {
       throw InstallHelperError.unavailable(
-        "An installation may still be running. Check its result before trying again; Latest will not restart the helper while its outcome is unknown."
+        "An installation may still be running. Check its result before trying again; Updater will not restart the helper while its outcome is unknown."
       )
     }
     try await backend.refresh()

@@ -10,7 +10,7 @@ import Foundation
 import OSLog
 
 private let updateCheckEngineSignposter = OSSignposter(
-  subsystem: Bundle.main.bundleIdentifier ?? "com.max-langer.Latest",
+  subsystem: Bundle.main.bundleIdentifier ?? "com.juniornkanabassi.Updater",
   category: "UpdateCheckPerformance"
 )
 

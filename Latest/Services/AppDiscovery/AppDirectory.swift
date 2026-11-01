@@ -11,11 +11,11 @@ import Foundation
 import OSLog
 
 private let appDirectoryLogger = Logger(
-  subsystem: Foundation.Bundle.main.bundleIdentifier ?? "com.max-langer.Latest",
+  subsystem: Foundation.Bundle.main.bundleIdentifier ?? "com.juniornkanabassi.Updater",
   category: "AppDiscovery"
 )
 private let appDirectorySignposter = OSSignposter(
-  subsystem: Foundation.Bundle.main.bundleIdentifier ?? "com.max-langer.Latest",
+  subsystem: Foundation.Bundle.main.bundleIdentifier ?? "com.juniornkanabassi.Updater",
   category: "AppDiscoveryPerformance"
 )
 

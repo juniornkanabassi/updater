@@ -11,7 +11,7 @@ import OSLog
 import Synchronization
 
 private let updateCheckLogger = Logger(
-  subsystem: Foundation.Bundle.main.bundleIdentifier ?? "com.max-langer.Latest",
+  subsystem: Foundation.Bundle.main.bundleIdentifier ?? "com.juniornkanabassi.Updater",
   category: "UpdateCheck"
 )
 

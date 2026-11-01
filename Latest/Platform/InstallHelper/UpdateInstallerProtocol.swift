@@ -23,11 +23,11 @@ import Security
 }
 
 enum UpdateInstallerIdentity {
-  // Separate the fork's launchd registration from the legacy shared identity.
-  // Keep the authenticated XPC endpoint and signing identity compatible.
-  static let daemon = "com.max-langer.Latest.dev.UpdateInstaller"
-  static let service = "com.max-langer.latest.UpdateInstaller"
-  static let appRequirement = requirement(for: "com.max-langer.Latest.dev")
+  // The launchd label differs from the Mach service name and helper signing identifier so the
+  // earlier single-label registration can still be recognised and unregistered.
+  static let daemon = "com.juniornkanabassi.Updater.helper.daemon"
+  static let service = "com.juniornkanabassi.Updater.helper"
+  static let appRequirement = requirement(for: "com.juniornkanabassi.Updater")
   // Used by app-side XPC/signature validation; this file also builds in the helper.
   // swiftlint:disable:next unused_declaration
   static let helperRequirement = requirement(for: service)
@@ -40,7 +40,12 @@ enum UpdateInstallerIdentity {
     return hash
   }
 
+  /// The signing team, injected from the DEVELOPMENT_TEAM build setting into both Info.plists.
+  /// A missing value yields a requirement nothing can satisfy, so authentication fails closed.
+  private static let teamIdentifier =
+    Bundle.main.object(forInfoDictionaryKey: "UpdaterTeamIdentifier") as? String ?? ""
+
   private static func requirement(for identifier: String) -> String {
-    "anchor apple generic and identifier \"\(identifier)\" and certificate leaf[subject.OU] = \"D87N659XLV\""
+    "anchor apple generic and identifier \"\(identifier)\" and certificate leaf[subject.OU] = \"\(teamIdentifier)\""
   }
 }

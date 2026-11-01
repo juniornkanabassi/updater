@@ -132,7 +132,7 @@ final class ObsidianUpdateOperation: DownloadUpdateOperation, @unchecked Sendabl
     }
     let manager = FileManager.default
     let work = manager.temporaryDirectory.appendingPathComponent(
-      "Latest-Obsidian-" + UUID().uuidString)
+      "Updater-Obsidian-" + UUID().uuidString)
     try manager.createDirectory(at: work, withIntermediateDirectories: true)
     defer { try? manager.removeItem(at: work) }
     let archive = try await download(

@@ -29,9 +29,11 @@
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 	<key>NSHumanReadableCopyright</key>
-	<string>Fork modifications © 2026 ertyoii. Original Latest © Max Langer and contributors.</string>
+	<string>Based on Latest by Max Langer and the Ertyoii fork. GPL-3.0.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>UpdaterTeamIdentifier</key>
+	<string>$(DEVELOPMENT_TEAM)</string>
 	<key>ReleaseNotesCatalogPublicKey</key>
 	<string>$(LATEST_RELEASE_NOTES_CATALOG_PUBLIC_KEY)</string>
 	<key>ReleaseNotesCatalogURL</key>

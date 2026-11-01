@@ -92,13 +92,13 @@ final class UpdateInstallHelperAlert: ObservableObject {
       return "Checking that the helper is ready before downloading any updates."
     case .needsSetup:
       return
-        "Latest needs an approved helper to install App Store updates. No updates will download until it is ready."
+        "Updater needs an approved helper to install App Store updates. No updates will download until it is ready."
     case .needsApproval:
       return
-        "Allow Latest in System Settings → General → Login Items & Extensions. Return here to continue automatically once the helper is ready."
+        "Allow Updater in System Settings → General → Login Items & Extensions. Return here to continue automatically once the helper is ready."
     case .failed:
       return
-        "Latest could not connect to its update helper. No downloads have started. Try checking again, or update using the App Store."
+        "Updater could not connect to its update helper. No downloads have started. Try checking again, or update using the App Store."
     }
   }
 

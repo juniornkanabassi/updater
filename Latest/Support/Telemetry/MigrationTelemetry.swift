@@ -17,11 +17,11 @@ final class MigrationTelemetry {
   static let shared = MigrationTelemetry()
 
   private let logger = Logger(
-    subsystem: Bundle.main.bundleIdentifier ?? "com.max-langer.Latest",
+    subsystem: Bundle.main.bundleIdentifier ?? "com.juniornkanabassi.Updater",
     category: "MigrationPerformance"
   )
   private let signposter = OSSignposter(
-    subsystem: Bundle.main.bundleIdentifier ?? "com.max-langer.Latest",
+    subsystem: Bundle.main.bundleIdentifier ?? "com.juniornkanabassi.Updater",
     category: "MigrationPerformance"
   )
 

@@ -268,7 +268,7 @@ struct ReleaseNotesFetcher: Sendable {
 
     var request = URLRequest(url: url, cachePolicy: .useProtocolCachePolicy, timeoutInterval: 6)
     request.setValue(accept, forHTTPHeaderField: "Accept")
-    request.setValue("Latest", forHTTPHeaderField: "User-Agent")
+    request.setValue("Updater", forHTTPHeaderField: "User-Agent")
     let result = try await loader.load(request, maximumResponseSize: maximumResponseSize)
 
     if let response = result.response as? HTTPURLResponse {

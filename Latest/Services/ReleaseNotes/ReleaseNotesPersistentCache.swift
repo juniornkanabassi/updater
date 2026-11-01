@@ -54,7 +54,7 @@ actor ReleaseNotesPersistentCache {
     self.directoryURL =
       directoryURL
       ?? cachesDirectory.appendingPathComponent(
-        "com.max-langer.Latest/ReleaseNotes-v2", isDirectory: true)
+        "com.juniornkanabassi.Updater/ReleaseNotes-v2", isDirectory: true)
     self.lifetime = lifetime
     self.maximumEntryCount = maximumEntryCount
     self.maximumStoredBytes = maximumStoredBytes

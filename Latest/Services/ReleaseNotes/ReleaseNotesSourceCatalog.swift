@@ -34,7 +34,7 @@ enum ReleaseNotesSourceCatalog {
   }
 
   private static let logger = Logger(
-    subsystem: Bundle.main.bundleIdentifier ?? "com.max-langer.Latest",
+    subsystem: Bundle.main.bundleIdentifier ?? "com.juniornkanabassi.Updater",
     category: "ReleaseNotesCatalog"
   )
   private static let bundledData: Data = {

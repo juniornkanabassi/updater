@@ -16,7 +16,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "50290E701E53EB6A00133E3D"
-               BuildableName = "Latest Dev.app"
+               BuildableName = "Updater.app"
                BlueprintName = "Latest"
                ReferencedContainer = "container:Latest.xcodeproj">
             </BuildableReference>
@@ -32,7 +32,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "50290E701E53EB6A00133E3D"
-            BuildableName = "Latest Dev.app"
+            BuildableName = "Updater.app"
             BlueprintName = "Latest"
             ReferencedContainer = "container:Latest.xcodeproj">
          </BuildableReference>
@@ -68,7 +68,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "50290E701E53EB6A00133E3D"
-            BuildableName = "Latest Dev.app"
+            BuildableName = "Updater.app"
             BlueprintName = "Latest"
             ReferencedContainer = "container:Latest.xcodeproj">
          </BuildableReference>
@@ -85,7 +85,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "50290E701E53EB6A00133E3D"
-            BuildableName = "Latest Dev.app"
+            BuildableName = "Updater.app"
             BlueprintName = "Latest"
             ReferencedContainer = "container:Latest.xcodeproj">
          </BuildableReference>

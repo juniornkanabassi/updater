@@ -17,7 +17,7 @@ final class AppDownloadUpdateOperation: DownloadUpdateOperation, @unchecked Send
       throw AppDownloadError.versionMismatch
     }
     let manager = FileManager.default
-    let work = manager.temporaryDirectory.appendingPathComponent("Latest-" + UUID().uuidString)
+    let work = manager.temporaryDirectory.appendingPathComponent("Updater-" + UUID().uuidString)
     try manager.createDirectory(at: work, withIntermediateDirectories: true)
     defer { try? manager.removeItem(at: work) }
     let archive = try await download(from: release.url, into: work)

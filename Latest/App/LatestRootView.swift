@@ -46,7 +46,7 @@ struct LatestRootView: View {
     }
     .environment(\.windowFocus, $focus)
     .modifier(UpdateInstallHelperPresentation())
-    .navigationTitle("Latest")
+    .navigationTitle("Updater")
     .toolbar(removing: .title)
     .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
     .toolbar {

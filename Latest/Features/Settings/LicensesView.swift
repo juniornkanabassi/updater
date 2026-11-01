@@ -5,12 +5,12 @@ import SwiftUI
 
 struct LicensesView: View {
   private enum License: String, CaseIterable {
-    case latest = "Latest"
+    case updater = "Updater"
     case sparkle = "Sparkle"
 
     var resource: (name: String, extension: String) {
       switch self {
-      case .latest: ("LICENSE", "md")
+      case .updater: ("LICENSE", "md")
       case .sparkle: ("SparkleLicense", "txt")
       }
     }
@@ -25,14 +25,14 @@ struct LicensesView: View {
     }
   }
 
-  @State private var selectedLicense = License.latest
+  @State private var selectedLicense = License.updater
 
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
       VStack(alignment: .leading, spacing: 6) {
-        Text("Latest by Max Langer and contributors")
+        Text("Updater is based on Latest by Max Langer and the Ertyoii fork")
           .font(.headline)
-        Text("Fork modifications © 2026 ertyoii. Modified October 3, 2026.")
+        Text("Modifications © 2026 Junior Nkana Bassi. Upstream notices are retained.")
         Text(
           "Distributed under GNU GPL version 3. You may redistribute and modify this software under that license. No warranty."
         )
@@ -40,8 +40,9 @@ struct LicensesView: View {
         .fixedSize(horizontal: false, vertical: true)
         HStack(spacing: 16) {
           Link(
-            "Original project", destination: URL(string: "https://github.com/mangerlahn/Latest")!)
-          Link("Fork source", destination: URL(string: "https://github.com/Ertyoii/Latest")!)
+            "Latest by Max Langer",
+            destination: URL(string: "https://github.com/mangerlahn/Latest")!)
+          Link("Ertyoii fork", destination: URL(string: "https://github.com/Ertyoii/Latest")!)
         }
       }
 

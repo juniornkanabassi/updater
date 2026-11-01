@@ -14,11 +14,11 @@ import Synchronization
 private let UpdateDateKey = "UpdateDateKey"
 
 private let updateRepositoryLogger = Logger(
-  subsystem: Bundle.main.bundleIdentifier ?? "com.max-langer.Latest",
+  subsystem: Bundle.main.bundleIdentifier ?? "com.juniornkanabassi.Updater",
   category: "Repository"
 )
 private let updateRepositorySignposter = OSSignposter(
-  subsystem: Bundle.main.bundleIdentifier ?? "com.max-langer.Latest",
+  subsystem: Bundle.main.bundleIdentifier ?? "com.juniornkanabassi.Updater",
   category: "RepositoryPerformance"
 )
 
@@ -254,7 +254,7 @@ final class UpdateRepository: Sendable {
         }
 
       return FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
-        .appendingPathComponent(Bundle.main.bundleIdentifier ?? "com.max-langer.Latest")
+        .appendingPathComponent(Bundle.main.bundleIdentifier ?? "com.juniornkanabassi.Updater")
         .appendingPathComponent(name).appendingPathExtension(pathExtension)
     }
 
