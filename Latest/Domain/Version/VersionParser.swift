@@ -54,9 +54,10 @@ enum VersionParser {
   ].compactMap { $0 }
 
   private static let combinedVersionPatterns: [Pattern] = [
-    // Comma or dash separated (1.2,312; 1.2-312)
+    // Comma or dash separated (1.2,312; 1.2-312). A dash followed by a letter starts a
+    // SemVer prerelease (0.1.7-nightly.20261101.4035) and stays in the version number.
     Pattern(
-      pattern: "^^(?:(?:([^,-]*)[,-]){1}([^,-]*))",
+      pattern: "^((?:[^,-]|-(?!\\d))*)(?:,|-(?=\\d))((?:[^,-]|-(?!\\d))*)",
       components: [.versionNumber: 1, .buildNumber: 2]),
 
     // Catch all

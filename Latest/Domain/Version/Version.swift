@@ -86,8 +86,10 @@ struct Version: Hashable, Sendable {
     var singleNumber1: Int?
     var singleNumber2: Int?
 
-    // Only allow build number checks if build- and version number actually differ
-    let allowBuildNumberCheck = lhs.buildNumber != lhs.versionNumber
+    // Build numbers decide only when both sides have one distinct from their version;
+    // checking one side alone made a→b and b→a disagree.
+    let allowBuildNumberCheck =
+      lhs.buildNumber != lhs.versionNumber && rhs.buildNumber != rhs.versionNumber
     if allowBuildNumberCheck, lhs.buildNumber != nil, rhs.buildNumber != nil {
       c1 = lhs.buildNumberComponents
       c2 = rhs.buildNumberComponents

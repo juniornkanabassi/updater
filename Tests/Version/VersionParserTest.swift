@@ -54,6 +54,13 @@ final class VersionParserTest: XCTestCase {
     XCTAssertEqual(
       VersionParser.parse(combinedVersionNumber: "2.2.1-763"),
       Version(versionNumber: "2.2.1", buildNumber: "763"))
+    // Homebrew's t3-code@nightly: the prerelease tag is not a build number.
+    XCTAssertEqual(
+      VersionParser.parse(combinedVersionNumber: "0.1.7-nightly.20261101.4035"),
+      Version(versionNumber: "0.1.7-nightly.20261101.4035", buildNumber: nil))
+    XCTAssertEqual(
+      VersionParser.parse(combinedVersionNumber: "1.0-beta.2,456"),
+      Version(versionNumber: "1.0-beta.2", buildNumber: "456"))
   }
 
   func testEmptyVersionParsing() {

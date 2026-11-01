@@ -153,6 +153,53 @@ class VersionTest: XCTestCase {
     }
   }
 
+  /// Sol finding: comparison must be symmetric and keep meaningful suffixes.
+  func testUpdatePrecedenceIsSymmetricAndKeepsSuffixes() {
+    let pairs: [(String, String?, String, String?)] = [
+      ("1.2", "100", "1.2", "1.2"),  // one side's build equals its version
+      ("5.0", "5.0", "5.1", "512"),
+      ("1.2a", nil, "1.2a1", nil),
+      ("1.2", nil, "1.2.0.1", nil),
+      ("0.1.7-nightly.20261031.3991", "0.1.7-nightly.20261031.3991", "0.1.7", nil),
+    ]
+    for (a, aBuild, b, bBuild) in pairs {
+      let lhs = Version(versionNumber: a, buildNumber: aBuild)
+      let rhs = Version(versionNumber: b, buildNumber: bBuild)
+      let forward = lhs.comparisonForUpdate(to: rhs)
+      let backward = rhs.comparisonForUpdate(to: lhs)
+      let mirrored: [Version.UpdateComparison: Version.UpdateComparison] = [
+        .older: .newer, .newer: .older, .samePrecedence: .samePrecedence,
+        .unavailable: .unavailable,
+      ]
+      XCTAssertEqual(mirrored[forward], backward, "\(lhs) ⇄ \(rhs)")
+    }
+    XCTAssertEqual(
+      Version(versionNumber: "1.2a", buildNumber: nil)
+        .comparisonForUpdate(to: Version(versionNumber: "1.2a1", buildNumber: nil)), .older)
+    XCTAssertEqual(
+      Version(versionNumber: "5.0", buildNumber: "5.0")
+        .comparisonForUpdate(to: Version(versionNumber: "5.1", buildNumber: "512")), .older)
+  }
+
+  /// SemVer prerelease rule: a nightly/beta of X.Y.Z precedes release X.Y.Z, and
+  /// prereleases of one core compare identifier by identifier (dates numerically).
+  /// T3 Code publishes 0.1.6-nightly.* before 0.1.6, then 0.1.7-nightly.* afterwards.
+  func testPrereleaseOrderingFollowsSemVer() {
+    let installed = Version(
+      versionNumber: "0.1.7-nightly.20261031.3991", buildNumber: "0.1.7-nightly.20261031.3991")
+    let cases: [(String, Version.UpdateComparison)] = [
+      ("0.1.7-nightly.20261101.4035", .older),  // newer nightly is an update
+      ("0.1.7-nightly.20261031.3991", .samePrecedence),
+      ("0.1.7-nightly.20261030.3940", .newer),  // older nightly is not
+      ("0.1.6", .newer),  // previous release is not an update
+      ("0.1.7", .older),  // the release follows its nightlies
+    ]
+    for (remote, expected) in cases {
+      let parsed = VersionParser.parse(combinedVersionNumber: remote)
+      XCTAssertEqual(installed.comparisonForUpdate(to: parsed), expected, remote)
+    }
+  }
+
   func testEqualBundlesWithDifferentVersionsDeduplicateByIdentifier() {
     let appURL = URL(
       fileURLWithPath: "/Applications/Versioned-\(UUID().uuidString).app", isDirectory: true)
