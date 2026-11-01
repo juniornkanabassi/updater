@@ -8,7 +8,7 @@ It is based on [Latest](https://github.com/mangerlahn/Latest) by Max Langer and 
 
 ## Development
 
-Requires Xcode 26.5 or later and `ripgrep`. Development and CI use `master`; CI uses Xcode 26.6. Open the `Updater` scheme in `Latest.xcodeproj` (the project file keeps its upstream name), or run:
+Requires Xcode 26.5 or later and `ripgrep`. Development and CI use `main`; CI uses Xcode 26.6. Open the `Updater` scheme in `Latest.xcodeproj` (the project file keeps its upstream name), or run:
 
 ```sh
 brew install ripgrep

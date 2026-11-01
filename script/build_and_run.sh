@@ -36,7 +36,11 @@ APP_BUNDLE="$DERIVED_DATA/Build/Products/$CONFIGURATION/$APP_NAME.app"
 
 mkdir -p "$BUILD_DIR" "$MODULE_CACHE"
 
-pkill -x "$APP_NAME" >/dev/null 2>&1 || true
+# Quit only this build of Updater (Sparkle ships its own "Updater" executable, so never kill by name).
+if /usr/bin/pgrep -f "^$APP_BUNDLE/Contents/MacOS/$APP_NAME" >/dev/null; then
+  /usr/bin/osascript -e 'tell application id "com.juniornkanabassi.Updater" to quit' >/dev/null 2>&1 || true
+  for _ in {1..20}; do /usr/bin/pgrep -f "^$APP_BUNDLE/Contents/MacOS/$APP_NAME" >/dev/null || break; sleep 0.5; done
+fi
 
 rm -rf "$RESULT_BUNDLE"
 
