@@ -8,22 +8,34 @@
 
 import Foundation
 
-/// The queue where update operations are scheduled on.
+/// The update scheduler. GUI and Update All submit here (CLI and MCP will too): one job
+/// per target URL, jobs sharing a `lockKey` run one after another, and every finished job
+/// is turned into an `UpdateOutcome` by re-reading the bundle at its URL.
 class UpdateQueue: OperationQueue, @unchecked Sendable {
 
+  /// Nil keeps test queues from writing to the user's history.
+  let history: UpdateHistoryStore?
+  private let readBundle: @Sendable (URL) -> App.Bundle?
+
   // MARK: - Initialization
-  override init() {
+  init(
+    history: UpdateHistoryStore? = nil,
+    readBundle: @escaping @Sendable (URL) -> App.Bundle? = { BundleCollector.collectBundle(at: $0) }
+  ) {
+    self.history = history
+    self.readBundle = readBundle
     super.init()
 
     self.maxConcurrentOperationCount = 3
   }
 
   /// The shared instance of the queue.
-  static let shared = UpdateQueue()
+  static let shared = UpdateQueue(history: .shared)
 
   private let operationIndexLock = NSLock()
 
   private var operationsByIdentifier = [App.Bundle.Identifier: UpdateOperation]()
+  private var lastOperationByLock = [String: UpdateOperation]()
 
   // MARK: - Public Methods
 
@@ -43,9 +55,15 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
     return self.operation(for: identifier) != nil
   }
 
-  /// Returns the state for a given app.
+  /// Returns the state for a given app. With no job running, a recorded failure that still
+  /// describes the bundle on disk is shown, so a reloaded row keeps its error.
   func state(for identifier: App.Bundle.Identifier) -> UpdateOperation.ProgressState {
-    return self.operation(for: identifier)?.progressState ?? .none
+    if let operation = self.operation(for: identifier) { return operation.progressState }
+    guard let entry = history?.latestEntry(for: identifier),
+      UpdateOutcomeError(outcome: entry.outcome) != nil,
+      readBundle(identifier).map({ Self.display($0.version) }) == entry.installedVersion
+    else { return .none }
+    return .error(UpdateOutcomeError(outcome: entry.outcome)!)
   }
 
   override func addOperation(_ op: Operation) {
@@ -54,25 +72,79 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
       assertionFailure("Added unknown operation \(op.self) to update queue.")
       return
     }
+    submit(operation)
+  }
 
-    // Abort if the app is already in the queue
-    guard index(operation) else {
-      return
-    }
+  /// Schedules the job, or returns the job already scheduled for the same target URL.
+  @discardableResult
+  func submit(_ operation: UpdateOperation) -> UpdateOperation {
+    if let existing = index(operation) { return existing }
+    let before = readBundle(operation.appIdentifier)
 
     let previousCompletionBlock = operation.completionBlock
     operation.completionBlock = { [weak self, weak operation] in
       previousCompletionBlock?()
 
-      guard let operation else { return }
-      self?.removeIndexedOperation(operation)
+      guard let self, let operation else { return }
+      // Record before unindexing so the row's fallback state already sees the outcome.
+      self.recordOutcome(of: operation, before: before)
+      self.removeIndexedOperation(operation)
     }
 
     operation.progressHandler = { [weak self] identifier in
       self?.publishState(for: identifier)
     }
 
-    super.addOperation(op)
+    super.addOperation(operation)
+    return operation
+  }
+
+  /// Hand-offs happen outside the queue; record them so the row can say so.
+  func recordHandOff(of app: App) {
+    history?.record(
+      UpdateHistoryEntry(
+        appPath: app.fileURL.path, bundleIdentifier: app.bundleIdentifier,
+        installedVersion: Self.display(app.version), outcome: .handedOff))
+  }
+
+  private func recordOutcome(of operation: UpdateOperation, before: App.Bundle?) {
+    guard let history, let before,
+      let outcome = Self.outcome(
+        of: operation, before: before, after: readBundle(operation.appIdentifier))
+    else { return }
+    history.record(
+      UpdateHistoryEntry(
+        appPath: operation.appIdentifier.path, bundleIdentifier: before.bundleIdentifier,
+        installedVersion: Self.display(before.version), outcome: outcome))
+  }
+
+  /// Success is never taken from the installer's word: `updated` needs the version on
+  /// disk at the exact URL to have changed. User cancellation records nothing.
+  static func outcome(of operation: UpdateOperation, before: App.Bundle, after: App.Bundle?)
+    -> UpdateOutcome?
+  {
+    if let outcome = operation.outcomeOverride { return outcome }
+    if let error = operation.error {
+      if case AppDownloadError.applicationStillRunning = error { return .needsQuit }
+      let nsError = error as NSError
+      if (nsError.domain == NSCocoaErrorDomain && nsError.code == NSFileWriteNoPermissionError)
+        || (nsError.domain == NSPOSIXErrorDomain
+          && [Int(EPERM), Int(EACCES)].contains(nsError.code))
+      {
+        return .needsPermission(kind: "appManagement")
+      }
+      return .failed(reason: error.localizedDescription, logPath: nil)
+    }
+    if operation.isCancelled { return nil }
+    guard let after else {
+      return .failed(reason: "The app is no longer at \(before.fileURL.path).", logPath: nil)
+    }
+    return after.version == before.version
+      ? .noChange : .updated(from: display(before.version), to: display(after.version))
+  }
+
+  static func display(_ version: Version) -> String {
+    version.versionNumber ?? version.buildNumber ?? ""
   }
 
   // MARK: - State Feeds
@@ -163,21 +235,30 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
     }
   }
 
-  private func index(_ operation: UpdateOperation) -> Bool {
+  /// Returns the unfinished job for the same URL, or indexes this one and orders it after
+  /// the last job holding the same lock.
+  private func index(_ operation: UpdateOperation) -> UpdateOperation? {
     operationIndexLock.withLock {
       if let existingOperation = operationsByIdentifier[operation.appIdentifier],
         !existingOperation.isFinished
       {
-        return false
+        return existingOperation
       }
 
       operationsByIdentifier[operation.appIdentifier] = operation
-      return true
+      if let previous = lastOperationByLock[operation.lockKey], !previous.isFinished {
+        operation.addDependency(previous)
+      }
+      lastOperationByLock[operation.lockKey] = operation
+      return nil
     }
   }
 
   private func removeIndexedOperation(_ operation: UpdateOperation) {
     operationIndexLock.withLock {
+      if lastOperationByLock[operation.lockKey] === operation {
+        lastOperationByLock[operation.lockKey] = nil
+      }
       guard operationsByIdentifier[operation.appIdentifier] === operation else {
         return
       }

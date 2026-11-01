@@ -16,7 +16,8 @@ import XCTest
 
 @MainActor
 final class AppDependencyBoundaryTest: XCTestCase {
-  func testBulkExternalAppStoreUpdatesOpenStoreOnceWithoutPreparingHelper() {
+  /// Update All runs only install/vendorTool apps; hand-offs stay per-app actions.
+  func testBulkUpdateSkipsHandOffsWithoutOpeningAnything() {
     let apps = ["Wrapped One", "Wrapped Two"].map {
       makeTestApp(
         name: $0, version: "1", remoteVersion: "2",
@@ -25,8 +26,7 @@ final class AppDependencyBoundaryTest: XCTestCase {
     let (service, store, workspace, updating) = bulkService(apps: apps)
     service.updateAll()
     XCTAssertEqual(store.preparations, 0)
-    XCTAssertEqual(
-      workspace.openedURLs.map(\.absoluteString), ["macappstore://apps.apple.com/updates"])
+    XCTAssertTrue(workspace.openedURLs.isEmpty)
     XCTAssertTrue(updating.updatedNames.isEmpty)
   }
 
@@ -36,15 +36,12 @@ final class AppDependencyBoundaryTest: XCTestCase {
     store.alwaysUsesManualUpdates = true
     service.updateAll()
     XCTAssertEqual(store.preparations, 0)
-    XCTAssertEqual(workspace.openedURLs.count, 1)
     XCTAssertTrue(updating.updatedNames.isEmpty)
     store.alwaysUsesManualUpdates = false
     service.updateAll()
     XCTAssertEqual(store.preparations, 1)
     XCTAssertEqual(updating.updatedNames, ["Native"])
-    XCTAssertEqual(
-      workspace.openedURLs.count, 1,
-      "Enabling native updates needs no additional store launch or rescan")
+    XCTAssertTrue(workspace.openedURLs.isEmpty, "Update All never opens a store page")
   }
 
   func testBulkMixedAppStoreActionsPrepareAndEnqueueOnlyNativeUpdates() {
@@ -52,10 +49,9 @@ final class AppDependencyBoundaryTest: XCTestCase {
     let wrapped = makeTestApp(
       name: "Wrapped", version: "1", remoteVersion: "2",
       updateAction: .external(label: "App Store") { _ in })
-    let (service, store, workspace, updating) = bulkService(apps: [native, wrapped])
+    let (service, store, _, updating) = bulkService(apps: [native, wrapped])
     service.updateAll()
     XCTAssertEqual(store.preparations, 1)
-    XCTAssertEqual(workspace.openedURLs.count, 1)
     XCTAssertEqual(updating.updatedNames, ["Native"])
     service.updateAll()
     XCTAssertEqual(
@@ -71,7 +67,7 @@ final class AppDependencyBoundaryTest: XCTestCase {
     let updating = BulkUpdating()
     let service = UpdateCheckingService(
       coordinator: StubCheckCoordinator(apps: apps), appStoreUpdateService: store,
-      workspace: workspace, updating: updating)
+      updating: updating)
     return (service, store, workspace, updating)
   }
 
@@ -217,7 +213,7 @@ private final class StubAppProvider: AppProviding {
   }
 
   var updatableApps: [App] {
-    apps.filter { $0.updateAvailable && $0.usesBuiltInUpdater && !$0.isIgnored }
+    apps.filter { $0.updateAvailable && $0.capability.isAutomatic && !$0.isIgnored }
   }
 
   func countOfAvailableUpdates(where condition: (App) -> Bool) -> Int {

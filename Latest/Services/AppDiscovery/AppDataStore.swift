@@ -61,7 +61,7 @@ final class AppDataStore: AppProviding, Sendable {
 
   var apps: [App] { state.withLock { Array($0.appsByIdentifier.values) } }
   var updatableApps: [App] {
-    apps.filter { $0.updateAvailable && $0.usesBuiltInUpdater && !$0.isIgnored }
+    apps.filter { $0.updateAvailable && $0.capability.isAutomatic && !$0.isIgnored }
   }
   func countOfAvailableUpdates(where condition: (App) -> Bool) -> Int {
     apps.reduce(into: 0) { count, app in

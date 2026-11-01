@@ -67,3 +67,25 @@ final class UpdateHistoryStore: Sendable {
     return entries
   }
 }
+
+/// A recorded outcome that should keep showing as an error on the row.
+struct UpdateOutcomeError: LocalizedError, Sendable {
+  let outcome: UpdateOutcome
+
+  init?(outcome: UpdateOutcome) {
+    switch outcome {
+    case .failed, .needsQuit, .needsPermission: self.outcome = outcome
+    case .updated, .noChange, .handedOff: return nil
+    }
+  }
+
+  var errorDescription: String? {
+    switch outcome {
+    case .failed(let reason, _): reason
+    case .needsQuit: "The app did not quit, so it was not updated. Save your work and try again."
+    case .needsPermission:
+      "Updater needs App Management permission to replace this app. Allow it in System Settings → Privacy & Security → App Management."
+    case .updated, .noChange, .handedOff: nil
+    }
+  }
+}

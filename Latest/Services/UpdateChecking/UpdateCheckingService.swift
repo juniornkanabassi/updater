@@ -25,18 +25,15 @@ final class UpdateCheckingService: NSObject, ObservableObject, UpdateCheckProgre
   private var activeCheckingBatches = 0
   private let coordinator: any UpdateCheckCoordinating
   private let appStoreUpdateService: any AppStoreUpdateServicing
-  private let workspace: any ApplicationWorkspace
   private let updating: any AppUpdating
 
   init(
     coordinator: any UpdateCheckCoordinating = UpdateCheckCoordinator.shared,
     appStoreUpdateService: any AppStoreUpdateServicing = LiveAppStoreUpdateService.shared,
-    workspace: any ApplicationWorkspace = MacApplicationWorkspace.shared,
     updating: any AppUpdating = AppUpdateService.shared
   ) {
     self.coordinator = coordinator
     self.appStoreUpdateService = appStoreUpdateService
-    self.workspace = workspace
     self.updating = updating
   }
 
@@ -66,21 +63,17 @@ final class UpdateCheckingService: NSObject, ObservableObject, UpdateCheckProgre
     coordinator.run(hardRefresh: hardRefresh)
   }
 
+  /// Update All runs only apps Updater installs itself (`install`/`vendorTool`); hand-offs
+  /// such as the App Store page stay per-app actions.
   func updateAll() {
     var apps = [App]()
-    var opensAppStore = false
-    for app in coordinator.appProvider.updatableApps where !updating.isUpdating(app) {
-      if app.bundle.source == .appStore {
-        if appStoreUpdateService.alwaysUsesManualUpdates {
-          opensAppStore = true
-          continue
-        }
-        if case .external = app.updateAction {
-          opensAppStore = true
-          continue
-        }
+    for app in coordinator.appProvider.updatableApps
+    where app.capability.isAutomatic && !updating.isUpdating(app) {
+      // The manual-update preference turns App Store installs into a hand-off.
+      if app.bundle.source == .appStore, appStoreUpdateService.alwaysUsesManualUpdates {
+        continue
       }
-      if case .builtIn = app.updateAction { apps.append(app) }
+      apps.append(app)
     }
 
     if apps.contains(where: { $0.bundle.source == .appStore }) {
@@ -96,9 +89,6 @@ final class UpdateCheckingService: NSObject, ObservableObject, UpdateCheckProgre
       }
     }
 
-    if opensAppStore, let updatesPage = ExternalURL.updatesPage {
-      workspace.open(updatesPage)
-    }
     apps.forEach { updating.update($0, isBulkUpdate: true) }
   }
 

@@ -91,6 +91,18 @@ class UpdateOperation: StatefulOperation, @unchecked Sendable {
     }
   }
 
+  /// Jobs sharing a key never run at the same time. Installers that only touch their own
+  /// URL lock that URL; a shared tool (the App Store helper, later brew or msupdate) locks
+  /// its name.
+  var lockKey: String { "target:" + appIdentifier.path }
+
+  private let outcomeStorage = Mutex<UpdateOutcome?>(nil)
+  /// Set by operations whose result is not read from disk, such as a hand-off.
+  var outcomeOverride: UpdateOutcome? {
+    get { outcomeStorage.withLock { $0 } }
+    set { outcomeStorage.withLock { $0 = newValue } }
+  }
+
   /// Update mechanisms that wait for an app to quit can offer another quit request.
   @MainActor func retryTermination() {}
 

@@ -40,7 +40,6 @@ final class AppEnvironment: ObservableObject {
       ?? UpdateCheckingService(
         coordinator: coordinator,
         appStoreUpdateService: appStoreUpdateService,
-        workspace: workspace,
         updating: updating
       )
     let updatesListViewModel =
