@@ -134,6 +134,12 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
     if operation.error == nil, let outcome = operation.outcomeOverride { return outcome }
     if let error = operation.error {
       if case AppDownloadError.applicationStillRunning = error { return .needsQuit }
+      if case HomebrewError.needsAdministrator = error {
+        return .needsPermission(kind: "administrator")
+      }
+      if case HomebrewError.failed(let reason, let logPath) = error {
+        return .failed(reason: reason, logPath: logPath)
+      }
       let nsError = error as NSError
       if (nsError.domain == NSCocoaErrorDomain && nsError.code == NSFileWriteNoPermissionError)
         || (nsError.domain == NSPOSIXErrorDomain

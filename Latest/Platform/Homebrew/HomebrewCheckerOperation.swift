@@ -14,10 +14,43 @@ final class HomebrewCheckerOperation: Sendable {
 
   private let bundle: App.Bundle
   private let repository: UpdateRepository?
+  private let homebrew: Homebrew?
 
-  init(with bundle: App.Bundle, repository: UpdateRepository?) {
+  init(with bundle: App.Bundle, repository: UpdateRepository?, homebrew: Homebrew? = .shared) {
     self.bundle = bundle
     self.repository = repository
+    self.homebrew = homebrew
+  }
+
+  /// A cask owns the app only if its installed app artifact is exactly this bundle. Then
+  /// Updater runs brew itself; otherwise the public catalogue route below applies.
+  private func ownedUpdate() async -> App.Update? {
+    guard let homebrew, let cask = try? await homebrew.owningCask(of: bundle.fileURL) else {
+      return nil
+    }
+    let current = (try? await homebrew.outdatedVersion(of: cask.token)) ?? nil
+    let remote = current.map(VersionParser.parse(combinedVersionNumber:)) ?? bundle.version
+    let action: App.Update.Action
+    if cask.apps.count == 1, !cask.needsAdministrator {
+      // Cask versions can carry a build suffix the bundle lacks; check the version number.
+      let expected = Version(versionNumber: remote.versionNumber, buildNumber: nil)
+      action = .builtIn { app in
+        UpdateQueue.shared.addOperation(
+          HomebrewUpgradeOperation(app: app, token: cask.token, expectedVersion: expected))
+      }
+    } else {
+      // Sudo casks and casks with several apps are not installed by Updater in this round.
+      action = .external(label: "Terminal") { _ in
+        Task { @MainActor in
+          MacApplicationWorkspace.shared.openApplication(
+            at: URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app"))
+        }
+      }
+    }
+    return App.Update(
+      app: bundle, remoteVersion: remote, minimumOSVersion: nil, source: .homebrew, date: nil,
+      releaseNotes: ReleaseNotesSourceCatalog.releaseNotes(for: bundle, remoteVersion: remote),
+      updateAction: action)
   }
 
   func check() async throws -> App.Update {
@@ -39,6 +72,7 @@ final class HomebrewCheckerOperation: Sendable {
           UpdateQueue.shared.addOperation(AppDownloadUpdateOperation(app: app, source: source))
         })
     }
+    if let owned = await ownedUpdate() { return owned }
     guard let repository else {
       throw LatestError.updateInfoUnavailable
     }

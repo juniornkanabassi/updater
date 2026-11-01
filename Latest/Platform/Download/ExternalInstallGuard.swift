@@ -50,15 +50,19 @@ final class ExternalInstallGuard: Sendable {
   /// version) and restores the clone. Reopens the app if Updater quit it and it is not
   /// running. Returns the error to report: the original one, a verification failure, or a
   /// restore failure naming where the clone was kept.
+  /// `restoreIfChanged`: the installer reported failure, so any change it made is undone
+  /// even if the result would verify (brew exiting non-zero mid-upgrade).
   @MainActor
   func settle(
-    error: Error?, expected: Version?, requiresTeam: Bool, lifecycle: AppLifecycle
+    error: Error?, expected: Version?, requiresTeam: Bool, lifecycle: AppLifecycle,
+    restoreIfChanged: Bool = false
   ) async -> Error? {
     let task = settlement.withLock { current -> Task<Error?, Never> in
       if let current { return current }
       let task = Task { @MainActor in
         await self.performSettle(
-          error: error, expected: expected, requiresTeam: requiresTeam, lifecycle: lifecycle)
+          error: error, expected: expected, requiresTeam: requiresTeam, lifecycle: lifecycle,
+          restoreIfChanged: restoreIfChanged)
       }
       current = task
       return task
@@ -68,11 +72,17 @@ final class ExternalInstallGuard: Sendable {
 
   @MainActor
   private func performSettle(
-    error: Error?, expected: Version?, requiresTeam: Bool, lifecycle: AppLifecycle
+    error: Error?, expected: Version?, requiresTeam: Bool, lifecycle: AppLifecycle,
+    restoreIfChanged: Bool
   ) async -> Error? {
     var result = error
     if let saved = takeSaved() {
       do {
+        if restoreIfChanged, let error,
+          (try? BundleIdentity.read(at: target, validate: false)) != saved.original
+        {
+          throw error
+        }
         try ReplacementTransaction.verifyExternalInstall(
           at: target, original: saved.original, expected: expected, requiresTeam: requiresTeam)
         try? FileManager.default.removeItem(at: saved.directory)
@@ -83,7 +93,8 @@ final class ExternalInstallGuard: Sendable {
           try ReplacementTransaction.restore(
             target, backupDirectory: saved.directory, originalIdentity: saved.original)
           try? FileManager.default.removeItem(at: saved.directory)
-          result = failure
+          // The installer's own error (with its log) explains more than the check that caught it.
+          result = error ?? failure
         } catch {
           result = ReplacementError.restoreFailed(
             saved.directory.appendingPathComponent(ReplacementTransaction.backupName).path)

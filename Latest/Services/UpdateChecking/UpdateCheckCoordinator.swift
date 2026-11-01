@@ -170,6 +170,7 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
     Task { [weak self] in
       if hardRefresh {
         await AppStoreUpdateCheckerOperation.invalidateLookupCache()
+        await Homebrew.shared.invalidate()
       }
       guard let self else { return }
 
