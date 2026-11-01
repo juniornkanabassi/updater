@@ -1,4 +1,0 @@
-interface:
-  display_name: "Replace macOS App Build"
-  short_description: "Install one macOS app and remove duplicate build copies."
-  default_prompt: "Use $replace-macos-app-build to install the latest Release build in /Applications, verify it, and remove all duplicate build copies."
