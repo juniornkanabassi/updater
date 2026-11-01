@@ -249,8 +249,6 @@ final class AppStoreInstallGateTest: XCTestCase {
     operation.requiresTeam = false
     operation.lifecycle = target.lifecycle(timeout: .milliseconds(300))
     operation.purchase = purchase
-    operation.cancelStoreActivity = { _ in }
-    operation.hasPendingDownload = { _ in true }
     operation.expectedVersion = Version(versionNumber: "1.1", buildNumber: nil)
     return operation
   }
@@ -347,10 +345,10 @@ final class AppStoreInstallGateTest: XCTestCase {
     XCTAssertEqual(try FixtureApp.digest(app), before)
   }
 
-  /// Sol R1 (fourth pass): cancel only signals. A cancel during the quit waits for the quit
-  /// to finish and reopens the app; a cancel during CommerceKit's install keeps the clone
-  /// and the job until the install reports, then verifies and restores.
-  func testCancelWaitsForQuitAndNativeInstallToSettle() async throws {
+  /// Sol R1 (fourth pass): a cancel during the quit waits for the quit to finish and
+  /// reopens the app. Sol R2 (fifth pass): once the purchase is issued, cancel is ignored;
+  /// CommerceKit's install is then verified and restored as usual.
+  func testCancelBeforePurchaseWaitsForQuitAndIsIgnoredAfterIt() async throws {
     let root = try disposableDirectory()
     let app = try FixtureApp.make(in: root, version: "1.0")
     let before = try FixtureApp.digest(app)
@@ -378,7 +376,6 @@ final class AppStoreInstallGateTest: XCTestCase {
     let payload = try FixtureApp.make(in: root.appendingPathComponent("payload"), version: "0.9")
     let installing = nativeOperation(for: app, target: FakeTarget(running: false)) { operation in
       for await _ in release.stream {}
-      // CommerceKit finished its install despite the cancel, and left a bad bundle.
       try? FileManager.default.removeItem(at: app)
       try? FileManager.default.copyItem(at: payload, to: app)
       await operation.nativeInstallCompleted()
@@ -386,13 +383,101 @@ final class AppStoreInstallGateTest: XCTestCase {
     let installDone = expectation(description: "finished")
     installing.completionBlock = { installDone.fulfill() }
     queue.addOperation(installing)
-    try await Task.sleep(for: .milliseconds(300))
+    while !installing.isCommitting { try await Task.sleep(for: .milliseconds(5)) }
     installing.cancel()
-    try await Task.sleep(for: .milliseconds(100))
-    XCTAssertFalse(installing.isFinished, "CommerceKit may still change the app")
+    XCTAssertFalse(installing.isCancelled, "the purchase was issued: cancel is a no-op")
+    // The row shows a waiting state, which has no cancel control.
+    guard
+      case .waiting = await MainActor.run(body: {
+        UpdateActionPresentation.make(
+          for: makeTestApp(name: "Store", version: "1", remoteVersion: "2"),
+          progressState: installing.progressState)
+      })
+    else { return XCTFail("no cancel control once the purchase is issued") }
     release.continuation.finish()
     await fulfillment(of: [installDone], timeout: 10)
     XCTAssertEqual(try FixtureApp.digest(app), before, "verified and restored")
+  }
+
+  /// Sol R1 (fifth pass): a cancel while the final gate runs means no purchase.
+  func testCancelDuringTheFinalGatePreventsThePurchase() async throws {
+    let root = try disposableDirectory()
+    let app = try FixtureApp.make(in: root, version: "1.0")
+    let target = FakeTarget(running: true)
+    let purchases = Mutex(0)
+    let checks = Mutex(0)
+    let release = AsyncStream<Void>.makeStream()
+    let operation = nativeOperation(for: app, target: target) { _ in purchases.withLock { $0 += 1 }
+    }
+    operation.installGate = { _, _ in
+      let call = checks.withLock {
+        $0 += 1
+        return $0
+      }
+      if call == 2 { for await _ in release.stream {} }
+      return true
+    }
+    let done = expectation(description: "finished")
+    operation.completionBlock = { done.fulfill() }
+    UpdateQueue().addOperation(operation)
+    while checks.withLock({ $0 }) < 2 { try await Task.sleep(for: .milliseconds(5)) }
+    operation.cancel()
+    release.continuation.finish()
+    await fulfillment(of: [done], timeout: 5)
+    XCTAssertEqual(purchases.withLock { $0 }, 0)
+    XCTAssertEqual(target.reopens.withLock { $0 }, 1)
+  }
+
+  /// Sol R3 (fifth pass): a lost helper reply leaves everything in place until the helper
+  /// reports idle; if it never does, the original is kept aside and nothing is restored.
+  @MainActor
+  func testLostHelperReplyWaitsForIdleAndNeverRestoresBlindly() async throws {
+    for helperComesBack in [true, false] {
+      let root = try disposableDirectory()
+      let app = try FixtureApp.make(in: root, version: "1.0")
+      let before = try FixtureApp.digest(app)
+      let bad = try FixtureApp.make(in: root.appendingPathComponent("payload"), version: "0.9")
+      let badDigest = try FixtureApp.digest(bad)
+      let target = FakeTarget(running: false)
+      let operation = nativeOperation(for: app, target: target) { _ in }
+      operation.helperPollInterval = .milliseconds(30)
+      operation.helperWaitLimit = .milliseconds(300)
+      let polls = Mutex(0)
+      let untouchedWhileWaiting = Mutex(true)
+      operation.helperIsIdle = {
+        let poll = polls.withLock {
+          $0 += 1
+          return $0
+        }
+        if (try? FixtureApp.digest(app)) != badDigest {
+          untouchedWhileWaiting.withLock { $0 = false }
+        }
+        return helperComesBack && poll >= 3 ? true : nil
+      }
+      operation.installPackage = { _, appURL, _, _ in
+        // The installer wrote a bad bundle, then the connection dropped.
+        try FileManager.default.removeItem(at: appURL)
+        try FileManager.default.copyItem(at: bad, to: appURL)
+        throw LatestError.installHelperCommunicationFailed
+      }
+      try operation.takeBackup()
+      await operation.installThroughHelper(
+        URL(fileURLWithPath: "/tmp/p.pkg"), receipt: Data("r".utf8))
+      for _ in 0..<100 where !operation.isFinished { try await Task.sleep(for: .milliseconds(10)) }
+      XCTAssertTrue(untouchedWhileWaiting.withLock { $0 }, "nothing restored while unknown")
+      if helperComesBack {
+        XCTAssertEqual(try FixtureApp.digest(app), before, "settled normally once idle")
+      } else {
+        guard case ReplacementError.outcomeUnknown(let kept)? = operation.error else {
+          return XCTFail("Expected outcome-unknown, got \(String(describing: operation.error))")
+        }
+        XCTAssertEqual(try FixtureApp.digest(app), badDigest, "not restored automatically")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: kept), "original kept at \(kept)")
+        XCTAssertEqual(target.reopens.withLock { $0 }, 0)
+        try? FileManager.default.removeItem(
+          at: URL(fileURLWithPath: kept).deletingLastPathComponent())
+      }
+    }
   }
 }
 

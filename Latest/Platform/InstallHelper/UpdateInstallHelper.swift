@@ -104,6 +104,13 @@ enum InstallHelper {
 
   // MARK: - Package Installation
 
+  /// Whether the running helper answers and reports no installation in progress; nil when
+  /// it cannot be reached. Used after a lost reply, when the installer may still be running.
+  static func isIdle() async -> Bool? {
+    guard let health = try? await LiveInstallHelperBackend().probe() else { return nil }
+    return !health.isInstalling
+  }
+
   /// Installs an App Store update package at the given target URL via the privileged helper.
   static func installPackage(
     at url: URL, appURL: URL, receiptData: Data, expectedVersion: String

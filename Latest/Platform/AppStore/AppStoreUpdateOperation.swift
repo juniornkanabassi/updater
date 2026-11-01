@@ -51,8 +51,6 @@ final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
   @MainActor private var observerIdentifier: String?
   @MainActor private var artifacts = AppStoreDownloadArtifacts()
   @MainActor private var isInstalling = false
-  /// The purchase returned downloads: CommerceKit now owns the job until it reports removal.
-  @MainActor private var awaitingDownload = false
   @MainActor private var published = false
 
   /// Seams for tests: the gate runs before `prepare` (the helper) and any purchase.
@@ -75,17 +73,11 @@ final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
   }
   /// False only for ad-hoc signed test fixtures.
   var requiresTeam = true
-  /// Stops CommerceKit's purchase and download; tests cannot reach the App Store.
-  var cancelStoreActivity: @MainActor @Sendable (UInt64) -> Void = { identifier in
-    CKPurchaseController.shared().cancelPurchase(withProductID: NSNumber(value: identifier))
-    let queue = CKDownloadQueue.shared()
-    if let download = queue.download(forItemIdentifier: identifier) {
-      queue.cancelDownload(download, promptToConfirm: false, askToDelete: false)
-    }
-  }
-  var hasPendingDownload: @MainActor @Sendable (UInt64) -> Bool = {
-    CKDownloadQueue.shared().download(forItemIdentifier: $0) != nil
-  }
+  /// After a lost helper reply: is the helper idle (nil = unreachable), how often to ask,
+  /// and for how long before giving up and keeping the original aside.
+  var helperIsIdle: @Sendable () async -> Bool? = { await InstallHelper.isIdle() }
+  var helperPollInterval: Duration = .seconds(5)
+  var helperWaitLimit: Duration = .seconds(600)
   /// Updater's own clone of the exact target: CommerceKit can install by itself on success.
   private let protection: ExternalInstallGuard
 
@@ -149,6 +141,10 @@ final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
         if !self.isCancelled { self.handOff() }
         return await self.finalize(nil)
       }
+      // Issuing the purchase is the commit point, as for Sparkle: from here cancel is a
+      // no-op and the cancel control is hidden. A cancel during the gate above ends here.
+      do { try self.beginCommit() } catch { return await self.finalize(nil) }
+      self.progressState = .initializing
       await self.purchase(self)
     }
   }
@@ -162,19 +158,9 @@ final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
       let (_, completed, response) = try await CKPurchaseController.shared().perform(
         purchase, withOptions: 0)
       let downloads = response?.downloads ?? []
-      // Cancellation can finish the operation before Apple creates its download.
-      guard !isCancelled else {
-        for download in downloads {
-          CKDownloadQueue.shared().cancelDownload(
-            download, promptToConfirm: false, askToDelete: false)
-        }
-        await finalize(nil)
-        return
-      }
       appStoreUpdateLogger.notice(
         "Purchase completed=\(completed), downloads=\(downloads.count)"
       )
-      awaitingDownload = !downloads.isEmpty
       if downloads.isEmpty, !isFinished, !isInstalling {
         await finalize(LatestError.updateInfoUnavailable)
       }
@@ -221,22 +207,6 @@ final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
         appIdentifier: appIdentifier, appStoreIdentifier: itemIdentifier)
       retry.expectedVersion = expectedVersion
       UpdateQueue.shared.addOperation(retry)
-    }
-  }
-
-  override func cancel() {
-    super.cancel()
-    guard isCancelled else { return }
-    // Only a signal. Whoever owns the job (the execution task, the purchase, or the
-    // download queue's removal event) finishes it once nothing can still change the app,
-    // so the clone and the lock are kept until then.
-    Task { @MainActor in
-      self.cancelStoreActivity(self.itemIdentifier)
-      // After the purchase, a cancelled download is reported as removed. With no download
-      // left to report, nothing else would finish the job.
-      if self.awaitingDownload, !self.isInstalling, !self.hasPendingDownload(self.itemIdentifier) {
-        await self.finalize(nil)
-      }
     }
   }
 
@@ -300,19 +270,45 @@ final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
         ))
       return
     }
+    await installThroughHelper(package, receipt: receipt)
+  }
+
+  /// Takes Updater's clone outside the normal flow; for tests of the install phase.
+  func takeBackup() throws { try protection.takeClone() }
+
+  @MainActor func installThroughHelper(_ package: URL, receipt: Data) async {
+    isInstalling = true
     do {
-      isInstalling = true
       try await lifecycle.withApplicationClosed(
         at: installURL, name: installURL.deletingPathExtension().lastPathComponent
       ) { [self] in
         try await installPreservedPackage(package, receipt: receipt)
       }
       await finalize(nil)
-    } catch  where outcomeOverride == .handedOff {
-      await finalize(nil)
     } catch {
-      await finalize(error)
+      if case LatestError.installHelperCommunicationFailed = error {
+        await finalizeAfterLostReply()
+      } else {
+        // The pre-install gate hands off by throwing a cancellation; that is not a failure.
+        await finalize(outcomeOverride == .handedOff && error is CancellationError ? nil : error)
+      }
     }
+  }
+
+  /// A lost reply does not mean the installer stopped. Keep the clone, the lock and the
+  /// closed app until the helper reports idle, then settle normally. If that cannot be
+  /// established, finish as failed with the original kept aside and nothing restored.
+  @MainActor private func finalizeAfterLostReply() async {
+    progressState = .installing
+    let deadline = ContinuousClock.now + helperWaitLimit
+    while ContinuousClock.now < deadline {
+      if await helperIsIdle() == true { return await finalize(nil) }
+      try? await Task.sleep(for: helperPollInterval)
+    }
+    let kept = protection.abandon()
+    guard !published else { return }
+    published = true
+    finish(with: ReplacementError.outcomeUnknown(kept?.path ?? installURL.path))
   }
 
   /// CommerceKit's download queue reported that it installed the update itself.
@@ -402,10 +398,12 @@ extension AppStoreUpdateOperation: CKDownloadQueueObserver {
       self.preserveArtifacts()
       switch snapshot.phase {
       case 0:
-        self.progressState = .downloading(loadedSize: snapshot.loaded, totalSize: snapshot.total)
+        self.progressState = .downloading(
+          loadedSize: snapshot.loaded, totalSize: snapshot.total, cancellable: false)
       case 1:
         self.progressState = .extracting(
-          progress: snapshot.total > 0 ? Double(snapshot.loaded) / Double(snapshot.total) : 0)
+          progress: snapshot.total > 0 ? Double(snapshot.loaded) / Double(snapshot.total) : 0,
+          cancellable: false)
       default: self.progressState = .initializing
       }
     }

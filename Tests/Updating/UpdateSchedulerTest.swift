@@ -153,6 +153,26 @@ final class UpdateSchedulerTest: XCTestCase {
     XCTAssertFalse(store.apps.contains { $0.fileURL == app })
   }
 
+  /// Sol R4 (fifth pass): a real error during settling beats a hand-off.
+  func testRealErrorsTakePrecedenceOverHandOff() {
+    let url = URL(fileURLWithPath: "/tmp/HandOff.app")
+    let bundle = App.Bundle(
+      version: Version(versionNumber: "1", buildNumber: nil), name: "HandOff",
+      bundleIdentifier: "com.example.handoff", fileURL: url, source: .appStore,
+      modificationDate: .distantPast)
+    let failed = ScriptedOperation(url: url) { throw ReplacementError.restoreFailed("/tmp/kept") }
+    failed.outcomeOverride = .handedOff
+    failed.start()
+    guard
+      case .failed(let reason, _) = UpdateQueue.outcome(of: failed, before: bundle, after: bundle)
+    else { return XCTFail("a failed restore must not read as handed off") }
+    XCTAssertTrue(reason.contains("/tmp/kept"))
+    let clean = ScriptedOperation(url: url) {}
+    clean.outcomeOverride = .handedOff
+    clean.start()
+    XCTAssertEqual(UpdateQueue.outcome(of: clean, before: bundle, after: bundle), .handedOff)
+  }
+
   func testSecondSubmissionForTheSameURLReturnsTheRunningJob() async {
     let queue = UpdateQueue()
     let url = URL(fileURLWithPath: "/tmp/Dedup-\(UUID().uuidString).app")

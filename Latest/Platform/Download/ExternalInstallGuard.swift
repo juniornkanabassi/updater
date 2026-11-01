@@ -34,6 +34,13 @@ final class ExternalInstallGuard: Sendable {
     if wasRunning { quitByUpdater.withLock { $0 = true } }
   }
 
+  /// Hands the clone over to the user when the outcome is unknown: it is neither restored nor
+  /// deleted, and the app is not reopened. Returns where the original was kept.
+  func abandon() -> URL? {
+    quitByUpdater.withLock { $0 = false }
+    return takeSaved()?.directory.appendingPathComponent(ReplacementTransaction.backupName)
+  }
+
   /// For exits before the installer could touch the bundle.
   func discard() {
     if let saved = takeSaved() { try? FileManager.default.removeItem(at: saved.directory) }

@@ -125,11 +125,13 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
   static func outcome(of operation: UpdateOperation, before: App.Bundle, after: App.Bundle?)
     -> UpdateOutcome?
   {
-    if let outcome = operation.outcomeOverride { return outcome }
     // User cancellation or a declined quit prompt is not an outcome.
     if operation.error is CancellationError || (operation.isCancelled && operation.error == nil) {
-      return nil
+      return operation.error == nil ? nil : operation.outcomeOverride
     }
+    // A real error (a failed restore, say) beats a hand-off; the hand-off stands only when
+    // settling finished cleanly.
+    if operation.error == nil, let outcome = operation.outcomeOverride { return outcome }
     if let error = operation.error {
       if case AppDownloadError.applicationStillRunning = error { return .needsQuit }
       let nsError = error as NSError
