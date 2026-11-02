@@ -604,6 +604,9 @@ final class CatalogueInstallTest: XCTestCase {
         let tokens = await repository.caskTokens(withBundleIdentifier: bundle.bundleIdentifier)
         var verdict = "install"
         do {
+          guard await check.ownership(bundle.fileURL, false) == .notOwned else {
+            throw CatalogueInstall.Refusal.scope("brew owns it, or could not be asked")
+          }
           let token = try CatalogueInstall.token(for: bundle, candidates: tokens)
           guard token == entry.token else {
             throw CatalogueInstall.Refusal.identity(
@@ -614,7 +617,8 @@ final class CatalogueInstallTest: XCTestCase {
             writable: check.isWritable(bundle.fileURL.deletingLastPathComponent()))
           let release = try CatalogueInstall.release(
             fromCask: try await check.fetchCask(token), bundleIdentifier: bundle.bundleIdentifier)
-          verdict += " (\(release.version.versionNumber ?? "?") from \(release.url.host() ?? "?"))"
+          verdict +=
+            " (\(token) \(release.version.versionNumber ?? "?") from \(release.url.host() ?? "?")\(release.sha256 == nil ? ", no published checksum: trust checks decide" : ""))"
         } catch {
           verdict = "keeps its route: \(error.localizedDescription)"
         }
