@@ -95,7 +95,17 @@ final class HomebrewCheckerOperation: Sendable {
       throw LatestError.updateInfoUnavailable
     }
 
-    guard let entry = await repository.entry(for: bundle) else {
+    // The cask chosen by identity (and channel) comes first; its version, release and action
+    // are what the row shows. Name matching is only the fallback route (R5B, REV-007).
+    let candidates = await repository.caskTokens(withBundleIdentifier: bundle.bundleIdentifier)
+    let identityToken = try? CatalogueInstall.token(for: bundle, candidates: candidates)
+    var identityEntry: UpdateRepository.Entry?
+    if let identityToken {
+      identityEntry = await repository.entry(token: identityToken, for: bundle)
+    }
+    var fallbackEntry: UpdateRepository.Entry?
+    if identityEntry == nil { fallbackEntry = await repository.entry(for: bundle) }
+    guard let entry = identityEntry ?? fallbackEntry else {
       throw LatestError.updateInfoUnavailable
     }
     try Task.checkCancellation()
@@ -107,10 +117,12 @@ final class HomebrewCheckerOperation: Sendable {
         allowNameFallback: false
       ) ?? entry.releaseNotes
     // Round 5b: install from the catalogue only when identity, shape and scope all hold.
-    let plan = await catalogueCheck.plan(
-      for: bundle,
-      candidateTokens: await repository.caskTokens(withBundleIdentifier: bundle.bundleIdentifier),
-      matchedToken: entry.token, catalogueVersion: version)
+    var plan: (token: String, release: AppDownloadRelease)?
+    if identityEntry != nil {
+      plan = await catalogueCheck.plan(
+        for: bundle, candidateTokens: candidates, matchedToken: entry.token,
+        catalogueVersion: version)
+    }
     let action: App.Update.Action
     if let plan {
       let job = CatalogueJob(token: plan.token, minimumVersion: version, check: catalogueCheck)

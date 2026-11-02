@@ -132,7 +132,7 @@ enum CatalogueInstall {
     guard !version.isEmpty else { throw .shape("The catalogue version could not be read.") }
     return AppDownloadRelease(
       version: version, url: url, sha256: hash == "no_check" ? nil : hash.lowercased(),
-      appPath: path)
+      appPath: path, allowedDomain: hash == "no_check" ? url.host().map(registrableDomain) : nil)
   }
 
   /// The domain family of a host: its last two labels, or three under a two-letter country

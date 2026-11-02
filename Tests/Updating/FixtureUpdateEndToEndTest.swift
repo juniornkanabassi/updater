@@ -219,11 +219,20 @@ final class LocalFileServer: Sendable {
       let path = request.split(separator: " ").dropFirst().first.map(String.init) ?? "/"
       let file = root.appendingPathComponent(String(path.dropFirst()))
       let body = (!path.contains("..") ? try? Data(contentsOf: file) : nil)
-      let status = body == nil ? "404 Not Found" : "200 OK"
-      var response = Data(
-        "HTTP/1.1 \(status)\r\nContent-Length: \(body?.count ?? 0)\r\nConnection: close\r\n\r\n"
-          .utf8)
-      response.append(body ?? Data())
+      var response: Data
+      if file.pathExtension == "redirect", let body {
+        // A `.redirect` file holds the Location to send instead of content.
+        let location = String(decoding: body, as: UTF8.self)
+        response = Data(
+          "HTTP/1.1 302 Found\r\nLocation: \(location)\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            .utf8)
+      } else {
+        let status = body == nil ? "404 Not Found" : "200 OK"
+        response = Data(
+          "HTTP/1.1 \(status)\r\nContent-Length: \(body?.count ?? 0)\r\nConnection: close\r\n\r\n"
+            .utf8)
+        response.append(body ?? Data())
+      }
       connection.send(content: response, completion: .contentProcessed { _ in connection.cancel() })
     }
   }

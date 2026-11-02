@@ -103,7 +103,8 @@ final class AppDownloadUpdateOperation: DownloadUpdateOperation, @unchecked Send
     let work = manager.temporaryDirectory.appendingPathComponent("Updater-" + UUID().uuidString)
     try manager.createDirectory(at: work, withIntermediateDirectories: true)
     defer { try? manager.removeItem(at: work) }
-    let archive = try await download(from: release.url, into: work)
+    let archive = try await download(
+      from: release.url, into: work, allowedDomain: release.allowedDomain)
     // No published checksum is allowed only on the vendor's own domain (checked with the
     // cask); the Trust checks below are what accept such a download.
     if let expected = release.sha256 { try Self.verifyChecksum(of: archive, expected: expected) }

@@ -33,12 +33,16 @@ struct AppDownloadRelease: Sendable {
   let url: URL
   let sha256: String?
   let appPath: String
+  /// For a download with no published checksum: the vendor's domain family. Every redirect
+  /// and the final URL must stay inside it.
+  var allowedDomain: String? = nil
 
-  init(version: Version, url: URL, sha256: String?, appPath: String) {
+  init(version: Version, url: URL, sha256: String?, appPath: String, allowedDomain: String? = nil) {
     self.version = version
     self.url = url
     self.sha256 = sha256
     self.appPath = appPath
+    self.allowedDomain = allowedDomain
   }
 
   init(data: Data, source: AppDownloadSource) throws {

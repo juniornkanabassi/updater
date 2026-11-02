@@ -585,6 +585,72 @@ final class CatalogueInstallTest: XCTestCase {
     XCTAssertEqual(allowed.outcome, .updated(from: "1.0", to: "1.1"), "matching identity")
   }
 
+  // MARK: Sol's inspection (REV-007, REV-008)
+
+  /// REV-007: the cask picked by identity and channel decides the row: a beta copy shows the
+  /// beta's version and installs from it, through the repository and the checker.
+  func testIdentityChannelEntryDrivesTheCheckerNotTheFilenameMatch() async throws {
+    let catalogue = """
+      [
+        {"token": "fixture", "version": "1.2", "url": "https://example.com/stable.zip",
+         "artifacts": [{"app": ["Fixture.app"]}, {"uninstall": [{"quit": "com.juniornkanabassi.updater-fixture"}]}],
+         "depends_on": {}},
+        {"token": "fixture@beta", "version": "1.5", "url": "https://example.com/beta.zip",
+         "artifacts": [{"app": ["Fixture.app"]}, {"uninstall": [{"quit": "com.juniornkanabassi.updater-fixture"}]}],
+         "depends_on": {}}
+      ]
+      """
+    let repository = try UpdateRepository.fixture(catalogue: Data(catalogue.utf8))
+    let apps = try disposableDirectory()
+    let installed = try FixtureApp.make(
+      in: apps, version: "1.0", extraInfo: ["CFBundleName": "Fixture Beta"])
+    let bundle = try XCTUnwrap(BundleCollector.collectBundle(at: installed))
+    let fetched = Mutex<[String]>([])
+    let hash = String(repeating: "a", count: 64)
+    let beta = try cask(url: "https://example.com/beta.zip", sha256: hash, version: "1.5")
+    let stable = try cask(url: "https://example.com/stable.zip", sha256: hash, version: "1.2")
+    let check = CatalogueInstallCheck(
+      fetchCask: { token in
+        fetched.withLock { $0.append(token) }
+        return token == "fixture@beta" ? beta : stable
+      },
+      copies: { _ in [installed.standardizedFileURL.path] }, isWritable: { _ in true },
+      ownership: { _, _ in .notOwned }, assess: { _ in })
+    let update = try await HomebrewCheckerOperation(
+      with: bundle, repository: repository, homebrew: nil, catalogueCheck: check
+    ).check()
+    XCTAssertEqual(
+      update.remoteVersion.versionNumber, "1.5", "the beta's version, not the stable's")
+    XCTAssertEqual(update.source, .directDownload, "and it installs from the beta cask")
+    XCTAssertEqual(fetched.withLock { $0 }, ["fixture@beta"])
+  }
+
+  /// REV-008: a download with no published checksum follows redirects only inside the
+  /// vendor's domain family.
+  func testNoCheckDownloadsRefuseRedirectsOutOfTheVendorDomain() async throws {
+    let scene = try scene()
+    let server = try await LocalFileServer.start(serving: scene.payloads)
+    defer { server.stop() }
+    let (name, _) = try payload(in: scene, kind: .zip)
+    let inside = server.baseURL.appendingPathComponent(name)
+    try Data(inside.absoluteString.utf8).write(
+      to: scene.payloads.appendingPathComponent("in.redirect"))
+    let outside = URL(string: "http://localhost:\(server.baseURL.port ?? 0)/\(name)")!
+    try Data(outside.absoluteString.utf8).write(
+      to: scene.payloads.appendingPathComponent("out.redirect"))
+    func noCheck(_ path: String) throws -> Data {
+      try cask(
+        url: server.baseURL.appendingPathComponent(path).absoluteString, sha256: "no_check",
+        extra: ["homepage": "http://127.0.0.1/"])
+    }
+    let before = try FixtureApp.digest(scene.installed)
+    let refused = try await install(scene, cask: try noCheck("out.redirect"))
+    guard case .failed = refused.outcome else { return XCTFail("left the vendor's domain") }
+    XCTAssertEqual(try FixtureApp.digest(scene.installed), before)
+    let followed = try await install(scene, cask: try noCheck("in.redirect"))
+    XCTAssertEqual(followed.outcome, .updated(from: "1.0", to: "1.1"), "inside the family")
+  }
+
   /// Opt-in, read-only: which apps on this Mac the catalogue rules would install today. It reads
   /// the real catalogue, fresh per-cask entries (metadata only) and the folder walk; it never
   /// downloads a payload or changes anything. Payload and trust rules are judged at install.
