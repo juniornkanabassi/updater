@@ -303,7 +303,8 @@ private final class StubCheckCoordinator: UpdateCheckCoordinating {
   let appProvider: any AppProviding
   @MainActor var progressDelegate: (any UpdateCheckProgressReporting)?
   init(apps: [App]) { appProvider = StubAppProvider(apps: apps) }
-  @MainActor func run(hardRefresh: Bool) {}
+  @MainActor var checkCompletion: (@MainActor (UpdateCheckCompletion) -> Void)?
+  @MainActor func run(hardRefresh: Bool, origin: UpdateCheckOrigin) {}
 }
 
 @MainActor

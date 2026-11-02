@@ -15,6 +15,21 @@ private let updateCheckLogger = Logger(
   category: "UpdateCheck"
 )
 
+/// Who started a check. Only an explicit manual check keeps quiet about new updates.
+enum UpdateCheckOrigin: Sendable {
+  case manual
+  case background
+  /// Discovery started by a change in a watched folder.
+  case filesystem
+}
+
+/// A finished full check, delivered once per generation, apart from the throttled UI snapshots.
+struct UpdateCheckCompletion: Sendable {
+  let generation: Int
+  let origin: UpdateCheckOrigin
+  let apps: [App]
+}
+
 /// Protocol that defines some methods on reporting the progress of the update checking process.
 @MainActor
 protocol UpdateCheckProgressReporting: AnyObject {
@@ -49,7 +64,9 @@ protocol UpdateCheckCoordinating: AnyObject {
   @MainActor
   var progressDelegate: (any UpdateCheckProgressReporting)? { get set }
   @MainActor
-  func run(hardRefresh: Bool)
+  var checkCompletion: (@MainActor (UpdateCheckCompletion) -> Void)? { get set }
+  @MainActor
+  func run(hardRefresh: Bool, origin: UpdateCheckOrigin)
 }
 
 /// UpdateCheckCoordinator handles the logic for checking for updates.
@@ -105,6 +122,12 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
   /// The delegate for the progress of the entire update checking progress
   weak var progressDelegate: UpdateCheckProgressReporting?
 
+  /// Called on the main actor as each full check finishes.
+  @MainActor var checkCompletion: (@MainActor (UpdateCheckCompletion) -> Void)?
+
+  /// The origin of the run whose first discovery is still pending; guarded by the scheduling lock.
+  private var pendingDiscoveryOrigin: UpdateCheckOrigin?
+
   /// The library containing all bundles loaded from disk.
   private lazy var library: AppLibrary = {
     return AppLibrary { [weak self] bundles in
@@ -112,9 +135,14 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
     }
   }()
 
-  /// Reconciles a complete discovery snapshot and schedules its update checks.
-  func updateDiscoveredBundles(_ bundles: [App.Bundle], forceRefresh: Bool = false) {
+  /// Reconciles a complete discovery snapshot and schedules its update checks. Without an
+  /// origin, it is the pending run's first discovery or else a watched folder's change.
+  func updateDiscoveredBundles(
+    _ bundles: [App.Bundle], forceRefresh: Bool = false, origin: UpdateCheckOrigin? = nil
+  ) {
     updateCheckSchedulingLock.withLock {
+      let origin = origin ?? pendingDiscoveryOrigin ?? .filesystem
+      pendingDiscoveryOrigin = nil
       let bundles = Set(bundles)
       guard forceRefresh || !hasDiscoveredApps || !dataStore.containsSameBundles(as: bundles) else {
         return
@@ -123,7 +151,8 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
       // Invalidate before replacing the store so late results cannot restore removed apps.
       let generation = beginUpdateCheckGeneration()
       dataStore.set(appBundles: bundles)
-      scheduleUpdateCheck(on: Array(bundles), generation: generation, publishesSnapshot: true)
+      scheduleUpdateCheck(
+        on: Array(bundles), generation: generation, publishesSnapshot: true, origin: origin)
       if let systemUpdate {
         Task.detached(priority: .utility) { [weak self] in
           guard let update = await systemUpdate(), let self else { return }
@@ -171,11 +200,12 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
 
   /// Initiate the update check, if not already running.
   @MainActor
-  func run(hardRefresh: Bool = false) {
+  func run(hardRefresh: Bool = false, origin: UpdateCheckOrigin = .manual) {
     self.progressDelegate?.updateCheckerDidStartScanningForApps(self)
 
     if self.waitForInitialCheck {
       self.waitForInitialCheck = false
+      updateCheckSchedulingLock.withLock { pendingDiscoveryOrigin = origin }
       self.library.startQuery()
       return
     }
@@ -191,7 +221,7 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
       guard let self else { return }
 
       self.library.reload { [weak self] bundles in
-        self?.updateDiscoveredBundles(bundles, forceRefresh: true)
+        self?.updateDiscoveredBundles(bundles, forceRefresh: true, origin: origin)
       }
     }
   }
@@ -214,7 +244,8 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
 
   /// Called while holding the scheduling lock so registration and cancellation are atomic.
   private func scheduleUpdateCheck(
-    on bundles: [App.Bundle], generation: Int, publishesSnapshot: Bool = false
+    on bundles: [App.Bundle], generation: Int, publishesSnapshot: Bool = false,
+    origin: UpdateCheckOrigin = .filesystem
   ) {
     let checkableBundles = Self.prioritizedBundlesForUpdateCheck(bundles).filter {
       Self.checker(for: $0.source) != nil
@@ -232,7 +263,8 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
         on: checkableBundles,
         repository: repository,
         generation: generation,
-        publishesSnapshot: publishesSnapshot
+        publishesSnapshot: publishesSnapshot,
+        origin: origin
       )
     }
     activeUpdateCheckTasks[taskID] = task
@@ -242,7 +274,8 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
     on bundles: [App.Bundle],
     repository: UpdateRepository?,
     generation: Int,
-    publishesSnapshot: Bool
+    publishesSnapshot: Bool,
+    origin: UpdateCheckOrigin
   ) async {
     await MainActor.run {
       guard self.updateCheckGeneration.isCurrent(generation), !Task.isCancelled else { return }
@@ -277,6 +310,8 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
         _ = self.updateCheckGeneration.withCurrent(generation) {
           self.dataStore.finishUpdateCheck(generation: generation)
         }
+        self.checkCompletion?(
+          UpdateCheckCompletion(generation: generation, origin: origin, apps: self.dataStore.apps))
       }
       self.progressDelegate?.updateCheckerDidFinishCheckingForUpdates(self, generation: generation)
     }

@@ -108,25 +108,26 @@ struct UpdateActionView: View {
       presentation: viewModel.presentation,
       performAction: viewModel.performAction
     )
-    .alert(item: $viewModel.presentedError) { error in
-      Alert(
-        title: Text(
-          String.localizedStringWithFormat(
-            NSLocalizedString(
-              "UpdateErrorAlertTitle",
-              comment: "Title of alert stating that an app update failed"
-            ),
-            viewModel.app.name
-          )),
-        message: Text(error.description),
-        primaryButton: error.permission.map { permission in
-          .default(Text("Fix in Settings")) { viewModel.openSettings(for: permission) }
-        }
-          ?? .default(Text(NSLocalizedString("RetryAction", comment: "Retry update"))) {
-            viewModel.retry()
-          },
-        secondaryButton: .cancel()
-      )
+    .alert(
+      String.localizedStringWithFormat(
+        NSLocalizedString(
+          "UpdateErrorAlertTitle", comment: "Title of alert stating that an app update failed"),
+        viewModel.app.name),
+      isPresented: Binding(
+        get: { viewModel.presentedError != nil },
+        set: { if !$0 { viewModel.presentedError = nil } }),
+      presenting: viewModel.presentedError
+    ) { error in
+      // Retry stays available: granting the permission does not change the recorded failure,
+      // only a new attempt does.
+      Button(NSLocalizedString("RetryAction", comment: "Retry update")) { viewModel.retry() }
+      if let permission = error.permission {
+        Button("Open Settings") { viewModel.openSettings(for: permission) }
+          .accessibilityLabel("Open System Settings for \(permission.title)")
+      }
+      Button("Cancel", role: .cancel) {}
+    } message: { error in
+      Text(error.description)
     }
   }
 }

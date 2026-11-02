@@ -58,9 +58,9 @@ final class UpdateCheckingService: NSObject, ObservableObject, UpdateCheckProgre
 
   /// Startup can reuse short-lived App Store lookups; an explicit user refresh
   /// invalidates them so the command retains its expected force-refresh behavior.
-  func checkForUpdates(hardRefresh: Bool) {
+  func checkForUpdates(hardRefresh: Bool, origin: UpdateCheckOrigin = .manual) {
     startReportingProgress()
-    coordinator.run(hardRefresh: hardRefresh)
+    coordinator.run(hardRefresh: hardRefresh, origin: origin)
   }
 
   /// What Update All would start now; the window and the menu bar both ask this.

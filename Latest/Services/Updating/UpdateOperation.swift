@@ -11,6 +11,8 @@ import Synchronization
 
 extension Notification.Name {
   static let latestUpdateOperationDidFinish = Notification.Name("LatestUpdateOperationDidFinish")
+  /// A job joined or left the scheduler, cancelled ones included.
+  static let latestUpdateQueueDidChange = Notification.Name("LatestUpdateQueueDidChange")
 }
 
 /// The abstract update operation used for updating apps.

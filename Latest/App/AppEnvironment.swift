@@ -23,8 +23,8 @@ final class AppEnvironment: ObservableObject {
   private var startupTask: Task<Void, Never>?
   private var backgroundChecks: BackgroundCheckScheduler?
   private var notifications: UpdateNotificationController?
-  /// Set when the scheduler (not the user) started the running check.
-  private var announcesNextResult = false
+  private let coordinator: any UpdateCheckCoordinating
+  private let settings: any AppListSettingsProviding
 
   init(
     searchFocusController: SearchFocusController = SearchFocusController(),
@@ -65,6 +65,8 @@ final class AppEnvironment: ObservableObject {
       )
 
     self.searchFocusController = searchFocusController
+    self.coordinator = coordinator
+    self.settings = settings
     self.updateCheckingService = updateCheckingService
     self.updatesListViewModel = updatesListViewModel
     self.settingsViewModel = settingsViewModel
@@ -98,19 +100,18 @@ final class AppEnvironment: ObservableObject {
     updatesListViewModel.startObserving()
     let checks = BackgroundCheckScheduler(
       isChecking: { [updateCheckingService] in updateCheckingService.isRunning },
-      check: { [weak self] _ in
-        self?.announcesNextResult = true
-        self?.updateCheckingService.checkForUpdates(hardRefresh: false)
+      check: { [updateCheckingService] _ in
+        updateCheckingService.checkForUpdates(hardRefresh: false, origin: .background)
       })
     backgroundChecks = checks
     let notifications = UpdateNotificationController(
       notifier: LiveUpdateNotifier(open: { MainWindow.show() }))
     self.notifications = notifications
-    menuBar.checkFinished = { [weak self] waiting in
-      guard let self else { return }
-      let announce = self.announcesNextResult
-      self.announcesNextResult = false
-      Task { await notifications.checkFinished(waiting: waiting, announce: announce) }
+    coordinator.checkCompletion = { [settings] completion in
+      let includeExternal = settings.includeAppsWithLimitedSupport
+      Task {
+        await notifications.checkFinished(completion, includeExternal: includeExternal)
+      }
     }
     menuBar.startObserving()
     checks.start()
@@ -128,6 +129,7 @@ final class AppEnvironment: ObservableObject {
     startupTask = nil
     backgroundChecks?.stop()
     backgroundChecks = nil
+    coordinator.checkCompletion = nil
     menuBar.stopObserving()
     updatesListViewModel.stopObserving()
     updateCheckingService.stopReportingProgress()

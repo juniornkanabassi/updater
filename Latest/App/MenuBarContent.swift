@@ -11,13 +11,13 @@ final class MenuBarViewModel: ObservableObject {
 
   @Published private(set) var updates = [App]()
   @Published private(set) var canUpdateAll = false
-  /// Called with the waiting updates each time a check finishes.
-  var checkFinished: (([App]) -> Void)?
 
   private let appProvider: any AppProviding
   private let settings: any AppListSettingsProviding
   private let updateAllCandidates: () -> [App]
-  private var observation: Task<Void, Never>?
+  private var apps = [App]()
+  private var observations = [Task<Void, Never>]()
+  private var queueObserver: NSObjectProtocol?
 
   init(
     appProvider: any AppProviding,
@@ -33,35 +33,40 @@ final class MenuBarViewModel: ObservableObject {
     UserDefaults.standard.object(forKey: showsItemKey) as? Bool ?? true
   }
 
-  /// The same apps the Dock badge counts.
-  static func waitingUpdates(in apps: [App], includeExternal: Bool) -> [App] {
-    apps.filter {
-      $0.updateAvailable && !$0.isIgnored && (includeExternal || $0.usesBuiltInUpdater)
-    }
-    .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-  }
-
+  /// Recomputes on new app lists, on preference changes and whenever a job starts or ends
+  /// (cancelled and declined ones too), so the menu never needs a manual refresh.
   func startObserving() {
-    guard observation == nil else { return }
-    observation = Task { [weak self, appProvider] in
-      var wasChecking = false
-      for await update in appProvider.updates() {
-        guard !Task.isCancelled, let self else { break }
-        self.refresh(with: update.apps)
-        let isChecking = update.checkingGeneration != nil
-        if wasChecking, !isChecking { self.checkFinished?(self.updates) }
-        wasChecking = isChecking
-      }
-    }
+    guard observations.isEmpty else { return }
+    observations = [
+      Task { [weak self, appProvider] in
+        for await update in appProvider.updates() {
+          guard !Task.isCancelled, let self else { break }
+          self.refresh(with: update.apps)
+        }
+      },
+      Task { [weak self, settings] in
+        for await _ in settings.updates() {
+          guard !Task.isCancelled, let self else { break }
+          self.refresh()
+        }
+      },
+    ]
+    queueObserver = NotificationCenter.default.addObserver(
+      forName: .latestUpdateQueueDidChange, object: nil, queue: .main
+    ) { [weak self] _ in MainActor.assumeIsolated { self?.refresh() } }
   }
 
   func stopObserving() {
-    observation?.cancel()
-    observation = nil
+    observations.forEach { $0.cancel() }
+    observations.removeAll()
+    if let queueObserver { NotificationCenter.default.removeObserver(queueObserver) }
+    queueObserver = nil
   }
 
-  func refresh(with apps: [App]) {
-    updates = Self.waitingUpdates(in: apps, includeExternal: settings.includeAppsWithLimitedSupport)
+  func refresh(with apps: [App]? = nil) {
+    if let apps { self.apps = apps }
+    updates = UpdateNotificationController.waitingUpdates(
+      in: self.apps, includeExternal: settings.includeAppsWithLimitedSupport)
     canUpdateAll = !updateAllCandidates().isEmpty
   }
 }

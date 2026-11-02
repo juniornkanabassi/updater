@@ -33,7 +33,7 @@ enum PermissionKind: String, CaseIterable, Identifiable {
   var explanation: String {
     switch self {
     case .appManagement:
-      "Needed to replace apps from other developers. macOS doesn't report it, so it shows as not granted only after an update was refused."
+      "Needed to replace apps from other developers. macOS doesn't report whether it is allowed."
     case .backgroundItem:
       "The background item that installs App Store updates. Approve it under Login Items."
     case .notifications:
@@ -77,14 +77,19 @@ final class PermissionsViewModel: ObservableObject {
   typealias Probe = @MainActor () async -> PermissionState
 
   @Published private(set) var states = [PermissionKind: PermissionState]()
+  /// What past attempts recorded, shown as history rather than as the current state.
+  @Published private(set) var notes = [PermissionKind: String]()
   private let probes: [PermissionKind: Probe]
+  private let history: () -> [UpdateHistoryEntry]
   private let workspace: any ApplicationWorkspace
 
   init(
     probes: [PermissionKind: Probe] = PermissionsViewModel.liveProbes,
+    history: @escaping () -> [UpdateHistoryEntry] = { UpdateHistoryStore.shared.latestEntries() },
     workspace: any ApplicationWorkspace = MacApplicationWorkspace.shared
   ) {
     self.probes = probes
+    self.history = history
     self.workspace = workspace
   }
 
@@ -94,6 +99,18 @@ final class PermissionsViewModel: ObservableObject {
     for kind in PermissionKind.allCases {
       states[kind] = await probes[kind]?() ?? .unknown
     }
+    notes = Self.notes(for: history())
+  }
+
+  /// A refused replacement stays a fact about that attempt; the user may have allowed
+  /// Updater since, which only a retry can show.
+  static func notes(for entries: [UpdateHistoryEntry]) -> [PermissionKind: String] {
+    var notes = [PermissionKind: String]()
+    for case .needsPermission(let kind) in entries.map(\.outcome) {
+      guard let permission = PermissionKind(outcomeKind: kind) else { continue }
+      notes[permission] = "Last attempt was blocked by \(permission.title)."
+    }
+    return notes
   }
 
   func openSettings(for kind: PermissionKind) {
@@ -101,7 +118,8 @@ final class PermissionsViewModel: ObservableObject {
   }
 
   static let liveProbes: [PermissionKind: Probe] = [
-    .appManagement: { appManagementState(latest: UpdateHistoryStore.shared.latestEntries()) },
+    // macOS has no query for App Management.
+    .appManagement: { .unknown },
     .backgroundItem: {
       helperState(SMAppService.daemon(plistName: UpdateInstallerIdentity.daemon + ".plist").status)
     },
@@ -116,12 +134,6 @@ final class PermissionsViewModel: ObservableObject {
       return descriptor >= 0 ? .granted : .notGranted
     },
   ]
-
-  /// macOS has no query for App Management; a refused replacement still on record says no.
-  static func appManagementState(latest entries: [UpdateHistoryEntry]) -> PermissionState {
-    entries.contains { $0.outcome == .needsPermission(kind: PermissionKind.appManagement.rawValue) }
-      ? .notGranted : .unknown
-  }
 
   static func helperState(_ status: SMAppService.Status) -> PermissionState {
     switch status {
@@ -177,10 +189,17 @@ struct PermissionsSettingsView: View {
           .font(.caption)
           .foregroundStyle(.secondary)
           .fixedSize(horizontal: false, vertical: true)
+        if let note = model.notes[kind] {
+          Text(note)
+            .font(.caption)
+            .foregroundStyle(.orange)
+        }
       }
       .frame(maxWidth: .infinity, alignment: .leading)
       .accessibilityElement(children: .combine)
-      .accessibilityLabel("\(kind.title), \(state.title)")
+      .accessibilityLabel(
+        [kind.title, state.title, model.notes[kind]].compactMap { $0 }.joined(separator: ", ")
+      )
       .accessibilityHint(kind.explanation)
 
       Button("Open Settings") { model.openSettings(for: kind) }

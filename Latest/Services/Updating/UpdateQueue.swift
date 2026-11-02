@@ -97,6 +97,7 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
       // still indexed; republish so the row falls back to history and an earlier failure
       // shows again. A terminal error stays as published.
       if operation.error == nil { self.publishState(for: operation.appIdentifier) }
+      NotificationCenter.default.post(name: .latestUpdateQueueDidChange, object: self)
     }
 
     operation.progressHandler = { [weak self] identifier in
@@ -104,6 +105,7 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
     }
 
     super.addOperation(operation)
+    NotificationCenter.default.post(name: .latestUpdateQueueDidChange, object: self)
     return operation
   }
 

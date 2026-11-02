@@ -120,7 +120,7 @@ struct UpdateOutcomeError: LocalizedError, Sendable {
     case .needsPermission(let kind) where kind == "administrator":
       "This update needs administrator rights. Run the brew upgrade command in Terminal; Updater copies it for you."
     case .needsPermission:
-      "Updater needs App Management permission to replace this app. Allow it in System Settings → Privacy & Security → App Management."
+      "The last attempt was blocked by App Management. Allow Updater in System Settings → Privacy & Security → App Management, then Retry."
     case .updated, .noChange, .handedOff: nil
     }
   }

@@ -76,7 +76,7 @@ final class BackgroundTest: XCTestCase {
     func post(title: String, body: String) async { posts.append((title, body)) }
   }
 
-  func testOnlyNewUpdatesNotifyAndUnchangedSetsStaySilent() async throws {
+  func testOnlyNewUpdatesNotifyAndOnlyManualChecksStayQuiet() async throws {
     let suite = "BackgroundTest.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite) }
@@ -84,25 +84,125 @@ final class BackgroundTest: XCTestCase {
     let controller = UpdateNotificationController(notifier: notifier, defaults: defaults)
     let warp = makeTestApp(name: "Warp", version: "1", remoteVersion: "2")
     let goodnotes = makeTestApp(name: "Goodnotes", version: "1", remoteVersion: "2")
+    func finished(_ apps: [App], _ origin: UpdateCheckOrigin) async {
+      await controller.checkFinished(
+        UpdateCheckCompletion(generation: 1, origin: origin, apps: apps), includeExternal: true)
+    }
 
     // A manual check moves the baseline without asking or posting.
-    await controller.checkFinished(waiting: [warp], announce: false)
+    await finished([warp], .manual)
     XCTAssertEqual(notifier.authorizationRequests, 0, "never asks before a background result")
     XCTAssertTrue(notifier.posts.isEmpty)
 
-    await controller.checkFinished(waiting: [warp], announce: true)
+    await finished([warp], .background)
     XCTAssertEqual(notifier.authorizationRequests, 1, "asks on the first background result")
     XCTAssertTrue(notifier.posts.isEmpty, "an unchanged set says nothing")
 
-    await controller.checkFinished(waiting: [warp, goodnotes], announce: true)
+    await finished([warp, goodnotes], .background)
     XCTAssertEqual(notifier.posts.count, 1)
     XCTAssertEqual(notifier.posts.last?.title, "1 update available")
     XCTAssertEqual(notifier.posts.last?.body, "Goodnotes")
 
     let warpNext = makeTestApp(name: "Warp", version: "1", remoteVersion: "3")
-    await controller.checkFinished(waiting: [warpNext, goodnotes], announce: true)
+    await finished([warpNext, goodnotes], .background)
     XCTAssertEqual(notifier.posts.last?.body, "Warp", "a newer version is new again")
-    XCTAssertEqual(notifier.posts.count, 2)
+
+    // Sol R4-002: an app installed while Updater runs is found by the folder watcher, and
+    // its update is announced rather than silently marked as seen.
+    let zoom = makeTestApp(name: "Zoom", version: "1", remoteVersion: "2")
+    await finished([warpNext, goodnotes, zoom], .filesystem)
+    XCTAssertEqual(notifier.posts.last?.body, "Zoom")
+    XCTAssertEqual(notifier.posts.count, 3)
+  }
+
+  /// Sol R4-001: completion is an explicit event per generation, so a check that finishes
+  /// before the first throttled snapshot is still reported, with its origin.
+  func testFastChecksReportCompletionWithTheirOrigin() async throws {
+    let coordinator = UpdateCheckCoordinator(
+      check: { _, _ in throw LatestError.updateInfoUnavailable }, repositoryProvider: { nil })
+    var completions = [UpdateCheckCompletion]()
+    coordinator.checkCompletion = { completions.append($0) }
+    let root = try disposableDirectory()
+    let bundle = try XCTUnwrap(
+      BundleCollector.collectBundle(at: FixtureApp.make(in: root, version: "1.0", signed: false)))
+
+    coordinator.updateDiscoveredBundles([bundle], origin: .background)
+    try await waitUntil { completions.count == 1 }
+    let other = try XCTUnwrap(
+      BundleCollector.collectBundle(
+        at: FixtureApp.make(
+          in: root, name: "Other", identifier: "com.example.other", version: "1.0", signed: false)))
+    // A folder change with no run pending is the watcher's.
+    coordinator.updateDiscoveredBundles([bundle, other])
+    try await waitUntil { completions.count == 2 }
+    coordinator.updateDiscoveredBundles([bundle], forceRefresh: true, origin: .manual)
+    try await waitUntil { completions.count == 3 }
+    XCTAssertEqual(completions.map(\.origin), [.background, .filesystem, .manual])
+    XCTAssertEqual(completions.last?.apps.map(\.fileURL), [bundle.fileURL])
+  }
+
+  // MARK: - Menu bar
+
+  private final class StreamingProvider: AppProviding {
+    let apps: [App]
+    init(apps: [App]) { self.apps = apps }
+    var updatableApps: [App] {
+      apps.filter { $0.updateAvailable && $0.capability.isAutomatic && !$0.isIgnored }
+    }
+    func countOfAvailableUpdates(where condition: (App) -> Bool) -> Int { 0 }
+    func updates() -> AsyncStream<AppListUpdate> {
+      AsyncStream { $0.yield(AppListUpdate(apps: apps, checkingGeneration: nil)) }
+    }
+    func setIgnoredState(_ ignored: Bool, for app: App) {}
+  }
+
+  /// Sol R4-003: preference changes and jobs starting or being declined update the menu
+  /// without a manual refresh.
+  func testMenuFollowsPreferencesAndJobsWithoutARefresh() async throws {
+    let settings = try isolatedAppListSettings(for: self)
+    settings.includeAppsWithLimitedSupport = false
+    let native = makeTestApp(name: "Native", version: "1", remoteVersion: "2")
+    let externalBundle = App.Bundle(
+      version: Version(versionNumber: "1", buildNumber: nil), name: "Outside",
+      bundleIdentifier: "com.example.outside",
+      fileURL: URL(fileURLWithPath: "/Applications/Outside.app"),
+      source: .sparkle, modificationDate: .distantPast)
+    let outside = App(
+      bundle: externalBundle,
+      update: .success(
+        App.Update(
+          app: externalBundle, remoteVersion: Version(versionNumber: "2", buildNumber: nil),
+          minimumOSVersion: nil, source: .sparkle, date: nil, releaseNotes: nil,
+          updateAction: .external(label: "Its updater") { _ in })),
+      isIgnored: false)
+    let apps = [native, outside]
+    let queue = UpdateQueue()
+    let updating = AppUpdateService(queue: queue)
+    let menu = MenuBarViewModel(
+      appProvider: StreamingProvider(apps: apps), settings: settings,
+      updateAllCandidates: {
+        UpdateCheckingService.updateAllCandidates(
+          from: apps.filter { $0.capability.isAutomatic }, isUpdating: updating.isUpdating,
+          alwaysUsesManualAppStoreUpdates: false)
+      })
+    menu.startObserving()
+    defer { menu.stopObserving() }
+    try await waitUntil { menu.updates.map(\.name) == ["Native"] }
+    XCTAssertTrue(menu.canUpdateAll)
+
+    settings.includeAppsWithLimitedSupport = true
+    try await waitUntil { menu.updates.map(\.name) == ["Native", "Outside"] }
+
+    let job = HeldOperation(url: native.fileURL)
+    queue.addOperation(job)
+    try await waitUntil { !menu.canUpdateAll }
+    job.decline()
+    try await waitUntil { menu.canUpdateAll }
+  }
+
+  private func waitUntil(_ condition: () -> Bool) async throws {
+    for _ in 0..<200 where !condition() { try await Task.sleep(for: .milliseconds(10)) }
+    XCTAssertTrue(condition(), "timed out")
   }
 
   func testSummaryNamesThreeAppsThenCountsTheRest() {
@@ -124,7 +224,7 @@ final class BackgroundTest: XCTestCase {
         .appManagement: { .notGranted },
         .backgroundItem: { .granted },
         .notifications: { .unknown },
-      ], workspace: workspace)
+      ], history: { [] }, workspace: workspace)
     await model.refresh()
     XCTAssertEqual(model.state(of: .appManagement), .notGranted)
     XCTAssertEqual(model.state(of: .backgroundItem), .granted)
@@ -153,12 +253,16 @@ final class BackgroundTest: XCTestCase {
       before: bundle, after: bundle, outcome: .needsPermission(kind: "appManagement"))
     let admin = UpdateHistoryEntry(
       before: bundle, after: bundle, outcome: .needsPermission(kind: "administrator"))
-    XCTAssertEqual(PermissionsViewModel.appManagementState(latest: [refused]), .notGranted)
-    XCTAssertEqual(PermissionsViewModel.appManagementState(latest: [admin]), .unknown)
+    // Sol R4-004: a refusal on record is history, never the current state.
+    XCTAssertEqual(
+      PermissionsViewModel.notes(for: [refused]),
+      [.appManagement: "Last attempt was blocked by App Management."])
+    XCTAssertTrue(PermissionsViewModel.notes(for: [admin]).isEmpty)
   }
 
-  /// A failed row whose outcome is a missing permission offers that permission's pane.
-  func testNeedsPermissionFailureOffersFixInSettings() async throws {
+  /// A failed row whose outcome is a missing permission offers that pane next to Retry, and
+  /// keeps its failure until a retry produces a new result (Sol R4-004).
+  func testNeedsPermissionFailureOffersSettingsAndKeepsRetry() async throws {
     let directory = try disposableDirectory()
     let history = UpdateHistoryStore(fileURL: directory.appendingPathComponent("history.jsonl"))
     let app = makeTestApp(name: "Refused", version: "1", remoteVersion: "2")
@@ -175,5 +279,28 @@ final class BackgroundTest: XCTestCase {
     model.openSettings(for: permission)
     XCTAssertEqual(workspace.openedURLs, [PermissionKind.appManagement.settingsURL])
     XCTAssertNil(PermissionKind(outcomeKind: "administrator"), "admin stays the brew hand-off")
+    model.presentedError = nil
+    model.performAction()
+    XCTAssertNotNil(model.presentedError, "opening Settings does not clear the recorded failure")
+    let model2 = PermissionsViewModel(
+      probes: [:], history: { history.latestEntries() }, workspace: workspace)
+    await model2.refresh()
+    XCTAssertEqual(model2.state(of: .appManagement), .unknown)
+    XCTAssertNotNil(model2.notes[.appManagement])
   }
+}
+
+/// Waits until declined, then cancels and finishes cleanly, as a declined quit does.
+private final class HeldOperation: UpdateOperation, @unchecked Sendable {
+  private let gate = AsyncStream<Void>.makeStream()
+  init(url: URL) { super.init(bundleIdentifier: "com.example.held", appIdentifier: url) }
+  override func execute() {
+    super.execute()
+    Task.detached { [self] in
+      for await _ in gate.stream {}
+      cancel()
+      finish()
+    }
+  }
+  func decline() { gate.continuation.finish() }
 }

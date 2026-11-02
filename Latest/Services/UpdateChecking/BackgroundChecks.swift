@@ -123,16 +123,25 @@ final class UpdateNotificationController {
     self.defaults = defaults
   }
 
-  /// Every finished check moves the baseline (the window already shows manual results);
-  /// only background checks announce what is new since it.
-  func checkFinished(waiting apps: [App], announce: Bool) async {
+  /// Every finished check moves the baseline. Only an explicit manual check stays quiet
+  /// (its results are on screen); background and folder-triggered checks announce.
+  func checkFinished(_ completion: UpdateCheckCompletion, includeExternal: Bool) async {
+    let apps = Self.waitingUpdates(in: completion.apps, includeExternal: includeExternal)
     let previous = Set(defaults.stringArray(forKey: Self.storageKey) ?? [])
     let new = apps.filter { !previous.contains(Self.key(for: $0)) }
     defaults.set(apps.map(Self.key(for:)), forKey: Self.storageKey)
-    guard announce else { return }
+    guard completion.origin != .manual else { return }
     await notifier.requestAuthorization()
     guard let summary = Self.summary(of: new) else { return }
     await notifier.post(title: summary.title, body: summary.body)
+  }
+
+  /// The updates the Dock badge and the menu bar count.
+  static func waitingUpdates(in apps: [App], includeExternal: Bool) -> [App] {
+    apps.filter {
+      $0.updateAvailable && !$0.isIgnored && (includeExternal || $0.usesBuiltInUpdater)
+    }
+    .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
   }
 
   /// A new version of an already announced app counts as new.
