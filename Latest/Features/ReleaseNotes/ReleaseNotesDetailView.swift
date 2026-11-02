@@ -53,11 +53,13 @@ struct ReleaseNotesDetailView: View {
 }
 
 /// What the detail pane shows with no app selected: the state of the whole list.
+@MainActor
 enum DetailOverview: Equatable {
   case lookingForApps
   case checking
   case offline
-  case upToDate(checked: Int)
+  /// Nothing to install; "Everything is up to date" only when the summary says all are current.
+  case noUpdates(UpdateStatusSummary)
   case chooseApp
 
   init(snapshot: AppListSnapshot) {
@@ -66,7 +68,7 @@ enum DetailOverview: Equatable {
       self = .lookingForApps
     } else if snapshot.checkingGeneration != nil {
       self = .checking
-    } else if apps.contains(where: \.isActionable) {
+    } else if snapshot.sections.contains(where: { $0.apps.contains(where: \.isActionable) }) {
       self = .chooseApp
     } else if !apps.contains(where: { $0.remoteVersion != nil }),
       apps.contains(where: { ($0.error as NSError?)?.domain == NSURLErrorDomain })
@@ -75,7 +77,7 @@ enum DetailOverview: Equatable {
       // NWPathMonitor if checks start failing for other reasons while online.
       self = .offline
     } else {
-      self = .upToDate(checked: apps.filter { $0.remoteVersion != nil }.count)
+      self = .noUpdates(UpdateStatusSummary(apps: apps))
     }
   }
 }
@@ -325,8 +327,8 @@ private struct AppInfoPanel: View {
           "Location",
           (app.fileURL.deletingLastPathComponent().path as NSString)
             .abbreviatingWithTildeInPath)
-        if let lastResult, let summary = Self.describe(lastResult) {
-          row("Last update", summary)
+        if let lastResult {
+          row("Last update", lastResult.displaySummary)
         }
       }
       .font(.system(size: 12))
@@ -349,18 +351,31 @@ private struct AppInfoPanel: View {
     }
     .accessibilityElement(children: .combine)
   }
+}
 
-  static func describe(_ entry: UpdateHistoryEntry) -> String? {
-    let when = entry.date.formatted(.dateTime.day().month(.abbreviated).year())
+extension UpdateHistoryEntry {
+  /// "Updated 1.0 → 1.1, 2 Nov 2026" for the detail pane's Last update row.
+  var displaySummary: String {
+    let when = date.formatted(.dateTime.day().month(.abbreviated).year())
     let what: String
-    switch entry.outcome {
+    switch outcome {
     case .updated(let from, let to): what = "Updated \(from) → \(to)"
     case .noChange(let reason): what = "Nothing changed" + (reason.map { ": \($0)" } ?? "")
     case .needsPermission(let kind):
       what = kind == "administrator" ? "Needed your password" : "Blocked by App Management"
     case .needsQuit: what = "Not updated: the app didn't quit"
     case .failed(let reason, _): what = "Failed: \(reason)"
-    case .handedOff: what = "Opened \(entry.handOff?.destination ?? "its updater")"
+    case .handedOff:
+      // Only a record that says it opened something may claim so; older records never do.
+      if let note = handOff, note.opened {
+        what = "Opened \(note.destination)"
+      } else if let note = handOff {
+        what =
+          "Needed \(note.destination): \(note.reason)"
+          + (note.blockedByPolicy ? " (not opened from the command line)" : "")
+      } else {
+        what = "Handed off to its own updater"
+      }
     }
     return "\(what), \(when)"
   }
@@ -388,11 +403,16 @@ private struct DetailOverviewView: View {
         ContentUnavailableView(
           "Can't Reach Update Servers", systemImage: "wifi.exclamationmark",
           description: Text("Check your internet connection, then click Check for Updates."))
-      case .upToDate(let checked):
+      case .noUpdates(let summary) where summary.isAllCurrent:
         ContentUnavailableView(
           "Everything Is Up to Date", systemImage: "checkmark.circle",
           description: Text(
-            checked == 1 ? "Updater checked 1 app." : "Updater checked \(checked) apps."))
+            summary.current == 1
+              ? "Updater checked 1 app." : "Updater checked \(summary.current) apps."))
+      case .noUpdates(let summary):
+        ContentUnavailableView(
+          "Nothing for Updater to Install", systemImage: "info.circle",
+          description: Text(summary.text))
       case .chooseApp:
         ContentUnavailableView(
           "No App Selected", systemImage: "square.stack",

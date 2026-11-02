@@ -10,6 +10,8 @@ final class MenuBarViewModel: ObservableObject {
   nonisolated static let showsItemKey = "ShowsMenuBarItem"
 
   @Published private(set) var updates = [App]()
+  /// What the last check found, for the line shown when nothing is waiting.
+  @Published private(set) var summary = UpdateStatusSummary()
   /// How many apps Update All would start now (the window's toolbar shows it too).
   @Published private(set) var updateAllCount = 0
   var canUpdateAll: Bool { updateAllCount > 0 }
@@ -87,6 +89,7 @@ final class MenuBarViewModel: ObservableObject {
     updates = UpdateNotificationController.waitingUpdates(
       in: self.apps, includeExternal: settings.includeAppsWithLimitedSupport)
     updateAllCount = updateAllCandidates().count
+    summary = UpdateStatusSummary(apps: self.apps)
   }
 }
 
@@ -143,7 +146,10 @@ struct MenuBarContentView: View {
       let ready = model.updates.filter { $0.capability.isAutomatic }
       let needsYou = model.updates.filter { !$0.capability.isAutomatic }
       if model.updates.isEmpty {
-        Text(checking.isRunning ? "Checking for updates…" : "Everything is up to date")
+        Text(
+          checking.isRunning
+            ? "Checking for updates…"
+            : model.summary.isAllCurrent ? "Everything is up to date" : model.summary.text)
       }
       // Plain headers keep the menu free of the extra separators SwiftUI adds around Sections.
       if !ready.isEmpty {

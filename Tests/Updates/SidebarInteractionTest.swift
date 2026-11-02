@@ -108,8 +108,12 @@ final class SidebarInteractionTest: XCTestCase {
       fixture.accessibilityElements().first {
         $0.accessibilityIdentifier() == "updates.app.\(first.identifier)"
       })
+    // The row's route line reads "Checking…" until a provider answers (App.routeShortDescription).
     XCTAssertTrue(
-      pendingRow.accessibilityLabel()?.contains("Checking for updates") == true,
+      pendingRow.accessibilityLabel()?.contains("Checking…") == true,
+      "Unknown source must read as checking: \(pendingRow.accessibilityLabel() ?? "")")
+    XCTAssertFalse(
+      pendingRow.accessibilityLabel()?.contains("No update source found") == true,
       "Unknown source must not be described as unsupported")
     let update = App.Update(
       app: first.bundle, remoteVersion: Version(versionNumber: "2", buildNumber: nil),
@@ -240,8 +244,10 @@ final class SidebarInteractionTest: XCTestCase {
     }
   }
 
+  /// Round 6 removed the support dots: the visibility preferences keep a current app's row,
+  /// which says "Up to date" in words and paints no green status dot.
   @MainActor
-  func testSidebarSupportPreferenceUpdatesExistingRows() async throws {
+  func testSidebarSupportPreferenceKeepsCurrentRowsWithoutStatusDots() async throws {
     try requireUITests()
     let app = makeTestApp(name: "Example", version: "1")
     let suite = "SidebarSupport.\(UUID().uuidString)"
@@ -264,9 +270,18 @@ final class SidebarInteractionTest: XCTestCase {
       settings.includeAppsWithLimitedSupport = visible
       settings.includeUnsupportedApps = visible
       try await Task.sleep(for: .milliseconds(150))
+      XCTAssertEqual(model.snapshot.apps.map(\.identifier), [app.identifier])
+      XCTAssertEqual(model.snapshot.sections.map(\.section.title), ["Up to Date"])
+      let row = try XCTUnwrap(
+        fixture.accessibilityElements().first {
+          $0.accessibilityIdentifier() == "updates.app.\(app.identifier)"
+        })
+      XCTAssertTrue(
+        row.accessibilityLabel()?.contains("Up to date") == true,
+        "Row label: \(row.accessibilityLabel() ?? "missing")")
       let bitmap = try await fixture.captureRow(for: app)
       var greenPixels = 0
-      // Only the production status control, excluding the application's icon.
+      // The trailing area where the support dot used to be, excluding the application's icon.
       for y in 35..<83 {
         for x in 502..<555 {
           let color = try XCTUnwrap(bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB))
@@ -275,12 +290,7 @@ final class SidebarInteractionTest: XCTestCase {
           }
         }
       }
-      if visible {
-        XCTAssertGreaterThan(greenPixels, 20, "Supported app must paint the support dot")
-      } else {
-        XCTAssertEqual(greenPixels, 0, "Disabling support indicators must remove the painted dot")
-      }
-      XCTAssertEqual(model.snapshot.apps.map(\.identifier), [app.identifier])
+      XCTAssertEqual(greenPixels, 0, "Rows no longer paint a support dot")
     }
   }
 

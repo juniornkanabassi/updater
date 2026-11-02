@@ -62,7 +62,13 @@ final class Round6VisualTest: XCTestCase {
         name: "detail-\(name.lowercased().replacingOccurrences(of: " ", with: "-"))")
     }
     for (overview, name) in [
-      (DetailOverview.upToDate(checked: 42), "overview-up-to-date"),
+      (DetailOverview.noUpdates(UpdateStatusSummary(current: 42)), "overview-up-to-date"),
+      (
+        .noUpdates(
+          UpdateStatusSummary(
+            current: 38, couldNotCheck: 2, checkInVendor: 3, vendor: "Creative Cloud")),
+        "overview-partial"
+      ),
       (.checking, "overview-checking"), (.offline, "overview-offline"),
       (.lookingForApps, "overview-first-run"),
     ] {
@@ -101,6 +107,70 @@ final class Round6VisualTest: XCTestCase {
     XCTAssertNotEqual(lines.first, "────────", "The menu must not start with a separator")
     XCTAssertTrue(lines.contains("  Update All (5)"), lines.joined(separator: "\n"))
     try write(Data(lines.joined(separator: "\n").utf8), name: "menu-bar.txt")
+  }
+
+  /// R6-001: "Everything is up to date" only when every checked app was verified current.
+  func testUpToDateIsClaimedOnlyWhenEveryCheckSucceeded() throws {
+    let current = makeTestApp(name: "Current", version: "2", remoteVersion: "2")
+    let failedBundle = makeTestApp(name: "Failed", version: "1").bundle
+    let failed = Latest.App(
+      bundle: failedBundle, update: .failure(LatestError.updateInfoUnavailable), isIgnored: false)
+    let adobe = makeTestApp(
+      name: "Premiere", version: "26", remoteVersion: "26",
+      updateAction: .external(label: "Creative Cloud") { _ in })
+    let unknown = Latest.App(
+      bundle: adobe.bundle,
+      update: .success(
+        Latest.App.Update(
+          app: adobe.bundle, remoteVersion: adobe.bundle.version, minimumOSVersion: nil,
+          source: .vendor, date: nil, releaseNotes: nil,
+          updateAction: .external(label: "Creative Cloud") { _ in }, availabilityUnknown: true)),
+      isIgnored: false)
+    XCTAssertTrue(UpdateStatusSummary(apps: [current]).isAllCurrent)
+    let partial = UpdateStatusSummary(apps: [current, failed, unknown])
+    XCTAssertFalse(partial.isAllCurrent)
+    XCTAssertEqual(
+      partial.text, "1 up to date · 1 couldn't be checked · 1 check in Creative Cloud")
+    let settings = try isolatedAppListSettings(for: self)
+    XCTAssertEqual(
+      DetailOverview(
+        snapshot: AppListSnapshot(
+          withApps: [current, failed], filterQuery: nil, settings: settings)
+      ), .noUpdates(UpdateStatusSummary(current: 1, couldNotCheck: 1)))
+  }
+
+  /// R6-002: history claims "Opened" only when the record says something opened.
+  func testHandOffHistoryClaimsOpenedOnlyWhenRecorded() {
+    let bundle = makeTestApp(name: "Store", version: "1").bundle
+    func entry(_ note: HandOffNote?) -> String {
+      UpdateHistoryEntry(before: bundle, after: bundle, outcome: .handedOff, handOff: note)
+        .displaySummary
+    }
+    XCTAssertTrue(
+      entry(.init(destination: "App Store", reason: "r", opened: true, blockedByPolicy: false))
+        .hasPrefix("Opened App Store"))
+    let blocked = entry(
+      .init(
+        destination: "App Store", reason: "Updater can't target this copy.", opened: false,
+        blockedByPolicy: true))
+    XCTAssertFalse(blocked.contains("Opened"), blocked)
+    XCTAssertTrue(blocked.contains("Updater can't target this copy."), blocked)
+    XCTAssertFalse(entry(nil).contains("Opened"), "Records from before 0.7.0 never claim opened")
+  }
+
+  /// R6-003, R6-005: no claim the browser downloaded anything or that brew needs a password.
+  func testHandOffCopyMakesNoUnverifiedClaims() {
+    let chrome = makeTestApp(
+      name: "Fixture Chrome", version: "1", remoteVersion: "2", updateAction: .relaunch { _ in })
+    XCTAssertTrue(chrome.updateExplanation.contains("if it has downloaded one"))
+    XCTAssertFalse(chrome.updateExplanation.contains("already downloaded"))
+    let cask = makeTestApp(
+      name: "Cask", version: "1", remoteVersion: "2",
+      updateAction: .external(label: HomebrewCheckerOperation.handOffLabel) { _ in })
+    for text in [cask.updateExplanation, cask.routeShortDescription] {
+      XCTAssertFalse(text.localizedCaseInsensitiveContains("password"), text)
+    }
+    XCTAssertEqual(cask.routeShortDescription, "Opens Terminal with the brew command")
   }
 
   private func render<Content: View>(

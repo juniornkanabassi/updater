@@ -118,7 +118,7 @@ extension App {
       }
       if availabilityUnknown { return "Opens \(externalUpdaterName ?? "its vendor's app")" }
       if externalUpdaterName == HomebrewCheckerOperation.handOffLabel {
-        return "Needs your password in Terminal"
+        return "Opens Terminal with the brew command"
       }
       if externalUpdaterName == name { return "Updates from inside the app" }
       return "Opens \(externalUpdaterName ?? "another app")"
@@ -145,8 +145,8 @@ extension App {
       }
       if relaunchesToUpdate {
         return SidebarUpdateActionTitle.isRunning(self)
-          ? "\(name) has already downloaded this update. Relaunch quits and reopens it so the update applies."
-          : "\(name) has already downloaded this update. Open starts it so the update applies."
+          ? "Relaunching \(name) applies an update if \(name) has downloaded one."
+          : "Opening \(name) applies an update if it has downloaded one."
       }
       if availabilityUnknown {
         return
@@ -154,7 +154,7 @@ extension App {
       }
       if externalUpdaterName == HomebrewCheckerOperation.handOffLabel {
         return
-          "This update needs your administrator password. Updater copies the brew command and opens Terminal: paste it and press Return."
+          "Updater can't run this one itself. It copies the brew upgrade command and opens Terminal: paste it and press Return."
       }
       if externalUpdaterName == name {
         return "\(name) updates itself. Open it and use its own update command."
@@ -179,6 +179,49 @@ extension App {
     case .vendor:
       capability == .vendorTool ? "Developer's updater" : externalUpdaterName ?? "Developer"
     case .none: "None found"
+    }
+  }
+}
+
+/// What a finished check found when nothing is waiting to install, so "Everything is up to
+/// date" is said only when every checked app was verified current (window and menu bar).
+struct UpdateStatusSummary: Equatable {
+  var current = 0
+  /// No source, or a check that failed.
+  var couldNotCheck = 0
+  /// Updates Updater would open elsewhere (shown or hidden in the list).
+  var elsewhere = 0
+  /// Availability only the vendor's app knows (Adobe).
+  var checkInVendor = 0
+  var vendor: String?
+
+  var isAllCurrent: Bool { couldNotCheck == 0 && elsewhere == 0 && checkInVendor == 0 }
+
+  /// "12 up to date · 2 couldn't be checked · 3 check in Creative Cloud".
+  var text: String {
+    [
+      "\(current) up to date",
+      couldNotCheck > 0 ? "\(couldNotCheck) couldn't be checked" : nil,
+      elsewhere > 0 ? "\(elsewhere) to update elsewhere" : nil,
+      checkInVendor > 0 ? "\(checkInVendor) check in \(vendor ?? "the vendor's app")" : nil,
+    ].compactMap { $0 }.joined(separator: " · ")
+  }
+}
+
+extension UpdateStatusSummary {
+  @MainActor
+  init(apps: [App]) {
+    for app in apps where !app.isIgnored && !app.isUpdaterItself && !app.isSourcePending {
+      if app.availabilityUnknown {
+        checkInVendor += 1
+        vendor = vendor ?? app.externalUpdaterName
+      } else if app.updateAvailable {
+        if !app.capability.isAutomatic { elsewhere += 1 }
+      } else if app.error != nil || app.remoteVersion == nil {
+        couldNotCheck += 1
+      } else {
+        current += 1
+      }
     }
   }
 }
