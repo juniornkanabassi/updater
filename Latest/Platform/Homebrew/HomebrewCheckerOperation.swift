@@ -15,8 +15,13 @@ final class HomebrewCheckerOperation: Sendable {
   private let bundle: App.Bundle
   private let repository: UpdateRepository?
   private let homebrew: Homebrew?
+  private let catalogueCheck: CatalogueInstallCheck
 
-  init(with bundle: App.Bundle, repository: UpdateRepository?, homebrew: Homebrew? = .shared) {
+  init(
+    with bundle: App.Bundle, repository: UpdateRepository?, homebrew: Homebrew? = .shared,
+    catalogueCheck: CatalogueInstallCheck = .live
+  ) {
+    self.catalogueCheck = catalogueCheck
     self.bundle = bundle
     self.repository = repository
     self.homebrew = homebrew
@@ -101,12 +106,16 @@ final class HomebrewCheckerOperation: Sendable {
         remoteVersion: version,
         allowNameFallback: false
       ) ?? entry.releaseNotes
-    let downloadSource = AppDownloadSource.homebrewSource(for: bundle, token: entry.token)
+    // Round 5b: install from the catalogue only when identity, shape and scope all hold.
+    let plan = await catalogueCheck.plan(
+      for: bundle,
+      candidateTokens: await repository.caskTokens(withBundleIdentifier: bundle.bundleIdentifier),
+      matchedToken: entry.token, catalogueVersion: version)
     let action: App.Update.Action
-    if let downloadSource {
+    if let plan {
+      let job = CatalogueJob(token: plan.token, minimumVersion: version, check: catalogueCheck)
       action = .builtIn { app in
-        UpdateQueue.shared.addOperation(
-          AppDownloadUpdateOperation(app: app, source: downloadSource))
+        UpdateQueue.shared.addOperation(AppDownloadUpdateOperation(app: app, catalogue: job))
       }
     } else {
       action = .external(label: bundle.name) { app in
@@ -117,7 +126,7 @@ final class HomebrewCheckerOperation: Sendable {
       app: bundle,
       remoteVersion: version,
       minimumOSVersion: entry.minimumOSVersion,
-      source: downloadSource == nil ? .homebrew : .directDownload,
+      source: plan == nil ? .homebrew : .directDownload,
       date: nil,
       releaseNotes: releaseNotes,
       updateAction: action

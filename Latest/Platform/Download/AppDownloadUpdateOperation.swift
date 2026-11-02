@@ -1,6 +1,7 @@
 import CryptoKit
 import Foundation
 import Security
+import Synchronization
 
 /// Installs a verified standalone bundle, retaining the original until replacement succeeds.
 final class AppDownloadUpdateOperation: DownloadUpdateOperation, @unchecked Sendable {
@@ -10,18 +11,35 @@ final class AppDownloadUpdateOperation: DownloadUpdateOperation, @unchecked Send
   /// Launch-and-quit check for fixtures. Real apps are not launched to verify them.
   var launchProbe: (@Sendable (URL) throws -> Void)?
 
+  /// Set for catalogue installs (Round 5b): their extra scope, payload and trust rules.
+  private let catalogue: CatalogueJob?
+
   init(app: App.Bundle, source: AppDownloadSource) {
     fetchRelease = { try await source.release() }
+    catalogue = nil
+    super.init(app: app)
+  }
+
+  /// A catalogue app: the cask is fetched fresh right before installing and must still pass
+  /// the allow list; a changed shape refuses.
+  init(app: App.Bundle, catalogue: CatalogueJob) {
+    fetchRelease = { [bundleIdentifier = app.bundleIdentifier] in
+      let data = try await catalogue.check.fetchCask(catalogue.token)
+      return try CatalogueInstall.release(fromCask: data, bundleIdentifier: bundleIdentifier)
+    }
+    self.catalogue = catalogue
     super.init(app: app)
   }
 
   /// Fixture feeds supply their own release metadata.
   init(app: App.Bundle, release: @escaping @Sendable () async throws -> AppDownloadRelease) {
     fetchRelease = release
+    catalogue = nil
     super.init(app: app)
   }
 
   override func performUpdate() async throws {
+    if let catalogue { return try await performCatalogueUpdate(catalogue) }
     let release = try await fetchRelease()
     expectedVersion = release.version
     guard app.version.comparisonForUpdate(to: release.version) == .older else {
@@ -61,6 +79,149 @@ final class AppDownloadUpdateOperation: DownloadUpdateOperation, @unchecked Send
           requiresTeam: requiresTeam, launchProbe: launchProbe)
       }
     }
+  }
+
+  /// Round 5b. Scope refusals keep the app on its own route (a hand-off that opens nothing);
+  /// payload and trust refusals fail with the reason. The original stays until the
+  /// replacement verifies.
+  private func performCatalogueUpdate(_ job: CatalogueJob) async throws {
+    let check = job.check
+    let folder = app.fileURL.deletingLastPathComponent()
+    do {
+      try CatalogueInstall.checkScope(
+        of: app, copies: try check.copies(app.bundleIdentifier), writable: check.isWritable(folder))
+    } catch let refusal as CatalogueInstall.Refusal {
+      return await keepOwnRoute(refusal)
+    }
+    let release = try await fetchRelease()
+    expectedVersion = release.version
+    guard app.version.comparisonForUpdate(to: release.version) == .older,
+      release.version.comparisonForUpdate(to: job.minimumVersion) != .older
+    else { throw AppDownloadError.versionMismatch }
+    let manager = FileManager.default
+    let work = manager.temporaryDirectory.appendingPathComponent("Updater-" + UUID().uuidString)
+    try manager.createDirectory(at: work, withIntermediateDirectories: true)
+    defer { try? manager.removeItem(at: work) }
+    let archive = try await download(from: release.url, into: work)
+    guard let expected = release.sha256 else { throw AppDownloadError.checksumMismatch }
+    try Self.verifyChecksum(of: archive, expected: expected)
+    guard let kind = CatalogueInstall.payloadKind(of: archive) else {
+      throw CatalogueInstall.Refusal.payload(
+        "The download is not a zip, disk image or tar archive.")
+    }
+
+    let stage = folder.appendingPathComponent(".latest-update-" + UUID().uuidString)
+    try manager.createDirectory(at: stage, withIntermediateDirectories: true)
+    defer { Self.removeStageUnlessRecoveryIsNeeded(stage) }
+    let candidate = stage.appendingPathComponent("candidate.app")
+    let extracted = work.appendingPathComponent("payload")
+    try manager.createDirectory(at: extracted, withIntermediateDirectories: true)
+    progressState = .extracting(progress: nil)
+    try await Self.stage(from: archive, kind: kind, extracted: extracted, to: candidate) { root in
+      let apps = CatalogueInstall.outerApps(in: root)
+      guard apps.count == 1, let app = apps.first else {
+        throw CatalogueInstall.Refusal.payload(
+          "The download holds \(apps.count) apps instead of exactly one.")
+      }
+      return app
+    }
+    try Self.validate(
+      candidate: candidate, replacing: app, expectedVersion: release.version,
+      requiresTeam: requiresTeam)
+    do { try await check.assess(candidate) } catch {
+      throw CatalogueInstall.Refusal.trust("macOS Gatekeeper did not accept the downloaded app.")
+    }
+    // Fail closed after staging: our own staged candidate is the only extra copy allowed.
+    do {
+      try CatalogueInstall.recheck(
+        app, copies: try check.copies(app.bundleIdentifier), excluding: stage)
+    } catch let refusal as CatalogueInstall.Refusal {
+      return await keepOwnRoute(refusal)
+    }
+    let original = try BundleIdentity.read(at: app.fileURL, validate: false)
+    let appearedDuringQuit = Mutex<CatalogueInstall.Refusal?>(nil)
+    try await withApplicationClosed { [self] in
+      guard let current = BundleCollector.collectBundle(at: app.fileURL),
+        current.bundleIdentifier == app.bundleIdentifier, current.version == app.version
+      else { throw AppDownloadError.versionMismatch }
+      // Again after the quit prompt, with nothing asynchronous before the replacement.
+      do {
+        try CatalogueInstall.recheck(
+          app, copies: try check.copies(app.bundleIdentifier), excluding: stage)
+      } catch let refusal as CatalogueInstall.Refusal {
+        appearedDuringQuit.withLock { $0 = refusal }
+        return
+      }
+      try beginCommit()
+      progressState = .installing
+      try Self.replaceItem(at: app.fileURL, with: candidate, backupDirectory: stage) { url in
+        try Self.verifyInstalled(
+          at: url, original: original, expectedVersion: release.version,
+          requiresTeam: requiresTeam, launchProbe: launchProbe)
+      }
+    }
+    if let refusal = appearedDuringQuit.withLock({ $0 }) { await keepOwnRoute(refusal) }
+  }
+
+  @MainActor private func keepOwnRoute(_ refusal: CatalogueInstall.Refusal) {
+    recordHandOff(to: "\(app.name)'s own updater", because: refusal.localizedDescription)
+  }
+
+  /// Unpacks an archive of a known kind, copies the app `locate` picks into staging, and
+  /// releases a mounted image before returning.
+  static func stage(
+    from archive: URL, kind: CatalogueInstall.PayloadKind, extracted: URL, to candidate: URL,
+    locate: (URL) throws -> URL
+  ) async throws {
+    var mounted = false
+    let preparation: Result<Void, Error>
+    do {
+      switch kind {
+      case .diskImage:
+        _ = try await InstallerCommand.run(
+          "/usr/bin/hdiutil",
+          [
+            "attach", archive.path, "-readonly", "-nobrowse", "-noautoopen", "-mountpoint",
+            extracted.path,
+          ])
+        mounted = true
+      case .zip: try await extractZIP(at: archive, to: extracted)
+      case .tar: try await extractTar(at: archive, to: extracted)
+      }
+      let source = try locate(extracted)
+      guard
+        source.resolvingSymlinksInPath().path.hasPrefix(
+          extracted.resolvingSymlinksInPath().path + "/")
+      else { throw AppDownloadError.invalidDownload }
+      _ = try await InstallerCommand.run("/usr/bin/ditto", [source.path, candidate.path])
+      preparation = .success(())
+    } catch { preparation = .failure(error) }
+    if kind == .diskImage, !mounted {
+      mounted =
+        FileManager.default.mountedVolumeURLs(includingResourceValuesForKeys: nil)?.contains {
+          $0.resolvingSymlinksInPath().path == extracted.resolvingSymlinksInPath().path
+        } == true
+    }
+    var detachError: Error?
+    if mounted {
+      do {
+        _ = try await InstallerCommand.run(
+          "/usr/bin/hdiutil", ["detach", extracted.path], cancellable: false)
+      } catch { detachError = error }
+    }
+    try preparation.get()
+    if let detachError { throw detachError }
+  }
+
+  /// bsdtar unpacks gzip, bzip2 and xz itself; members with absolute paths or `..` refuse.
+  static func extractTar(at archive: URL, to directory: URL) async throws {
+    let listing = try await InstallerCommand.run("/usr/bin/tar", ["-tf", archive.path])
+    guard !listing.isEmpty,
+      listing.split(separator: "\n").allSatisfy({
+        !$0.hasPrefix("/") && !$0.split(separator: "/").contains("..")
+      })
+    else { throw AppDownloadError.invalidDownload }
+    _ = try await InstallerCommand.run("/usr/bin/tar", ["-xf", archive.path, "-C", directory.path])
   }
 
   /// The destination, not the staged candidate, decides whether the backup is discarded.

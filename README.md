@@ -114,6 +114,18 @@ args = ["/Applications/JuniorOS Apps/Updater.app/Contents/Resources/mcp/updater-
 
 The tools (`list`, `check`, `update`, `status`, `history`) come from `updater mcp-manifest`, so they always match the command.
 
+## Apps from the Homebrew catalogue
+
+Apps the Homebrew catalogue knows but brew did not install can be updated by Updater itself, only when every rule holds; otherwise they keep their own route (usually "open the app"):
+
+1. Exactly one catalogue entry names the app's bundle ID as identifier evidence (an app artifact, `uninstall quit:` or zap path). Name-only matches and duplicates keep their route.
+2. That entry, fetched fresh before deciding and again before installing, has one `app` artifact (plus optional zap and a quit of this app), no other dependencies than macOS or architecture, a real version and a real SHA-256, and an HTTPS download.
+3. The download's SHA-256 matches; it is a zip, disk image or tar archive with exactly one outer app with the same bundle ID.
+4. The new app passes strict signature checks including embedded code, macOS Gatekeeper (`spctl`) accepts it, its Team ID equals the installed app's, and it is newer.
+5. Its folder is writable without an administrator and no other copy of the app is on the Mac, checked again after staging and after the quit prompt, right before replacement. Discord keeps its own updater.
+
+The original stays until the new app verifies, and is put back on any failure.
+
 ## Release notes
 
 `Latest/Resources/LatestReleaseNotes.json` supplies version-matched offline notes inherited from the Ertyoii fork. Updater does not update itself yet: it has no appcast or public key configured, and no menu item that opens a releases page.

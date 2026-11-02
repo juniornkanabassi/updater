@@ -5,20 +5,14 @@ import XCTest
 @testable import Latest
 
 final class AppDownloadUpdateTest: XCTestCase {
-  func testStandaloneSourceLeavesDiscordToItsNativeUpdater() throws {
-    let directory = try temporaryDirectory()
-    for (identifier, token, supported) in [
-      ("com.hnc.Discord", "discord", false),
-      ("com.1password.1password", "1password", true),
-      ("com.docker.docker", "docker-desktop", true),
-      ("com.1password.1password", "discord", false),
-    ] {
-      let app = App.Bundle(
-        version: Version(versionNumber: "1", buildNumber: nil), name: token,
-        bundleIdentifier: identifier, fileURL: directory.appendingPathComponent(token + ".app"),
-        source: .homebrew)
-      XCTAssertEqual(AppDownloadSource.homebrewSource(for: app, token: token) != nil, supported)
+  /// The fixed six-cask table is gone (Round 5b); Discord stays on its native updater.
+  func testCatalogueInstallsLeaveDiscordToItsNativeUpdater() {
+    for identifier in ["com.hnc.Discord", "com.hnc.DiscordPTB", "com.hnc.DiscordCanary"] {
+      XCTAssertThrowsError(try CatalogueInstall.token(for: identifier, candidates: ["discord"]))
     }
+    XCTAssertEqual(
+      try? CatalogueInstall.token(for: "com.1password.1password", candidates: ["1password"]),
+      "1password")
   }
 
   func testRealDownloadReportsPartialProgressAndKeepsTheCompletedFile() async throws {
@@ -146,33 +140,6 @@ final class AppDownloadUpdateTest: XCTestCase {
         candidate: directory.appendingPathComponent("Delta.app"),
         replacing: delta, expectedVersion: release.version)
     }.value
-  }
-
-  func testDownloadMetadataSelectsTheHostArchitectureAndRejectsInstallerArtifacts() throws {
-    var record: [String: Any] = [
-      "version": "2.0.0", "url": "https://example.com/arm64.dmg",
-      "sha256": String(repeating: "a", count: 64), "artifacts": [["app": ["Example.app"]]],
-      "variations": [
-        "tahoe": [
-          "url": "https://example.com/intel.dmg", "sha256": String(repeating: "b", count: 64),
-        ]
-      ],
-    ]
-    func release(_ platform: String) throws -> AppDownloadRelease {
-      try AppDownloadRelease(
-        data: JSONSerialization.data(withJSONObject: record),
-        source: .homebrew("example"), platform: platform)
-    }
-    XCTAssertEqual(try release("arm64_tahoe").url.lastPathComponent, "arm64.dmg")
-    XCTAssertEqual(try release("tahoe").url.lastPathComponent, "intel.dmg")
-    XCTAssertEqual(try release("tahoe").sha256, String(repeating: "b", count: 64))
-    record["artifacts"] = [["pkg": ["Installer.pkg"]]]
-    XCTAssertThrowsError(try release("arm64_tahoe"))
-    record["artifacts"] = [["app": ["../Other.app"]]]
-    XCTAssertThrowsError(try release("arm64_tahoe"))
-    record["artifacts"] = [["app": ["Example.app"]]]
-    record["url"] = "http://example.com/update.dmg"
-    XCTAssertThrowsError(try release("arm64_tahoe"))
   }
 
   func testDownloadChecksumRejectsModifiedArchiveAndReplacementRestoresOriginalOnFailure() throws {

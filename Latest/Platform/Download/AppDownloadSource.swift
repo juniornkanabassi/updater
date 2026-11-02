@@ -1,29 +1,9 @@
 import Foundation
 
-/// Known standalone app distributions. Install scripts, packages and companion services
-/// are deliberately not interpreted as replaceable application bundles.
+/// Vendor feeds outside the catalogue. Catalogue (Homebrew cask) downloads go through
+/// `CatalogueInstall`'s rules instead of a fixed table.
 enum AppDownloadSource: Sendable {
-  case homebrew(String)
   case delta
-
-  private static let casks = [
-    "com.docker.docker": "docker-desktop",
-    "com.tdesktop.Telegram": "telegram-desktop",
-    "dev.zed.Zed": "zed",
-    "com.google.Chrome": "google-chrome",
-    "com.usebruno.app": "bruno",
-    "com.1password.1password": "1password",
-  ]
-
-  static func homebrewSource(for bundle: App.Bundle, token: String?) -> AppDownloadSource? {
-    // Discord's native updater owns a separate host-version database and cached
-    // bundles. Replacing only /Applications can make it restore an older host.
-    // The Homebrew checker opens unsupported standalone apps in their own updater.
-    guard let token, casks[bundle.bundleIdentifier] == token,
-      FileManager.default.isWritableFile(atPath: bundle.fileURL.deletingLastPathComponent().path)
-    else { return nil }
-    return .homebrew(token)
-  }
 
   #if arch(arm64)
     static let hostArchitecture = NSBundleExecutableArchitectureARM64
@@ -34,16 +14,10 @@ enum AppDownloadSource: Sendable {
   #endif
 
   func release() async throws -> AppDownloadRelease {
-    let endpoint: URL
-    switch self {
-    case .homebrew(let token):
-      endpoint = URL(string: "https://formulae.brew.sh/api/cask/\(token).json")!
-    case .delta:
-      endpoint = URL(
-        string:
-          "https://delta.dev/api/releases/stable/latest/asset?asset=delta&os=macos&arch=\(Self.hostArchitectureName == "arm64" ? "aarch64" : "x86_64")"
-      )!
-    }
+    let endpoint = URL(
+      string:
+        "https://delta.dev/api/releases/stable/latest/asset?asset=delta&os=macos&arch=\(Self.hostArchitectureName == "arm64" ? "aarch64" : "x86_64")"
+    )!
     var request = URLRequest(url: endpoint, cachePolicy: .reloadIgnoringLocalCacheData)
     request.timeoutInterval = 30
     let (data, response) = try await URLSession.shared.data(for: request)
@@ -67,32 +41,14 @@ struct AppDownloadRelease: Sendable {
     self.appPath = appPath
   }
 
-  init(data: Data, source: AppDownloadSource, platform: String = Self.platform) throws {
-    guard var object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+  init(data: Data, source: AppDownloadSource) throws {
+    guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
       throw AppDownloadError.invalidMetadata
     }
-    switch source {
-    case .homebrew:
-      if let variation = (object["variations"] as? [String: [String: Any]])?[platform] {
-        object.merge(variation) { _, new in new }
-      }
-      guard let hash = object["sha256"] as? String,
-        hash == "no_check"
-          || hash.range(of: #"^[a-fA-F0-9]{64}$"#, options: .regularExpression) != nil,
-        let artifacts = object["artifacts"] as? [[String: Any]],
-        !artifacts.contains(where: { $0["pkg"] != nil || $0["installer"] != nil })
-      else { throw AppDownloadError.invalidMetadata }
-      let paths = artifacts.compactMap { ($0["app"] as? [Any])?.first as? String }
-      guard paths.count == 1, let path = paths.first, Self.isSafeAppPath(path)
-      else { throw AppDownloadError.invalidMetadata }
-      sha256 = hash == "no_check" ? nil : hash.lowercased()
-      appPath = path
-    case .delta:
-      // The vendor supplies an expiring HTTPS asset URL. The app's Apple signing
-      // requirement is verified against the installed copy before any replacement.
-      sha256 = nil
-      appPath = "Delta.app"
-    }
+    // The vendor supplies an expiring HTTPS asset URL. The app's Apple signing requirement is
+    // verified against the installed copy before any replacement.
+    sha256 = nil
+    appPath = "Delta.app"
     guard let rawVersion = object["version"] as? String,
       let address = object["url"] as? String, let url = URL(string: address),
       url.scheme == "https", url.host != nil, url.user == nil, url.password == nil,
@@ -111,11 +67,6 @@ struct AppDownloadRelease: Sendable {
     #else
       return name
     #endif
-  }
-
-  private static func isSafeAppPath(_ path: String) -> Bool {
-    !path.hasPrefix("/") && !path.split(separator: "/").contains("..")
-      && path.hasSuffix(".app")
   }
 }
 

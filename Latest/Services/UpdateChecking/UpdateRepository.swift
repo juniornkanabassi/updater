@@ -85,6 +85,23 @@ final class UpdateRepository: Sendable {
     }
   }
 
+  /// Every cask with identifier evidence for this bundle ID (Round 5b install eligibility).
+  func caskTokens(withBundleIdentifier identifier: String) async -> [String] {
+    await withCheckedContinuation { continuation in
+      let lookup: @Sendable () -> Void = { [self] in
+        continuation.resume(
+          returning: state.withLock { $0.entryMatcher.caskTokens(withBundleIdentifier: identifier) }
+        )
+      }
+      let queued = state.withLock { state in
+        guard state.pendingRequests != nil else { return false }
+        state.pendingRequests?.append(lookup)
+        return true
+      }
+      if !queued { lookup() }
+    }
+  }
+
   /// Sets the given entries and performs pending requests.
   private func finalize() {
     queue.async { [weak self] in
@@ -113,6 +130,16 @@ final class UpdateRepository: Sendable {
   static func preferredEntry(from possibleEntries: [Entry], for bundleIdentifier: String) -> Entry?
   {
     EntryMatcher.preferredEntry(from: possibleEntries, for: bundleIdentifier)
+  }
+
+  /// Bundle ID → every cask carrying it as identifier evidence (app artifacts, uninstall
+  /// quit, zap paths). Name matching plays no part.
+  static func caskTokensByIdentifier(_ entries: [Entry]) -> [String: Set<String>] {
+    entries.reduce(into: [String: Set<String>]()) { index, entry in
+      for identifier in entry.bundleIdentifiers {
+        index[identifier, default: []].insert(entry.token)
+      }
+    }
   }
 
   static func isLocallyExcludedFromHomebrewMatching(_ bundleIdentifier: String) -> Bool {
@@ -345,15 +372,30 @@ private final class UpdateRepositoryReuseCache: Sendable {
 private struct EntryMatcher {
 
   private var entriesByName: [String: [UpdateRepository.Entry]]
+  /// Install eligibility (Round 5b) uses only identifier evidence, never name matching:
+  /// every cask whose artifacts, uninstall quit or zap paths carry a bundle ID.
+  private var tokensByIdentifier: [String: Set<String>]
   private var unsupportedBundleIdentifiers: Set<String>
 
   init(entries: [UpdateRepository.Entry], unsupportedBundleIdentifiers: Set<String>) {
     self.entriesByName = Self.entriesByName(entries)
+    self.tokensByIdentifier = Self.tokensByIdentifier(entries)
     self.unsupportedBundleIdentifiers = unsupportedBundleIdentifiers
   }
 
   mutating func update(entries: [UpdateRepository.Entry]) {
     self.entriesByName = Self.entriesByName(entries)
+    self.tokensByIdentifier = Self.tokensByIdentifier(entries)
+  }
+
+  func caskTokens(withBundleIdentifier identifier: String) -> [String] {
+    (tokensByIdentifier[identifier] ?? []).sorted()
+  }
+
+  private static func tokensByIdentifier(_ entries: [UpdateRepository.Entry]) -> [String: Set<
+    String
+  >] {
+    UpdateRepository.caskTokensByIdentifier(entries)
   }
 
   mutating func update(unsupportedBundleIdentifiers: Set<String>) {

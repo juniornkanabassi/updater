@@ -233,6 +233,8 @@
 		B8E03E01EF81414E9113D4B0 /* mcp in Resources */ = {isa = PBXBuildFile; fileRef = EDB1439536064F48BC0293DA /* mcp */; };
 		00E7C3B027FC4EFE8CFBA011 /* ControlTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77780ABE8A704FDC979ECC73 /* ControlTest.swift */; };
 		018068F9ECCE4A92B54AD847 /* ControlFollowUpTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B2652E06EEC4171962ED608 /* ControlFollowUpTest.swift */; };
+		71DF633AD3CD4D739BF4C381 /* CatalogueInstall.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAB991672A5749A485405C99 /* CatalogueInstall.swift */; };
+		5EBC419A15074012A53335AF /* CatalogueInstallTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D61335B308493994A02626 /* CatalogueInstallTest.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -602,6 +604,8 @@
 		EDB1439536064F48BC0293DA /* mcp */ = {isa = PBXFileReference; lastKnownFileType = folder; path = mcp; sourceTree = "<group>"; };
 		77780ABE8A704FDC979ECC73 /* ControlTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlTest.swift; sourceTree = "<group>"; };
 		0B2652E06EEC4171962ED608 /* ControlFollowUpTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlFollowUpTest.swift; sourceTree = "<group>"; };
+		CAB991672A5749A485405C99 /* CatalogueInstall.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogueInstall.swift; sourceTree = "<group>"; };
+		C3D61335B308493994A02626 /* CatalogueInstallTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogueInstallTest.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1088,6 +1092,7 @@
 		52D000042FE0000000000001 /* Updating */ = {
 			isa = PBXGroup;
 			children = (
+				C3D61335B308493994A02626 /* CatalogueInstallTest.swift */,
 				0B2652E06EEC4171962ED608 /* ControlFollowUpTest.swift */,
 				77780ABE8A704FDC979ECC73 /* ControlTest.swift */,
 				5BE7413728DB4FD2858736F1 /* BackgroundTest.swift */,
@@ -1210,6 +1215,7 @@
 		A0310000000000000000000D /* Download */ = {
 			isa = PBXGroup;
 			children = (
+				CAB991672A5749A485405C99 /* CatalogueInstall.swift */,
 				A03100000000000000000007 /* ObsidianUpdate.swift */,
 				A03100000000000000000005 /* AppDownloadUpdateOperation.swift */,
 				A03100000000000000000003 /* AppDownloadSource.swift */,
@@ -1474,6 +1480,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				71DF633AD3CD4D739BF4C381 /* CatalogueInstall.swift in Sources */,
 				B7AD395C42CE481DB7225B9A /* ControlProtocol.swift in Sources */,
 				123300EE3AB2434BA961C774 /* ControlService.swift in Sources */,
 				08F347536FF444A88C78F66C /* PermissionsSettingsView.swift in Sources */,
@@ -1615,6 +1622,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5EBC419A15074012A53335AF /* CatalogueInstallTest.swift in Sources */,
 				018068F9ECCE4A92B54AD847 /* ControlFollowUpTest.swift in Sources */,
 				00E7C3B027FC4EFE8CFBA011 /* ControlTest.swift in Sources */,
 				DCD02534A0BF4D0AA3D935F8 /* AppDirectoryWatcherTest.swift in Sources */,
@@ -1982,7 +1990,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 11;
+				CURRENT_PROJECT_VERSION = 12;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DWARF_DSYM_FILE_NAME = "UpdaterApp.app.dSYM"; /* Sparkle ships its own Updater.app.dSYM */
@@ -2002,7 +2010,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.6.1;
+				MARKETING_VERSION = 0.7.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.juniornkanabassi.Updater";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Updater";
@@ -2025,7 +2033,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 11;
+				CURRENT_PROJECT_VERSION = 12;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DWARF_DSYM_FILE_NAME = "UpdaterApp.app.dSYM"; /* Sparkle ships its own Updater.app.dSYM */
@@ -2046,7 +2054,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.6.1;
+				MARKETING_VERSION = 0.7.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.juniornkanabassi.Updater";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Updater";
