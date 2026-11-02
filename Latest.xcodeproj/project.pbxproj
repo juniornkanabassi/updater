@@ -212,6 +212,14 @@
 		22A37574C11A4B1FA404465D /* Homebrew.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D39CAB37D3E4E0F88CAF6C8 /* Homebrew.swift */; };
 		41D465D5DDF949A6B04148CA /* HomebrewUpgradeOperation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B842591FF7BD43C199104160 /* HomebrewUpgradeOperation.swift */; };
 		464AFFB8B96B4802970AC8E1 /* HomebrewTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B31FA62ED284EFCA3B2EC2F /* HomebrewTest.swift */; };
+		AD28286E37794E8AB2997D29 /* ToolProcess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AFA12EED671436FB48D2D79 /* ToolProcess.swift */; };
+		3C64A7DF21D0475DAFF4245A /* VendorToolOperation.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDD21C643EE944959AEFE166 /* VendorToolOperation.swift */; };
+		E7F45654A7C8460F967DFD89 /* MicrosoftAutoUpdate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3577466B57064FE5AB29C403 /* MicrosoftAutoUpdate.swift */; };
+		6EA91EE80C734C37A43FD083 /* GoogleChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 034E3C0DE3C249C0B9FFF59E /* GoogleChrome.swift */; };
+		44D32ACBCA9A40ACB3B9FDC5 /* AdobeCreativeCloud.swift in Sources */ = {isa = PBXBuildFile; fileRef = 993F3BA4FE8E47F0BC4125B2 /* AdobeCreativeCloud.swift */; };
+		3F0344C4DCF4409DA4BE873B /* SystemUpdate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4BA40CDAE2B4855A548758A /* SystemUpdate.swift */; };
+		E7565CF8350A492BA66D98B1 /* VendorAdapters.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DB5D0B8294442CDA3864662 /* VendorAdapters.swift */; };
+		6DD7F180E6984BE6AEF9DAE3 /* VendorAdaptersTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 769E0528AD994F0B97193220 /* VendorAdaptersTest.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -543,6 +551,14 @@
 		7D39CAB37D3E4E0F88CAF6C8 /* Homebrew.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Homebrew.swift; sourceTree = "<group>"; };
 		B842591FF7BD43C199104160 /* HomebrewUpgradeOperation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomebrewUpgradeOperation.swift; sourceTree = "<group>"; };
 		1B31FA62ED284EFCA3B2EC2F /* HomebrewTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomebrewTest.swift; sourceTree = "<group>"; };
+		2AFA12EED671436FB48D2D79 /* ToolProcess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolProcess.swift; sourceTree = "<group>"; };
+		FDD21C643EE944959AEFE166 /* VendorToolOperation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VendorToolOperation.swift; sourceTree = "<group>"; };
+		3577466B57064FE5AB29C403 /* MicrosoftAutoUpdate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MicrosoftAutoUpdate.swift; sourceTree = "<group>"; };
+		034E3C0DE3C249C0B9FFF59E /* GoogleChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoogleChrome.swift; sourceTree = "<group>"; };
+		993F3BA4FE8E47F0BC4125B2 /* AdobeCreativeCloud.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdobeCreativeCloud.swift; sourceTree = "<group>"; };
+		A4BA40CDAE2B4855A548758A /* SystemUpdate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemUpdate.swift; sourceTree = "<group>"; };
+		2DB5D0B8294442CDA3864662 /* VendorAdapters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VendorAdapters.swift; sourceTree = "<group>"; };
+		769E0528AD994F0B97193220 /* VendorAdaptersTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VendorAdaptersTest.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -883,6 +899,7 @@
 				52C0000D2FE0000000000001 /* AppKit */,
 				52C0000E2FE0000000000001 /* AppStore */,
 				52C0000F2FE0000000000001 /* Homebrew */,
+				619A521CFF4849F89EE7142B /* Vendors */,
 				A0310000000000000000000D /* Download */,
 				52C000102FE0000000000001 /* InstallHelper */,
 				52C000112FE0000000000001 /* Sparkle */,
@@ -912,6 +929,20 @@
 				5039DE8C22CAA2790088B39B /* AppStoreUpdateOperation.swift */,
 			);
 			path = AppStore;
+			sourceTree = "<group>";
+		};
+		619A521CFF4849F89EE7142B /* Vendors */ = {
+			isa = PBXGroup;
+			children = (
+				2DB5D0B8294442CDA3864662 /* VendorAdapters.swift */,
+				A4BA40CDAE2B4855A548758A /* SystemUpdate.swift */,
+				993F3BA4FE8E47F0BC4125B2 /* AdobeCreativeCloud.swift */,
+				034E3C0DE3C249C0B9FFF59E /* GoogleChrome.swift */,
+				3577466B57064FE5AB29C403 /* MicrosoftAutoUpdate.swift */,
+				FDD21C643EE944959AEFE166 /* VendorToolOperation.swift */,
+				2AFA12EED671436FB48D2D79 /* ToolProcess.swift */,
+			);
+			path = Vendors;
 			sourceTree = "<group>";
 		};
 		52C0000F2FE0000000000001 /* Homebrew */ = {
@@ -1006,6 +1037,7 @@
 				09EDB41B76744E9F9F3B8074 /* UpdateHistoryStoreTest.swift */,
 				508D4E6B2FC000000000001 /* UpdateQueueTest.swift */,
 				A10300000000000000000001 /* SparkleUpdateOperationTest.swift */,
+				769E0528AD994F0B97193220 /* VendorAdaptersTest.swift */,
 				1B31FA62ED284EFCA3B2EC2F /* HomebrewTest.swift */,
 				2E2FEF5D34B846309720B9B1 /* FixtureUpdateEndToEndTest.swift */,
 				A4100A242EF04553B220B20A /* AppStoreInstallGateTest.swift */,
@@ -1339,6 +1371,13 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E7565CF8350A492BA66D98B1 /* VendorAdapters.swift in Sources */,
+				3F0344C4DCF4409DA4BE873B /* SystemUpdate.swift in Sources */,
+				44D32ACBCA9A40ACB3B9FDC5 /* AdobeCreativeCloud.swift in Sources */,
+				6EA91EE80C734C37A43FD083 /* GoogleChrome.swift in Sources */,
+				E7F45654A7C8460F967DFD89 /* MicrosoftAutoUpdate.swift in Sources */,
+				3C64A7DF21D0475DAFF4245A /* VendorToolOperation.swift in Sources */,
+				AD28286E37794E8AB2997D29 /* ToolProcess.swift in Sources */,
 				41D465D5DDF949A6B04148CA /* HomebrewUpgradeOperation.swift in Sources */,
 				22A37574C11A4B1FA404465D /* Homebrew.swift in Sources */,
 				FBD185FCD20B45929D40C766 /* ExternalInstallGuard.swift in Sources */,
@@ -1468,6 +1507,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				6DD7F180E6984BE6AEF9DAE3 /* VendorAdaptersTest.swift in Sources */,
 				464AFFB8B96B4802970AC8E1 /* HomebrewTest.swift in Sources */,
 				80439E73AB35414E8018AD8E /* FixtureUpdateEndToEndTest.swift in Sources */,
 				3E838E87191E4BE99D772DB2 /* AppStoreInstallGateTest.swift in Sources */,
@@ -1816,7 +1856,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DWARF_DSYM_FILE_NAME = "UpdaterApp.app.dSYM"; /* Sparkle ships its own Updater.app.dSYM */
@@ -1836,7 +1876,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.3.1;
+				MARKETING_VERSION = 0.4.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.juniornkanabassi.Updater";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Updater";
@@ -1859,7 +1899,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 5;
+				CURRENT_PROJECT_VERSION = 6;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DWARF_DSYM_FILE_NAME = "UpdaterApp.app.dSYM"; /* Sparkle ships its own Updater.app.dSYM */
@@ -1880,7 +1920,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.3.1;
+				MARKETING_VERSION = 0.4.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.juniornkanabassi.Updater";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Updater";

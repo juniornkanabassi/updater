@@ -1,0 +1,43 @@
+
+[2KChecking configuration...[2K<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>AutoUpdateVersion</key>
+	<string>4.85.26091737</string>
+	<key>ChannelName</key>
+	<string>Current</string>
+	<key>HowToCheck</key>
+	<string></string>
+	<key>LastCheckForUpdates</key>
+	<string>2 Nov 2026 at 00:09:03</string>
+	<key>ManifestServer</key>
+	<string></string>
+	<key>RegisteredApplications</key>
+	<dict>
+		<key>/Applications/Microsoft Teams.app</key>
+		<dict>
+			<key>Application ID</key>
+			<string>TEAMS21</string>
+			<key>ChannelName</key>
+			<string>Current</string>
+			<key>LCID</key>
+			<string>1033</string>
+		</dict>
+		<key>/Library/Application Support/Microsoft/MAU2.0/Microsoft AutoUpdate.app</key>
+		<dict>
+			<key>Application ID</key>
+			<string>MSau04</string>
+			<key>LCID</key>
+			<string>1033</string>
+			<key>Last Update Seen</key>
+			<date>2026-09-19T09:26:26Z</date>
+		</dict>
+	</dict>
+	<key>StartDaemonOnAppLaunch</key>
+	<string>true</string>
+	<key>UpdateCache</key>
+	<string></string>
+</dict>
+</plist>
+

@@ -316,7 +316,9 @@ actor Homebrew {
   /// brew is never interrupted: the job waits for it to exit, holding its lock.
   private func run(_ arguments: [String], log: URL) async throws -> Int32 {
     let (brew, env) = (try requireBrew(), processEnvironment)
-    return try await serialized { try await Self.execute(brew, arguments, log: log, env: env) }
+    return try await serialized {
+      try await ToolProcess.run(brew, arguments, log: log, environment: env)
+    }
   }
 
   private func requireBrew() throws -> URL {
@@ -338,44 +340,13 @@ actor Homebrew {
   }
 
   private func newLog(named name: String) throws -> URL {
-    try FileManager.default.createDirectory(at: logDirectory, withIntermediateDirectories: true)
-    let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "")
-    return logDirectory.appendingPathComponent(
-      "\(name)-\(stamp)-\(UUID().uuidString.prefix(8)).log")
+    try ToolProcess.newLog(named: name, in: logDirectory)
   }
 
   private nonisolated var processEnvironment: [String: String] {
-    var env = ProcessInfo.processInfo.environment
-    env["SUDO_ASKPASS"] = nil
-    env["HOMEBREW_NO_AUTO_UPDATE"] = "1"
-    env["HOMEBREW_NO_ANALYTICS"] = "1"
-    env["HOMEBREW_NO_INSTALL_CLEANUP"] = "1"
-    env["HOMEBREW_NO_ENV_HINTS"] = "1"
-    env.merge(environment) { _, new in new }
-    return env
-  }
-
-  private static func execute(
-    _ brew: URL, _ arguments: [String], log: URL, env: [String: String]
-  ) async throws -> Int32 {
-    // Homebrew refuses root, and Updater never escalates it.
-    guard geteuid() != 0 else { throw HomebrewError.unavailable }
-    FileManager.default.createFile(atPath: log.path, contents: nil)
-    let handle = try FileHandle(forWritingTo: log)
-    defer { try? handle.close() }
-    let process = Process()
-    process.executableURL = brew
-    process.arguments = arguments
-    process.environment = env
-    process.standardInput = FileHandle.nullDevice
-    process.standardOutput = handle
-    process.standardError = handle
-    return try await withCheckedThrowingContinuation { continuation in
-      process.terminationHandler = { continuation.resume(returning: $0.terminationStatus) }
-      do { try process.run() } catch {
-        process.terminationHandler = nil
-        continuation.resume(throwing: error)
-      }
-    }
+    [
+      "HOMEBREW_NO_AUTO_UPDATE": "1", "HOMEBREW_NO_ANALYTICS": "1",
+      "HOMEBREW_NO_INSTALL_CLEANUP": "1", "HOMEBREW_NO_ENV_HINTS": "1",
+    ].merging(environment) { _, new in new }
   }
 }

@@ -31,6 +31,7 @@ extension App {
   /// external ones open another updater.
   var capability: UpdateCapability {
     guard let updateAction else { return .unsupported }
+    if case .vendorTool = updateAction { return .vendorTool }
     return updateAction.installs ? .install : .handOff
   }
 }

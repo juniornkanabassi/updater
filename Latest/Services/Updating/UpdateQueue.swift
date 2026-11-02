@@ -140,6 +140,9 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
       if case HomebrewError.failed(let reason, let logPath) = error {
         return .failed(reason: reason, logPath: logPath)
       }
+      if case VendorToolError.failed(let reason, let logPath) = error {
+        return .failed(reason: reason, logPath: logPath)
+      }
       let nsError = error as NSError
       if (nsError.domain == NSCocoaErrorDomain && nsError.code == NSFileWriteNoPermissionError)
         || (nsError.domain == NSPOSIXErrorDomain

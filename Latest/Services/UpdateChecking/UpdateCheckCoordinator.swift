@@ -65,18 +65,23 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
   // MARK: - Initialization
 
   /// The shared instance of the update checker.
-  static let shared = UpdateCheckCoordinator()
+  static let shared = UpdateCheckCoordinator(systemUpdate: { await SystemUpdate.check() })
 
   private var updateCompletionObserver: NSObjectProtocol?
   private let check: Check
   private let repositoryProvider: @Sendable () -> UpdateRepository?
+  /// The display-only macOS row; nil in test coordinators, which must not query the system.
+  private let systemUpdate: (@Sendable () async -> App.Update?)?
 
   init(
     check: @escaping Check = UpdateCheckCoordinator.check,
-    repositoryProvider: @escaping @Sendable () -> UpdateRepository? = UpdateRepository.newRepository
+    repositoryProvider: @escaping @Sendable () -> UpdateRepository? = UpdateRepository
+      .newRepository,
+    systemUpdate: (@Sendable () async -> App.Update?)? = nil
   ) {
     self.check = check
     self.repositoryProvider = repositoryProvider
+    self.systemUpdate = systemUpdate
     self.updateCompletionObserver = NotificationCenter.default.addObserver(
       forName: .latestUpdateOperationDidFinish,
       object: nil,
@@ -119,6 +124,15 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
       let generation = beginUpdateCheckGeneration()
       dataStore.set(appBundles: bundles)
       scheduleUpdateCheck(on: Array(bundles), generation: generation, publishesSnapshot: true)
+      if let systemUpdate {
+        Task.detached(priority: .utility) { [weak self] in
+          guard let update = await systemUpdate(), let self else { return }
+          // A row only when macOS has an update; dropped if a newer scan began meanwhile.
+          _ = self.updateCheckGeneration.withCurrent(generation) {
+            self.dataStore.set(.success(update), for: SystemUpdate.bundle)
+          }
+        }
+      }
     }
   }
 
@@ -363,14 +377,16 @@ extension UpdateCheckCoordinator {
 
   static func check(_ bundle: App.Bundle, repository: UpdateRepository?) async throws -> App.Update
   {
-    try await check(bundle, repository: repository, homebrew: .shared)
+    try await check(bundle, repository: repository, homebrew: .shared, vendors: .live)
   }
 
-  /// Verified Homebrew ownership comes first: a cask that owns this exact bundle is its
-  /// route, ahead of Sparkle or a direct download. Unowned copies keep their own route.
-  static func check(_ bundle: App.Bundle, repository: UpdateRepository?, homebrew: Homebrew?)
-    async throws -> App.Update
-  {
+  /// Route order: the vendor's own tool when it manages this exact app, then a Homebrew cask
+  /// that owns this exact bundle, then Sparkle, the App Store or a direct download.
+  static func check(
+    _ bundle: App.Bundle, repository: UpdateRepository?, homebrew: Homebrew?,
+    vendors: VendorAdapters = .none
+  ) async throws -> App.Update {
+    if let vendor = await vendors.update(for: bundle) { return vendor }
     if let owned = await HomebrewCheckerOperation.ownedUpdate(for: bundle, homebrew: homebrew) {
       return owned
     }

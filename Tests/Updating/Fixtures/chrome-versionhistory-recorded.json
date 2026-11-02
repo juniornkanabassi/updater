@@ -1,0 +1,99 @@
+{
+  "releases": [
+    {
+      "name": "chrome/platforms/mac/channels/stable/versions/156.0.8078.74/releases/1793309147",
+      "serving": {
+        "startTime": "2026-10-29T21:25:47.065549Z"
+      },
+      "fraction": 0.495,
+      "version": "156.0.8078.74",
+      "fractionGroup": "200",
+      "pinnable": false,
+      "rolloutData": []
+    },
+    {
+      "name": "chrome/platforms/mac/channels/stable/versions/156.0.8078.76/releases/1793309147",
+      "serving": {
+        "startTime": "2026-10-29T21:25:47.065549Z"
+      },
+      "fraction": 0.2475,
+      "version": "156.0.8078.76",
+      "fractionGroup": "200",
+      "pinnable": false,
+      "rolloutData": [
+        {
+          "rolloutName": "156.0.8078.79 Rollout",
+          "tag": [
+            "control"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "chrome/platforms/mac/channels/stable/versions/156.0.8078.79/releases/1793309147",
+      "serving": {
+        "startTime": "2026-10-29T21:25:47.065549Z"
+      },
+      "fraction": 0.2475,
+      "version": "156.0.8078.79",
+      "fractionGroup": "200",
+      "pinnable": false,
+      "rolloutData": [
+        {
+          "rolloutName": "156.0.8078.79 Rollout",
+          "tag": [
+            "rollout"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "chrome/platforms/mac/channels/stable/versions/156.0.8078.80/releases/1793309147",
+      "serving": {
+        "startTime": "2026-10-29T21:25:47.065549Z"
+      },
+      "fraction": 1,
+      "version": "156.0.8078.80",
+      "fractionGroup": "199",
+      "pinnable": true,
+      "rolloutData": []
+    },
+    {
+      "name": "chrome/platforms/mac/channels/stable/versions/156.0.8078.75/releases/1793210204",
+      "serving": {
+        "startTime": "2026-10-28T17:56:44.911692Z"
+      },
+      "fraction": 0.005,
+      "version": "156.0.8078.75",
+      "fractionGroup": "200",
+      "pinnable": false,
+      "rolloutData": [
+        {
+          "rolloutName": "157.0.8103.26 Rollout",
+          "tag": [
+            "control"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "chrome/platforms/mac/channels/stable/versions/157.0.8103.26/releases/1793210204",
+      "serving": {
+        "startTime": "2026-10-28T17:56:44.911692Z"
+      },
+      "fraction": 0.005,
+      "version": "157.0.8103.26",
+      "fractionGroup": "200",
+      "pinnable": false,
+      "rolloutData": [
+        {
+          "rolloutName": "157.0.8103.26 Rollout",
+          "tag": [
+            "rollout"
+          ]
+        }
+      ]
+    }
+  ],
+  "nextPageToken": ""
+}

@@ -150,10 +150,14 @@ extension App.Update {
     /// manual-update preference). Evaluated at use, so the label follows the preference.
     case conditional(label: String, installs: @Sendable () -> Bool, block: UpdateAction)
 
+    /// Updater runs the vendor's own updater command (msupdate, GoogleUpdater) and verifies
+    /// the result on disk, with the same protection as its own installs.
+    case vendorTool(block: UpdateAction)
+
     /// Whether this action is currently performed within Updater.
     var installs: Bool {
       switch self {
-      case .builtIn: true
+      case .builtIn, .vendorTool: true
       case .external: false
       case .conditional(_, let installs, _): installs()
       }
@@ -162,7 +166,7 @@ extension App.Update {
     /// The external updater's name while the action is a hand-off.
     var handOffLabel: String? {
       switch self {
-      case .builtIn: nil
+      case .builtIn, .vendorTool: nil
       case .external(let label, _): label
       case .conditional(let label, let installs, _): installs() ? nil : label
       }
@@ -171,7 +175,7 @@ extension App.Update {
     /// Performs the update for the given bundle.
     func perform(with bundle: App.Bundle, isBulkUpdate: Bool) {
       switch self {
-      case .builtIn(let block):
+      case .builtIn(let block), .vendorTool(let block):
         block(bundle)
       case .external(_, let block), .conditional(_, _, let block):
         if installs || !isBulkUpdate { block(bundle) }
