@@ -259,24 +259,104 @@ final class TransactionJournalTest: XCTestCase {
     XCTAssertEqual(version(repaired.target), "1.1")
   }
 
-  /// UPD-003: Updater stopped between journaling a tool and resuming it. The tool, still
-  /// suspended, never ran: recovery kills it and goes on instead of waiting for ever.
-  func testSuspendedToolLeftByACrashIsStoppedAndRecoveryGoesOn() async throws {
+  /// UPD-004: Updater died after journaling a tool but before telling it to go. The tool
+  /// waits on a pipe, sees it close and exits without running, so nobody has to kill it.
+  func testToolWhoseParentDiedBeforeGoExitsByItselfAndRecoveryProceeds() async throws {
     let scene = try scene()
     let original = try FixtureApp.digest(scene.target)
     try await killDuring("toolRegistered", scene)
     let record = try XCTUnwrap(scene.journal.pending().first)
-    XCTAssertEqual(record.writerStarted, false)
     guard case .process(let pid, _) = record.writer else { return XCTFail("tool PID journaled") }
-    var info = proc_bsdinfo()
-    let size = Int32(MemoryLayout<proc_bsdinfo>.size)
-    XCTAssertEqual(proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size), size, "the orphan is there")
-    XCTAssertEqual(info.pbi_status, UInt32(SSTOP), "and still suspended")
+    for _ in 0..<200 where TransactionJournal.startTime(of: pid) != nil {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    XCTAssertNil(TransactionJournal.startTime(of: pid), "it exited on its own")
+    XCTAssertFalse(
+      FileManager.default.fileExists(atPath: scene.root.appendingPathComponent("tool-ran").path),
+      "the tool never ran")
     let recovery = try await recover(scene)
     XCTAssertEqual(recovery.result, .unchanged)
-    XCTAssertNil(TransactionJournal.startTime(of: pid), "the never-started tool is gone")
     XCTAssertEqual(try FixtureApp.digest(scene.target), original)
     XCTAssertTrue(scene.journal.pending().isEmpty)
+  }
+
+  /// UPD-004: a recorded writer that is alive is never killed, even if it is stopped;
+  /// recovery waits until it exits.
+  func testLiveWriterIsNeverKilledEvenWhenStopped() async throws {
+    let scene = try scene()
+    try await killDuring("originalAside", scene)
+    let writer = try spawn(["/bin/sleep", "30"])
+    kill(writer, SIGSTOP)
+    var reaped = false
+    defer {
+      if !reaped {
+        kill(writer, SIGKILL)
+        var status: Int32 = 0
+        waitpid(writer, &status, 0)
+      }
+    }
+    var entry = try XCTUnwrap(scene.journal.pending().first)
+    entry.writer = TransactionJournal.writer(pid: writer)
+    try scene.journal.write(entry)
+    let recovery = try XCTUnwrap(
+      RecoveryOperation.enqueuePending(
+        from: scene.journal, into: UpdateQueue(), helperIsIdle: { true }
+      ) {
+        $0.requiresTeam = false
+        $0.pollInterval = .milliseconds(50)
+        $0.lifecycle = FakeTarget(running: false).lifecycle()
+      }.first)
+    try await Task.sleep(for: .milliseconds(400))
+    XCTAssertFalse(recovery.isFinished, "it waits")
+    XCTAssertNotNil(TransactionJournal.startTime(of: writer), "and kills nothing")
+    kill(writer, SIGKILL)
+    var status: Int32 = 0
+    waitpid(writer, &status, 0)
+    reaped = true
+    for _ in 0..<300 where !recovery.isFinished { try await Task.sleep(for: .milliseconds(10)) }
+    XCTAssertEqual(recovery.result, .restored)
+  }
+
+  /// UPD-005: an incomplete restore leaves a journal; the queue holds that target and tool at
+  /// once, and releases them when recovery settles it.
+  func testPendingJournalHoldsTheTargetUntilRecoverySettlesIt() async throws {
+    let scene = try scene()
+    let queue = UpdateQueue(journal: scene.journal)
+    let companion = scene.root.deletingLastPathComponent().appendingPathComponent("Caskroom-x")
+    try FileManager.default.createDirectory(
+      at: companion.appendingPathComponent("1.0"), withIntermediateDirectories: true)
+    let job = IncompleteRestoreOperation(
+      target: scene.target, companion: companion, journal: scene.journal)
+    let done = expectation(description: "settled")
+    job.completionBlock = { done.fulfill() }
+    queue.addOperation(job)
+    await fulfillment(of: [done], timeout: 10)
+    guard case ReplacementError.incompleteRestore? = job.error as? ReplacementError else {
+      return XCTFail("expected an incomplete restore, got \(String(describing: job.error))")
+    }
+    try await Task.sleep(for: .milliseconds(100))
+    XCTAssertEqual(scene.journal.pending().count, 1)
+    XCTAssertFalse(queue.heldBecause.isEmpty)
+    let conflicting = BlockedProbe(url: scene.target, lock: "other")
+    let sameTool = BlockedProbe(
+      url: URL(fileURLWithPath: "/tmp/Other-\(UUID()).app"), lock: "homebrew")
+    queue.addOperation(conflicting)
+    queue.addOperation(sameTool)
+    try await Task.sleep(for: .milliseconds(300))
+    XCTAssertFalse(conflicting.ran.withLock { $0 }, "the target waits")
+    XCTAssertFalse(sameTool.ran.withLock { $0 }, "so does its tool")
+
+    let recovery = try XCTUnwrap(
+      RecoveryOperation.enqueuePending(from: scene.journal, into: queue, helperIsIdle: { true }) {
+        $0.requiresTeam = false
+        $0.lifecycle = FakeTarget(running: false).lifecycle()
+      }.first)
+    for _ in 0..<300 where !(conflicting.ran.withLock { $0 } && sameTool.ran.withLock { $0 }) {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    XCTAssertEqual(recovery.result, .restored)
+    XCTAssertTrue(conflicting.ran.withLock { $0 } && sameTool.ran.withLock { $0 }, "released")
+    XCTAssertTrue(queue.heldBecause.isEmpty)
   }
 
   // MARK: Sol's inspection (REV-002 to REV-006)
@@ -469,5 +549,47 @@ private final class BlockedProbe: UpdateOperation, @unchecked Sendable {
     super.execute()
     ran.withLock { $0 = true }
     finish()
+  }
+}
+
+/// Brew left a new app and record; putting the record back fails once (incomplete restore).
+private final class IncompleteRestoreOperation: UpdateOperation, @unchecked Sendable {
+  private let protection: ExternalInstallGuard
+  private let companion: URL
+  override var lockKey: String { "homebrew" }
+
+  init(target: URL, companion: URL, journal: TransactionJournal) {
+    self.companion = companion
+    let moves = Mutex(0)
+    protection = ExternalInstallGuard(target: target, journal: journal) { from, to in
+      let move = moves.withLock {
+        $0 += 1
+        return $0
+      }
+      if move == 2 { throw CocoaError(.fileWriteNoPermission) }
+      try FileManager.default.moveItem(at: from, to: to)
+    }
+    super.init(bundleIdentifier: FixtureApp.identifier, appIdentifier: target)
+  }
+
+  override func execute() {
+    super.execute()
+    Task { @MainActor [self] in
+      do {
+        try protection.takeClone(
+          companions: [companion], mechanism: "homebrew", lockKey: lockKey,
+          writer: .process(pid: 999_999, started: 1), expected: nil)
+        try FileManager.default.removeItem(at: appIdentifier)
+        try FixtureApp.make(in: appIdentifier.deletingLastPathComponent(), version: "1.1")
+        try FileManager.default.removeItem(at: companion.appendingPathComponent("1.0"))
+        try FileManager.default.createDirectory(
+          at: companion.appendingPathComponent("1.1"), withIntermediateDirectories: true)
+      } catch { return finish(with: error) }
+      let result = await protection.settle(
+        error: HomebrewError.failed(reason: "x", logPath: "/tmp/x"), expected: nil,
+        requiresTeam: false,
+        lifecycle: FakeTarget(running: false).lifecycle(), restoreOnInstallerFailure: true)
+      if let result { finish(with: result) } else { finish() }
+    }
   }
 }

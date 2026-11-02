@@ -104,13 +104,10 @@ final class HomebrewUpgradeOperation: UpdateOperation, @unchecked Sendable {
       self.progressState = .installing
       do {
         // brew is the writer from here; recovery waits for that exact process to end.
-        // Registered while still stopped, then marked started once resumed (UPD-003).
-        _ = try await self.homebrew.upgrade(
-          self.token,
-          onStart: { [protection = self.protection] pid in
-            try protection.noteWriter(TransactionJournal.writer(pid: pid), started: false)
-          },
-          onResume: { [protection = self.protection] _ in protection.noteWriterStarted() })
+        // brew runs only once its PID is journaled (it waits on a pipe until then).
+        _ = try await self.homebrew.upgrade(self.token) { [protection = self.protection] pid in
+          try protection.noteWriter(TransactionJournal.writer(pid: pid))
+        }
         await self.finalize(nil)
       } catch {
         await self.finalize(error)

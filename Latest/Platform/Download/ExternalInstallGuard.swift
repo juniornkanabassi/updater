@@ -75,16 +75,8 @@ final class ExternalInstallGuard: Sendable {
 
   /// Records who now may change the target (the brew process that started, say). A failed
   /// write throws: the caller must not start that writer.
-  func noteWriter(_ writer: TransactionRecord.Writer, started: Bool = true) throws {
-    try update {
-      $0.writer = writer
-      $0.writerStarted = started
-    }
-  }
-
-  /// The registered tool was resumed and may now change the target.
-  func noteWriterStarted() {
-    try? update { $0.writerStarted = true }
+  func noteWriter(_ writer: TransactionRecord.Writer) throws {
+    try update { $0.writer = writer }
   }
 
   /// Records the version the installer promised once it is known (Sparkle's item), before

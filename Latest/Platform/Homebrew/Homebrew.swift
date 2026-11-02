@@ -279,14 +279,13 @@ actor Homebrew {
 
   /// `brew upgrade --cask <token>` with its output in a per-run log. Throws a plain reason
   /// and the log path on failure; a sudo prompt fails at once because stdin is closed.
-  func upgrade(
-    _ token: String, onStart: @escaping @Sendable (Int32) throws -> Void = { _ in },
-    onResume: @escaping @Sendable (Int32) -> Void = { _ in }
-  ) async throws -> URL {
+  func upgrade(_ token: String, onStart: @escaping @Sendable (Int32) throws -> Void = { _ in })
+    async throws -> URL
+  {
     let log = try newLog(named: "brew-upgrade-\(token)")
     // --no-quit: Updater has already quit the exact app; brew must not quit others by ID.
     let status = try await run(
-      ["upgrade", "--cask", "--no-quit", token], log: log, onStart: onStart, onResume: onResume)
+      ["upgrade", "--cask", "--no-quit", token], log: log, onStart: onStart)
     detection = nil
     guard status == 0 else {
       let output = (try? String(contentsOf: log, encoding: .utf8)) ?? ""
@@ -337,13 +336,11 @@ actor Homebrew {
 
   /// brew is never interrupted: the job waits for it to exit, holding its lock.
   private func run(
-    _ arguments: [String], log: URL, onStart: @escaping @Sendable (Int32) throws -> Void = { _ in },
-    onResume: @escaping @Sendable (Int32) -> Void = { _ in }
+    _ arguments: [String], log: URL, onStart: @escaping @Sendable (Int32) throws -> Void = { _ in }
   ) async throws -> Int32 {
     let (brew, env) = (try requireBrew(), processEnvironment)
     return try await serialized {
-      try await ToolProcess.run(
-        brew, arguments, log: log, environment: env, beforeStart: onStart, afterStart: onResume)
+      try await ToolProcess.run(brew, arguments, log: log, environment: env, beforeStart: onStart)
     }
   }
 

@@ -52,9 +52,6 @@ struct TransactionRecord: Codable, Equatable, Sendable {
   var writer: Writer
   /// The scheduler lock of the job, so recovery holds back jobs on the same tool.
   let lockKey: String
-  /// False while a tool is registered but not yet resumed (it starts suspended); nil or true
-  /// once it may run. A registered, still-stopped tool never ran (UPD-003).
-  var writerStarted: Bool? = nil
   /// Recovery's own progress, so a crash during recovery resumes where it stopped.
   var recovery: RecoveryProgress? = nil
 
@@ -190,21 +187,6 @@ final class TransactionJournal: Sendable {
 
   static func writer(pid: Int32 = getpid()) -> TransactionRecord.Writer {
     .process(pid: pid, started: startTime(of: pid) ?? 0)
-  }
-
-  /// A tool registered but never resumed (Updater stopped between journaling it and letting
-  /// it run) is still stopped: it never ran, so it is killed and recovery goes on.
-  static func stopUnstartedWriter(_ record: TransactionRecord) {
-    guard record.writerStarted == false, case .process(let pid, let started) = record.writer else {
-      return
-    }
-    var info = proc_bsdinfo()
-    let size = Int32(MemoryLayout<proc_bsdinfo>.size)
-    guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size,
-      Int64(info.pbi_start_tvsec) == started, info.pbi_status == UInt32(SSTOP)
-    else { return }
-    kill(pid, SIGKILL)
-    for _ in 0..<100 where startTime(of: pid) != nil { usleep(10_000) }
   }
 
   static func startTime(of pid: Int32) -> Int64? {
@@ -367,7 +349,6 @@ final class RecoveryOperation: UpdateOperation, @unchecked Sendable {
     super.execute()
     Task { @MainActor [self] in
       progressState = .waitingForVendor("Recovering an interrupted update")
-      TransactionJournal.stopUnstartedWriter(record)
       while await TransactionJournal.mayBeRunning(record.writer, helperIsIdle: helperIsIdle) {
         try? await Task.sleep(for: pollInterval)
       }
@@ -526,17 +507,18 @@ final class RecoveryOperation: UpdateOperation, @unchecked Sendable {
       exit(0)
     }
 
-    /// Clones the target as Homebrew does, then starts a tool that stays suspended: the probe
-    /// stops for good right after journaling it, before it would resume it.
+    /// Clones the target as Homebrew does, then starts a tool (it would create `tool-ran`); the
+    /// probe stops for good right after journaling it, before it would say "go".
     private static func toolRegistered(journal: TransactionJournal, target: URL, root: URL) -> Never
     {
       let guarded = ExternalInstallGuard(target: target, journal: journal)
       do { try guarded.takeClone(mechanism: "homebrew", lockKey: "homebrew") } catch { exit(1) }
       Task.detached {
         _ = try? await ToolProcess.run(
-          URL(fileURLWithPath: "/bin/sleep"), ["60"], log: root.appendingPathComponent("tool.log"),
+          URL(fileURLWithPath: "/usr/bin/touch"), [root.appendingPathComponent("tool-ran").path],
+          log: root.appendingPathComponent("tool.log"),
           beforeStart: { pid in
-            try guarded.noteWriter(TransactionJournal.writer(pid: pid), started: false)
+            try guarded.noteWriter(TransactionJournal.writer(pid: pid))
             FileManager.default.createFile(
               atPath: root.appendingPathComponent("reached").path, contents: nil)
             while true { pause() }
