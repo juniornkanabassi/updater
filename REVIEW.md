@@ -1,6 +1,6 @@
 # Review guide
 
-How to review changes to Updater. The shared rules (lanes, check results, finding format, the three-round checkpoint, approval of an exact revision) are in the owner's JuniorOS `03 Skills/Review workflow.md`; this file holds only what is specific here. Severity is Important, Nit (at most three, never blocking) or Pre-existing. Start the summary with the count; 0 findings is a valid result.
+How to review changes to Updater. The shared rules (lanes, check results, finding format, the three-round checkpoint, approval of an exact revision) are in the owner's JuniorOS `03 Skills/Review workflow.md`. This file holds only what is specific here. Severity is Important, Nit (at most three, never blocking) or Pre-existing. Start the summary with the count. 0 findings is a valid result.
 
 ## Failure here means
 
@@ -20,7 +20,7 @@ Installing and replacing bundles, `UpdateInstaller/`, privilege handling, releas
 
 ## Check results
 
-Each check is listed with its last result in the review workflow rollout (1 Nov 2026). NOT RUN means it was not run then; the project's `Validation.md` or memory holds older runs. Report every check you run as PASS, FAIL, NOT RUN or NOT APPLICABLE with the revision.
+Each check is listed with its last result in the review workflow rollout (1 Nov 2026). NOT RUN means it was not run then, and the project's `Validation.md` or memory holds older runs. Report every check you run as PASS, FAIL, NOT RUN or NOT APPLICABLE with the revision.
 
 | Command | Proves | 1 Nov |
 |---|---|---|
