@@ -25,6 +25,33 @@ if [[ -e "$DEST" ]]; then
   [[ "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$DEST/Contents/Info.plist" 2>/dev/null)" == "$APP_ID" ]] || { print -u2 "$DEST is not Updater; refusing to replace it."; exit 1; }
 fi
 
+
+# One install at a time for this destination. shlock writes our pid atomically and
+# only replaces a lock whose recorded owner is no longer running.
+LOCK="$INSTALL_ROOT/.updater-install.lock"
+[[ -d "$LOCK" ]] && ! kill -0 "$(<"$LOCK/pid" 2>/dev/null)" 2>/dev/null && /bin/rm -rf "$LOCK"  # lock folder from install.sh before 0.8.2
+/usr/bin/shlock -f "$LOCK" -p $$ || { print -u2 "Another Updater install is running (pid $(<"$LOCK" 2>/dev/null))."; exit 1; }
+for old in "$INSTALL_ROOT"/.updater-install.*(N/); do print -u2 "Left from an earlier run (not removed): $old"; done
+WORK=$(mktemp -d "$INSTALL_ROOT/.updater-install.XXXXXX")
+STAGE="$WORK/Updater.app"; BACKUP="$WORK/previous/Updater.app"; mkdir "$WORK/previous"
+VERIFIED=0
+cleanup() {
+  # The original lives in BACKUP from the move until the new copy verifies: never delete it before then.
+  if [[ -e "$BACKUP" ]] && (( ! VERIFIED )); then
+    if [[ ! -e "$DEST" ]] && /bin/mv "$BACKUP" "$DEST"; then
+      print -u2 "Interrupted: the previous Updater was put back."
+    else
+      print -u2 "Interrupted: the previous Updater is kept at $BACKUP."
+      [[ "$(<"$LOCK" 2>/dev/null)" == "$$" ]] && /bin/rm -f "$LOCK"
+      return
+    fi
+  fi
+  /bin/rm -rf "$WORK"
+  [[ "$(<"$LOCK" 2>/dev/null)" == "$$" ]] && /bin/rm -f "$LOCK"  # release only our own lock
+}
+trap cleanup EXIT
+trap 'exit 130' INT TERM HUP PIPE  # signals still run the EXIT cleanup
+
 # Quit a running copy cleanly (its own save prompts stay in charge); never kill it.
 if /usr/bin/pgrep -f "$DEST/Contents/MacOS/Updater" > /dev/null; then
   /usr/bin/osascript -e "tell application id \"$APP_ID\" to quit" > /dev/null 2>&1 || true
@@ -32,37 +59,13 @@ if /usr/bin/pgrep -f "$DEST/Contents/MacOS/Updater" > /dev/null; then
   ! /usr/bin/pgrep -f "$DEST/Contents/MacOS/Updater" > /dev/null || { print -u2 "Updater did not quit. Nothing was changed."; exit 1; }
 fi
 
-WORK=$(mktemp -d "$INSTALL_ROOT/.updater-install.XXXXXX")
-STAGE="$WORK/Updater.app"; BACKUP="$WORK/previous/Updater.app"; mkdir "$WORK/previous"
-# One install at a time for this destination.
-LOCK="$INSTALL_ROOT/.updater-install.lock"
-take_lock() { /bin/mkdir "$LOCK" 2>/dev/null && print $$ > "$LOCK/pid"; }
-if ! take_lock; then
-  # A lock whose owner is gone was left by an interrupted run: reclaim it, but keep any old work folders for inspection.
-  OWNER=$(<"$LOCK/pid" 2>/dev/null)
-  if [[ -n "$OWNER" ]] && kill -0 "$OWNER" 2>/dev/null; then
-    print -u2 "Another Updater install is running (pid $OWNER)."; /bin/rm -rf "$WORK"; exit 1
-  fi
-  print -u2 "Removing a stale install lock from an interrupted run."
-  for old in "$INSTALL_ROOT"/.updater-install.*(N/); do [[ "$old" == "$WORK" || "$old" == "$LOCK" ]] || print -u2 "Left from an earlier run (not removed): $old"; done
-  /bin/rm -rf "$LOCK"
-  take_lock || { print -u2 "Could not take the install lock ($LOCK)."; /bin/rm -rf "$WORK"; exit 1; }
-fi
-KEEP_WORK=0
-trap '/bin/rm -rf "$LOCK"; (( KEEP_WORK )) || /bin/rm -rf "$WORK"' EXIT
-trap 'exit 130' INT TERM HUP PIPE  # signals still run the EXIT cleanup
 /usr/bin/ditto "$SOURCE_APP" "$STAGE"
 verify_signed "$STAGE"
 if [[ -e "$DEST" ]]; then /bin/mv "$DEST" "$BACKUP"; fi
-if ! /bin/mv "$STAGE" "$DEST"; then
-  if [[ -e "$BACKUP" ]] && /bin/mv "$BACKUP" "$DEST"; then print -u2 "Could not install $DEST; the previous app was restored."; else KEEP_WORK=1; print -u2 "Could not install $DEST. The previous copy is kept at $BACKUP."; fi
-  exit 1
-fi
-if ! verify_signed "$DEST"; then
-  /bin/rm -rf "$DEST"
-  if [[ -e "$BACKUP" ]] && /bin/mv "$BACKUP" "$DEST"; then print -u2 "Installed signature failed to verify; the previous app was restored."; else KEEP_WORK=1; print -u2 "Installed signature failed to verify. The previous copy is kept at $BACKUP."; fi
-  exit 1
-fi
+[[ -n "${UPDATER_INSTALL_ROOT:-}" && -n "${UPDATER_INSTALL_TEST_PAUSE:-}" ]] && sleep "$UPDATER_INSTALL_TEST_PAUSE"  # test installs only: window to interrupt mid-replace
+if ! /bin/mv "$STAGE" "$DEST"; then print -u2 "Could not install $DEST."; exit 1; fi
+if ! verify_signed "$DEST"; then /bin/rm -rf "$DEST"; print -u2 "Installed signature failed to verify."; exit 1; fi
+VERIFIED=1
 print "Installed Updater $(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$DEST/Contents/Info.plist") at $DEST"
 
 # The CLI lives in the app; link it onto PATH as Talk & Read does.
