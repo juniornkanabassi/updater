@@ -51,12 +51,17 @@ final class VendorToolOperation: UpdateOperation, @unchecked Sendable {
     self.expectedVersion = expectedVersion
   }
 
+  private static let outOfScope =
+    "The vendor's updater would not update only this copy, so Updater does not run it."
+  /// Where the user updates it instead (the vendor's own app, Microsoft AutoUpdate say).
+  private var vendorUpdater: String { "the vendor's updater (\(lock))" }
+
   override func execute() {
     super.execute()
     Task { @MainActor in
       guard !self.isCancelled else { return self.finish() }
       guard await self.inScope() else {
-        self.outcomeOverride = .handedOff
+        self.recordHandOff(to: self.vendorUpdater, because: Self.outOfScope)
         return self.finish()
       }
       do {
@@ -72,13 +77,14 @@ final class VendorToolOperation: UpdateOperation, @unchecked Sendable {
         return self.finish(with: error)
       }
       do { try self.protection.takeClone() } catch {
-        self.outcomeOverride = .handedOff
+        self.recordHandOff(
+          to: self.vendorUpdater, because: "Updater could not make its safety copy of the app.")
         return self.finish()
       }
       // The quit prompt can wait on the user for a long time: check the target again right
       // before the vendor tool runs. finish() discards the clone and reopens the app.
       guard await self.inScope() else {
-        self.outcomeOverride = .handedOff
+        self.recordHandOff(to: self.vendorUpdater, because: Self.outOfScope)
         return self.finish()
       }
       do { try self.beginCommit() } catch { return await self.finalize(nil) }

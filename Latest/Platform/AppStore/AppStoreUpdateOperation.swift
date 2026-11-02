@@ -106,8 +106,13 @@ final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
       // Fail closed before any helper or CommerceKit request if the install could land
       // on another copy of this app. Before macOS 26.1 CommerceKit installs by itself,
       // with no quit check, backup or verification, so that route always hands off.
-      guard self.usesVerifiedHelperInstall, await self.allowsInstall() else {
-        self.handOff()
+      guard self.usesVerifiedHelperInstall else {
+        self.handOff(
+          because: "Before macOS 26.1 the App Store installs by itself, without Updater's checks.")
+        return self.finishOnMain()
+      }
+      guard await self.allowsInstall() else {
+        self.handOff(because: Self.notSoleCopy)
         return self.finishOnMain()
       }
       guard !self.isCancelled else { return self.finishOnMain() }
@@ -134,13 +139,13 @@ final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
       }
       guard !self.isCancelled else { return self.finishOnMain() }
       do { try self.protection.takeClone() } catch {
-        self.handOff()
+        self.handOff(because: "Updater could not make its safety copy of the app.")
         return self.finishOnMain()
       }
       // Discovery can change during preparation and the quit: check again right before
       // the purchase, which is the first step that can change the app.
       guard !self.isCancelled, await self.allowsInstall() else {
-        if !self.isCancelled { self.handOff() }
+        if !self.isCancelled { self.handOff(because: Self.notSoleCopy) }
         return await self.finalize(nil)
       }
       // Issuing the purchase is the commit point, as for Sparkle: from here cancel is a
@@ -189,12 +194,19 @@ final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
     await installGate(installURL, bundleIdentifier)
   }
 
-  @MainActor private func handOff() {
-    outcomeOverride = .handedOff
-    // Automation without --allow-handoff only learns that the App Store has it.
-    guard allowsExternalHandOff else { return }
-    openURL(URL(string: "macappstore://showUpdatesPage")!)
+  private static let notSoleCopy =
+    "Updater could not confirm that this is the only copy the App Store would update."
+
+  /// Automation without --allow-handoff only learns that the App Store has it.
+  @MainActor private func handOff(because reason: String) {
+    recordHandOff(to: "the App Store", because: reason) { [openURL] in
+      openURL(URL(string: "macappstore://showUpdatesPage")!)
+    }
   }
+
+  /// The recovery sheet; injectable so tests never present the shared one.
+  @MainActor var helperAlert: UpdateInstallHelperAlert { injectedHelperAlert ?? .shared }
+  @MainActor var injectedHelperAlert: UpdateInstallHelperAlert?
 
   @MainActor private func preparationFailed(_ error: Error) {
     // No purchase has started. Remove the waiting operation without publishing
@@ -202,7 +214,12 @@ final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
     super.cancel()
     finishOnMain()
     let fallback = URL(string: "macappstore://apps.apple.com/updates")!
-    UpdateInstallHelperAlert.shared.prepare(
+    // The sheet runs outside this job: it keeps the job's hand-off policy.
+    ExternalHandOff.$allowed.withValue(allowsExternalHandOff) { presentRecovery(error, fallback) }
+  }
+
+  @MainActor private func presentRecovery(_ error: Error, _ fallback: URL) {
+    helperAlert.prepare(
       fallbackURL: fallback,
       error: error as? InstallHelperError ?? .unavailable(error.localizedDescription)
     ) {
@@ -330,7 +347,7 @@ final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
   /// appear while the download ran or while the app was quitting.
   @MainActor func installPreservedPackage(_ package: URL, receipt: Data) async throws {
     guard await allowsInstall() else {
-      handOff()
+      handOff(because: Self.notSoleCopy)
       throw CancellationError()
     }
     try beginCommit()

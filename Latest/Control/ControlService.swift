@@ -269,11 +269,18 @@ final class ControlService {
   /// A recorded outcome decides. Without one nothing changed: a declined or unanswered quit
   /// prompt is needsQuit, a cancel is cancelled.
   private static func result(_ record: UpdateJobRecord, label: String?) -> [String: JSONValue] {
-    if record.outcome == .handedOff, !record.openedExternally {
-      let place = label ?? "the vendor's updater"
+    // handedOff means something was actually opened; otherwise the caller gets where to go
+    // and why, and --allow-handoff only when it would open that place.
+    if record.outcome == .handedOff, let note = record.handOff {
+      guard !note.opened else {
+        return ["state": "handedOff", "label": .string(note.destination)]
+      }
       return [
-        "state": "handOff", "label": .string(place),
-        "message": "Not opened: this update goes through \(place). Retry with --allow-handoff.",
+        "state": "handOff", "label": .string(note.destination), "reason": .string(note.reason),
+        "message": .string(
+          note.blockedByPolicy
+            ? "Not opened: \(note.reason) Retry with --allow-handoff to open \(note.destination)."
+            : "\(note.reason) Update it with \(note.destination)."),
       ]
     }
     if let outcome = record.outcome { return Self.outcome(outcome, label: label) }
@@ -294,15 +301,16 @@ final class ControlService {
 
   private func describe(_ app: App) -> JSONValue {
     // Adobe-style apps: Updater cannot see the available version, so it is not invented.
-    let availability: JSONValue =
-      app.availabilityUnknown ? "unknown" : app.updateAvailable ? "available" : "current"
+    let (availability, availabilityNote) = Self.availability(
+      of: app, checking: dependencies.isChecking())
     return .object(
       Self.compact([
         "name": .string(app.name), "bundleId": .string(app.bundleIdentifier),
         "path": .string(app.fileURL.path), "installed": JSONValue(Self.version(app.version)),
-        "available": app.availabilityUnknown
-          ? .null : JSONValue(app.remoteVersion.flatMap(Self.version)),
-        "availability": availability,
+        "available": availability == "available" || availability == "current"
+          ? JSONValue(app.remoteVersion.flatMap(Self.version)) : .null,
+        "availability": .string(availability),
+        "availabilityNote": JSONValue(availabilityNote),
         "updateAvailable": .bool(app.updateAvailable),
         "capability": .string(app.capability.rawValue),
         "handOffLabel": JSONValue(app.capability == .handOff ? Self.label(app) : nil),
@@ -312,6 +320,19 @@ final class ControlService {
         "detectedBy": app.bundle.source == app.source ? .null : .string(app.bundle.source.rawValue),
         "jobId": JSONValue(dependencies.updating.jobID(for: app.identifier)),
       ]))
+  }
+
+  /// `current` only after a check that succeeded and compared; otherwise say what is known.
+  static func availability(of app: App, checking: Bool) -> (String, String?) {
+    if let error = app.error { return ("error", error.localizedDescription) }
+    guard let remote = app.remoteVersion else { return (checking ? "checking" : "unknown", nil) }
+    if app.availabilityUnknown { return ("unknown", "Only the vendor's app knows.") }
+    if app.updateAvailable { return ("available", nil) }
+    switch app.version.comparisonForUpdate(to: remote) {
+    case .samePrecedence, .newer: return ("current", nil)
+    case .older: return ("unknown", "A newer version needs a newer macOS.")
+    case .unavailable: return ("unknown", "The versions cannot be compared.")
+    }
   }
 
   private func entry(_ app: App, _ status: String?, _ extra: [String: JSONValue])

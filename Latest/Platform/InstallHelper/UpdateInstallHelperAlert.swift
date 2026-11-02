@@ -48,6 +48,9 @@ final class UpdateInstallHelperAlert: ObservableObject {
     preparation: (@MainActor () async throws -> Void)? = nil,
     update: @escaping () -> Void
   ) {
+    // Deferred retries run later, outside the caller's scope: they keep its hand-off policy.
+    let allowsHandOff = ExternalHandOff.allowed
+    let update = { ExternalHandOff.$allowed.withValue(allowsHandOff) { update() } }
     guard pendingUpdates.isEmpty else {
       pendingUpdates.append(update)
       return
@@ -58,7 +61,8 @@ final class UpdateInstallHelperAlert: ObservableObject {
     if let error {
       state = State(error: error)
       if AppStoreUpdateSettings.alwaysPerformManualUpdates.active {
-        openAppStore()
+        // Opening the App Store by itself is for the window; automation opens nothing.
+        if allowsHandOff { openAppStore() } else { cancel() }
         return
       }
     }

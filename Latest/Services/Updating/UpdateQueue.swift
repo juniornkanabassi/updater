@@ -40,6 +40,9 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
   /// can be looked up after it finishes. Bounded; guarded by the index lock.
   private var finishedJobs = [String: UpdateJobRecord]()
   private var finishedOrder = [String]()
+  /// Unfinished jobs by id, kept until their record replaces them in one step, so a job id
+  /// never stops resolving between `isFinished` and the completion block.
+  private var jobsByID = [String: UpdateOperation]()
   /// Unfinished jobs per lock, in submission order. A new job depends on all of them: a
   /// cancelled waiter becomes ready at once, so depending only on the last one would let
   /// the newcomer overtake the running holder.
@@ -66,13 +69,17 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
   /// A job by id: running or waiting (its current state), or finished (how it ended).
   func job(withID id: String) -> UpdateJob? {
     operationIndexLock.withLock {
-      if let operation = operationsByIdentifier.values.first(where: {
-        $0.jobID == id && !$0.isFinished
-      }) {
-        return UpdateJob(
-          id: id, appURL: operation.appIdentifier, state: operation.progressState, record: nil)
+      if let record = finishedJobs[id] {
+        return UpdateJob(id: id, appURL: record.appURL, state: nil, record: record)
       }
-      return finishedJobs[id].map { UpdateJob(id: id, appURL: $0.appURL, state: nil, record: $0) }
+      guard let operation = jobsByID[id] else { return nil }
+      // Finished but its completion block has not run yet: report how it ended already.
+      guard !operation.isFinished else {
+        let record = Self.record(of: operation)
+        return UpdateJob(id: id, appURL: record.appURL, state: nil, record: record)
+      }
+      return UpdateJob(
+        id: id, appURL: operation.appIdentifier, state: operation.progressState, record: nil)
     }
   }
 
@@ -107,19 +114,15 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
     if let existing = index(operation) { return existing }
     if !ExternalHandOff.allowed { operation.allowsExternalHandOff = false }
     let before = readBundle(operation.appIdentifier)
-    let resolved = Mutex<UpdateOutcome?>(nil)
 
     operation.resolveOutcome = { [weak self] operation in
-      let outcome = self?.resolveOutcome(of: operation, before: before)
-      resolved.withLock { $0 = outcome }
-      return outcome
+      self?.resolveOutcome(of: operation, before: before)
     }
     let previousCompletionBlock = operation.completionBlock
     operation.completionBlock = { [weak self, weak operation] in
       previousCompletionBlock?()
 
       guard let self, let operation else { return }
-      self.record(operation, outcome: resolved.withLock { $0 })
       self.removeIndexedOperation(operation)
       // A clean finish (a declined quit records nothing) published .none while the job was
       // still indexed; republish so the row falls back to history and an earlier failure
@@ -159,7 +162,9 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
   static func outcome(of operation: UpdateOperation, before: App.Bundle, after: App.Bundle?)
     -> UpdateOutcome?
   {
-    // User cancellation or a declined quit prompt is not an outcome.
+    // User cancellation or a declined quit prompt is not an outcome (a declined quit after
+    // the commit point finishes without cancelling, so it is checked by itself).
+    if operation.quitDeclined && operation.error == nil { return nil }
     if operation.error is CancellationError || (operation.isCancelled && operation.error == nil) {
       return operation.error == nil ? nil : operation.outcomeOverride
     }
@@ -311,6 +316,7 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
       }
 
       operationsByIdentifier[operation.appIdentifier] = operation
+      jobsByID[operation.jobID] = operation
       let holders = (operationsByLock[operation.lockKey] ?? []).filter { !$0.isFinished }
       holders.forEach(operation.addDependency)
       operationsByLock[operation.lockKey] = holders + [operation]
@@ -318,20 +324,20 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
     }
   }
 
-  private func record(_ operation: UpdateOperation, outcome: UpdateOutcome?) {
-    let record = UpdateJobRecord(
-      appURL: operation.appIdentifier, outcome: outcome, quitDeclined: operation.quitDeclined,
-      cancelled: operation.isCancelled, failure: operation.error?.localizedDescription,
-      openedExternally: operation.allowsExternalHandOff)
-    operationIndexLock.withLock {
-      finishedJobs[operation.jobID] = record
-      finishedOrder.append(operation.jobID)
-      if finishedOrder.count > 200 { finishedJobs[finishedOrder.removeFirst()] = nil }
-    }
+  private static func record(of operation: UpdateOperation) -> UpdateJobRecord {
+    UpdateJobRecord(
+      appURL: operation.appIdentifier, outcome: operation.resolvedOutcome,
+      quitDeclined: operation.quitDeclined, cancelled: operation.isCancelled,
+      failure: operation.error?.localizedDescription, handOff: operation.handOffNote)
   }
 
+  /// The terminal record replaces the live entry under one lock.
   private func removeIndexedOperation(_ operation: UpdateOperation) {
     operationIndexLock.withLock {
+      finishedJobs[operation.jobID] = Self.record(of: operation)
+      finishedOrder.append(operation.jobID)
+      if finishedOrder.count > 200 { finishedJobs[finishedOrder.removeFirst()] = nil }
+      jobsByID[operation.jobID] = nil
       operationsByLock[operation.lockKey]?.removeAll { $0 === operation }
       if operationsByLock[operation.lockKey]?.isEmpty == true {
         operationsByLock[operation.lockKey] = nil
@@ -354,8 +360,8 @@ struct UpdateJobRecord: Sendable {
   let quitDeclined: Bool
   let cancelled: Bool
   let failure: String?
-  /// False when a hand-off was recorded but nothing was opened (automation's default).
-  let openedExternally: Bool
+  /// Where a hand-off sends the user and whether anything was opened.
+  let handOff: UpdateOperation.HandOffNote?
 }
 
 /// A job as automation sees it: `state` while it is queued or running, `record` once it ended.

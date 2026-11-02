@@ -149,8 +149,14 @@ extension SparkleUpdateOperation: SPUUserDriver {
     // The feed may have turned informational since the check: never reply .install.
     if appcastItem.isInformationOnlyUpdate {
       reply(.dismiss)
-      if allowsExternalHandOff, let infoURL = appcastItem.infoURL { openURL(infoURL) }
-      outcomeOverride = .handedOff
+      let infoURL = appcastItem.infoURL
+      let open = openURL
+      var opener: (@MainActor () -> Void)?
+      if let infoURL { opener = { open(infoURL) } }
+      recordHandOff(
+        to: infoURL?.host() ?? "the developer's website",
+        because: "The developer publishes this version as a download page, not an update.",
+        open: opener)
       finish()
       return
     }
@@ -258,10 +264,10 @@ extension SparkleUpdateOperation: SPUUserDriver {
             wasRunning: try await lifecycle.quit(
               at: appIdentifier, name: appIdentifier.deletingPathExtension().lastPathComponent))
         } catch is CancellationError where !isCancelled {
-          // A declined or unanswered quit prompt: cancel (nothing recorded), reported as
-          // needsQuit. .skip cancels the installation; .dismiss would defer it.
+          // A declined or unanswered quit prompt. .skip cancels the installation; .dismiss
+          // would defer it.
           reply(.skip)
-          declineQuit()
+          await abortAfterDeclinedQuit()
           return
         } catch {
           reply(.skip)
@@ -273,6 +279,21 @@ extension SparkleUpdateOperation: SPUUserDriver {
       return
     }
     install(reply)
+  }
+
+  /// Extraction already passed the commit point, so cancel() is refused: this is the
+  /// declined quit's own end. The clone settles (the app was not touched, or is put back),
+  /// the job finishes and frees its lock, and with the app unchanged nothing is recorded:
+  /// automation reports needsQuit.
+  @MainActor func abortAfterDeclinedQuit() async {
+    let before = BundleCollector.collectBundle(at: appIdentifier)?.version
+    let result = await protection.settle(
+      error: nil, expected: nil, requiresTeam: requiresTeam, lifecycle: lifecycle)
+    guard !published else { return }
+    published = true
+    if let result { return finish(with: result) }
+    if BundleCollector.collectBundle(at: appIdentifier)?.version == before { markQuitDeclined() }
+    finish()
   }
 
   @MainActor private func install(_ reply: @escaping (SPUUserUpdateChoice) -> Void) {

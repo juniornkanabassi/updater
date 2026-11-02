@@ -26,12 +26,15 @@ final class UpdateCheckingService: NSObject, ObservableObject, UpdateCheckProgre
   private let coordinator: any UpdateCheckCoordinating
   private let appStoreUpdateService: any AppStoreUpdateServicing
   private let updating: any AppUpdating
+  private let helperAlert: UpdateInstallHelperAlert?
 
   init(
     coordinator: any UpdateCheckCoordinating = UpdateCheckCoordinator.shared,
     appStoreUpdateService: any AppStoreUpdateServicing = LiveAppStoreUpdateService.shared,
-    updating: any AppUpdating = AppUpdateService.shared
+    updating: any AppUpdating = AppUpdateService.shared,
+    helperAlert: UpdateInstallHelperAlert? = nil
   ) {
+    self.helperAlert = helperAlert
     self.coordinator = coordinator
     self.appStoreUpdateService = appStoreUpdateService
     self.updating = updating
@@ -90,7 +93,7 @@ final class UpdateCheckingService: NSObject, ObservableObject, UpdateCheckProgre
         try appStoreUpdateService.verifyAvailability()
       } catch {
         guard let updatesPage = ExternalURL.updatesPage else { return }
-        UpdateInstallHelperAlert.shared.prepare(fallbackURL: updatesPage, error: error) {
+        (helperAlert ?? .shared).prepare(fallbackURL: updatesPage, error: error) {
           [weak self] in
           self?.updateAll()
         }

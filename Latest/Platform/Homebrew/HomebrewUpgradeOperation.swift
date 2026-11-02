@@ -69,7 +69,10 @@ final class HomebrewUpgradeOperation: UpdateOperation, @unchecked Sendable {
       // What was actually downloaded decides what brew will need to unpack it.
       guard let download = try? await self.homebrew.cachedDownload(of: self.token),
         HomebrewPayload.unpacksWithBuiltInTools(download)
-      else { return self.handOffBeforeChanges() }
+      else {
+        return self.handOffBeforeChanges(
+          because: "The download needs an installer step Updater does not run.")
+      }
       // A download can take long: definitions, targets and other copies are checked again
       // right before anything changes.
       guard await self.stillInScope() else { return self.handOffBeforeChanges() }
@@ -89,8 +92,8 @@ final class HomebrewUpgradeOperation: UpdateOperation, @unchecked Sendable {
       // brew's Caskroom record is cloned with the app so a rollback leaves them agreeing.
       let caskroom = await self.homebrew.caskroom(of: self.token)
       do { try self.protection.takeClone(companions: [caskroom].compactMap { $0 }) } catch {
-        self.outcomeOverride = .handedOff
-        return self.finish()
+        self.handOffBeforeChanges(because: "Updater could not make its safety copy of the app.")
+        return
       }
       // From here brew may change the app: no cancel.
       do { try self.beginCommit() } catch { return await self.finalize(nil) }
@@ -112,8 +115,12 @@ final class HomebrewUpgradeOperation: UpdateOperation, @unchecked Sendable {
     return cask.token == token && scope.installs(cask, at: appIdentifier)
   }
 
-  @MainActor private func handOffBeforeChanges() {
-    outcomeOverride = .handedOff
+  @MainActor private func handOffBeforeChanges(
+    because reason: String =
+      "The cask now needs more than replacing this app (or no longer owns it), so Updater leaves it to brew."
+  ) {
+    recordHandOff(
+      to: "Terminal: \(HomebrewCheckerOperation.adminCommand(for: token))", because: reason)
     finish()
   }
 

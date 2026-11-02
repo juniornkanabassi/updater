@@ -480,8 +480,9 @@ final class ControlTest: XCTestCase {
     let replied = expectation(description: "replied")
     sparkle.showReady { _ in replied.fulfill() }
     await fulfillment(of: [replied], timeout: 3)
+    for _ in 0..<200 where !sparkle.isFinished { try await Task.sleep(for: .milliseconds(10)) }
     XCTAssertTrue(sparkle.quitDeclined)
-    XCTAssertTrue(sparkle.isCancelled, "a cancel, so nothing is recorded")
+    XCTAssertTrue(sparkle.isFinished, "the job ends by itself, even past its commit point")
   }
 
   /// R5-005: availability Updater cannot see is reported as unknown, never as the installed

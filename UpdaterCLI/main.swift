@@ -114,10 +114,14 @@ func render(_ response: ControlResponse, command: String) {
     let apps = data["apps"]?.arrayValue ?? []
     for app in apps.compactMap(\.objectValue) {
       // An unknown availability (Adobe) has no version to show: say where to look instead.
-      let available =
-        text(app["availability"]) == "unknown"
-        ? "→ ? (check in \(text(app["handOffLabel"]) ?? "the vendor's app"))"
-        : text(app["available"]).map { "→ \($0)" }
+      let available: String? =
+        switch text(app["availability"]) {
+        case "unknown" where app["handOffLabel"] != nil:
+          "→ ? (check in \(text(app["handOffLabel"]) ?? ""))"
+        case "unknown", "error", "checking":
+          "→ ? (\([text(app["availability"]), text(app["availabilityNote"])].compactMap { $0 }.joined(separator: ": ")))"
+        default: text(app["available"]).map { "→ \($0)" }
+        }
       let versions = [text(app["installed"]), available].compactMap { $0 }.joined(separator: " ")
       let notes = [
         text(app["capability"]), text(app["handOffLabel"]), text(app["jobId"]).map { "job \($0)" },

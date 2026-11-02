@@ -94,7 +94,8 @@ Add `--json` for one line of JSON. Exit codes: 0 ok, 1 Updater refused or failed
 - A running app is quit only after you click Quit and Update in Updater's prompt. If nobody answers within five minutes, or you cancel, the job ends as `needsQuit` and nothing changes.
 - Jobs the window started can be looked up by the job id `updater list` shows.
 - Just after Updater starts, commands that need the first check (`list --updates`, `update`) answer `not_ready` for a short while; retry. A list taken while a check runs says `checking`.
-- Where Updater cannot see the available version (Adobe apps), `list` says `availability: unknown` and the command prints "check in Creative Cloud" instead of a version.
+- `list` gives each app's `availability`: `available`, `current` (only after a check that succeeded and could compare versions), `checking`, `error` (with the check's error) or `unknown`. Where only the vendor's app knows (Adobe), the command prints "check in Creative Cloud" instead of a version.
+- `handedOff` means Updater opened the other updater. `handOff` means it did not: the reply names where to update and why, and suggests `--allow-handoff` only when that would open it.
 - A request retried with the same `--request-id` within five minutes acts once and gets the first answer again. Nothing is ever sent or published.
 
 To connect the MCP server (needs Node.js 18 or later) to Claude Code:

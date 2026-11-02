@@ -51,9 +51,44 @@ class UpdateOperation: StatefulOperation, @unchecked Sendable {
 
   /// Ends the job as a declined quit: a cancel that is reported as needsQuit.
   func declineQuit() {
-    declinedQuit.withLock { $0 = true }
+    markQuitDeclined()
     cancel()
   }
+
+  /// For jobs past their commit point, where cancel() is refused: the job finishes cleanly
+  /// and the scheduler writes no history for it.
+  func markQuitDeclined() { declinedQuit.withLock { $0 = true } }
+
+  /// Where a job that ended as a hand-off sends the user, why, and whether anything opened.
+  struct HandOffNote: Sendable, Equatable {
+    let destination: String
+    let reason: String
+    let opened: Bool
+    /// Something would have opened, but automation did not pass --allow-handoff.
+    let blockedByPolicy: Bool
+  }
+
+  private let handOffStorage = Mutex<HandOffNote?>(nil)
+  var handOffNote: HandOffNote? { handOffStorage.withLock { $0 } }
+
+  /// Ends the job as a hand-off. `open` (the App Store, a page) runs only when the submission
+  /// allows it; brew and vendor fallbacks pass none and only say where to go.
+  @MainActor func recordHandOff(
+    to destination: String, because reason: String, open: (@MainActor () -> Void)? = nil
+  ) {
+    outcomeOverride = .handedOff
+    let opens = open != nil && allowsExternalHandOff
+    if opens { open?() }
+    handOffStorage.withLock {
+      $0 = HandOffNote(
+        destination: destination, reason: reason, opened: opens,
+        blockedByPolicy: open != nil && !allowsExternalHandOff)
+    }
+  }
+
+  private let resolvedStorage = Mutex<UpdateOutcome?>(nil)
+  /// The outcome the scheduler recorded as the job finished, if any.
+  var resolvedOutcome: UpdateOutcome? { resolvedStorage.withLock { $0 } }
 
   private let completionNotificationLock = NSLock()
 
@@ -164,9 +199,9 @@ class UpdateOperation: StatefulOperation, @unchecked Sendable {
       defer { resolve = nil }
       return resolve
     }
-    if let outcome = resolve?(self), self.error == nil,
-      let failure = UpdateOutcomeError(outcome: outcome)
-    {
+    let outcome = resolve?(self)
+    resolvedStorage.withLock { $0 = outcome }
+    if let outcome, self.error == nil, let failure = UpdateOutcomeError(outcome: outcome) {
       recordError(failure)
     }
     // Any attempt may have changed or removed the bundle, including failures and rollbacks,

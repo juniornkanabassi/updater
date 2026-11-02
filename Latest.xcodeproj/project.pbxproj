@@ -232,6 +232,7 @@
 		07E6A74E71264F188D2AF4A0 /* updater in CopyFiles */ = {isa = PBXBuildFile; fileRef = CBA556AC01574B8EABE38C3D /* updater */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		B8E03E01EF81414E9113D4B0 /* mcp in Resources */ = {isa = PBXBuildFile; fileRef = EDB1439536064F48BC0293DA /* mcp */; };
 		00E7C3B027FC4EFE8CFBA011 /* ControlTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77780ABE8A704FDC979ECC73 /* ControlTest.swift */; };
+		018068F9ECCE4A92B54AD847 /* ControlFollowUpTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B2652E06EEC4171962ED608 /* ControlFollowUpTest.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -600,6 +601,7 @@
 		CBA556AC01574B8EABE38C3D /* updater */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = updater; sourceTree = BUILT_PRODUCTS_DIR; };
 		EDB1439536064F48BC0293DA /* mcp */ = {isa = PBXFileReference; lastKnownFileType = folder; path = mcp; sourceTree = "<group>"; };
 		77780ABE8A704FDC979ECC73 /* ControlTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlTest.swift; sourceTree = "<group>"; };
+		0B2652E06EEC4171962ED608 /* ControlFollowUpTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlFollowUpTest.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1086,6 +1088,7 @@
 		52D000042FE0000000000001 /* Updating */ = {
 			isa = PBXGroup;
 			children = (
+				0B2652E06EEC4171962ED608 /* ControlFollowUpTest.swift */,
 				77780ABE8A704FDC979ECC73 /* ControlTest.swift */,
 				5BE7413728DB4FD2858736F1 /* BackgroundTest.swift */,
 				14D3B936DA2F014392B22402 /* AppUpdatingBoundaryTest.swift */,
@@ -1612,6 +1615,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				018068F9ECCE4A92B54AD847 /* ControlFollowUpTest.swift in Sources */,
 				00E7C3B027FC4EFE8CFBA011 /* ControlTest.swift in Sources */,
 				DCD02534A0BF4D0AA3D935F8 /* AppDirectoryWatcherTest.swift in Sources */,
 				3A4C1BA1DFCA4FF1B3A82C85 /* BackgroundTest.swift in Sources */,
@@ -1978,7 +1982,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 10;
+				CURRENT_PROJECT_VERSION = 11;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DWARF_DSYM_FILE_NAME = "UpdaterApp.app.dSYM"; /* Sparkle ships its own Updater.app.dSYM */
@@ -1998,7 +2002,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.6.0;
+				MARKETING_VERSION = 0.6.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.juniornkanabassi.Updater";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Updater";
@@ -2021,7 +2025,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 10;
+				CURRENT_PROJECT_VERSION = 11;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DWARF_DSYM_FILE_NAME = "UpdaterApp.app.dSYM"; /* Sparkle ships its own Updater.app.dSYM */
@@ -2042,7 +2046,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.6.0;
+				MARKETING_VERSION = 0.6.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.juniornkanabassi.Updater";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Updater";
