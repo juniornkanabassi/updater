@@ -3,6 +3,7 @@
 included:
   - Latest
   - UpdateInstaller
+  - UpdaterCLI
   - Tests
   - script
 only_rules:

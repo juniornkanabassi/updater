@@ -30,6 +30,10 @@ struct LatestApplication: SwiftUI.App {
         .modifier(MainWindowOpenerCapture())
         .onAppear { environment.start() }  // idempotent; launch normally started it already
     }
+    // Started by the CLI or MCP (`--headless`): no window; the menu bar item and socket run.
+    .defaultLaunchBehavior(
+      CommandLine.arguments.contains("--headless") ? .suppressed : .automatic
+    )
     .commands {
       LatestCommands(
         appCommands: environment.commands,

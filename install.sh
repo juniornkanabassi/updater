@@ -2,6 +2,8 @@
 # Installs the built Updater.app into the central JuniorOS Apps folder, keeping the previous copy
 # until the new one verifies. Usage: zsh install.sh [path/to/Updater.app]
 # UPDATER_INSTALL_ROOT overrides the destination (use it for disposable test installs only).
+# UPDATER_BIN_DIR is where the `updater` command is linked (default ~/.local/bin; a test install
+# with UPDATER_INSTALL_ROOT and no UPDATER_BIN_DIR links nothing).
 set -euo pipefail
 INSTALL_ROOT="${UPDATER_INSTALL_ROOT:-/Applications/JuniorOS Apps}"
 SOURCE_APP="${1:-${UPDATER_BUILD_DIR:-/private/tmp/updater-build}/Build/Products/Release/Updater.app}"
@@ -50,3 +52,24 @@ if ! verify_signed "$DEST"; then
   exit 1
 fi
 print "Installed Updater $(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$DEST/Contents/Info.plist") at $DEST"
+
+# The CLI lives in the app; link it onto PATH as Talk & Read does.
+if [[ -n "${UPDATER_BIN_DIR:-}" || -z "${UPDATER_INSTALL_ROOT:-}" ]]; then
+  BIN_DIR="${UPDATER_BIN_DIR:-$HOME/.local/bin}"
+  LINK="$BIN_DIR/updater"
+  mkdir -p "$BIN_DIR"
+  if [[ -e "$LINK" && ! -L "$LINK" ]]; then
+    print -u2 "$LINK exists and is not a link; leaving it alone."
+  else
+    ln -sfn "$DEST/Contents/Helpers/updater" "$LINK"
+    print "Linked $LINK. If \`updater\` is not found, add $BIN_DIR to PATH."
+  fi
+else
+  print "Test install: no CLI link."
+fi
+SHIM="$DEST/Contents/Resources/mcp/updater-mcp.mjs"
+print "MCP for Claude Code: claude mcp add updater -- node \"$SHIM\""
+print 'MCP for Codex (~/.codex/config.toml):'
+print '[mcp_servers.updater]'
+print 'command = "node"'
+print "args = [\"$SHIM\"]"

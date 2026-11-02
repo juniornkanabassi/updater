@@ -67,6 +67,49 @@ Signed standalone bundle replacement supports Docker Desktop, Telegram Desktop, 
 
 Obsidian's installed version comes from its ASAR payload; Delta's comes from validated metadata in its main executable, since its plist and bundled CLI can report older versions. Obsidian public payload updates verify the vendor checksum and RSA signature. Early-access preferences are respected: authenticated updates open Obsidian, and incompatible launchers open the official installer page. Ghostty uses its official Sparkle feed.
 
+## Command line and AI assistants
+
+Updater includes an `updater` command and an MCP server so Claude, Codex and other assistants can use it. Both talk to the running app over a socket in `~/Library/Application Support/Updater/control.sock` that only your own user account can open. If Updater is closed, a command starts it in the background with no window. Every action goes through the same scheduler as the window, so the window shows a job started from the command line as it runs.
+
+`install.sh` links the command into `~/.local/bin`. By hand:
+
+```sh
+mkdir -p ~/.local/bin
+ln -s "/Applications/JuniorOS Apps/Updater.app/Contents/Helpers/updater" ~/.local/bin/updater
+```
+
+```sh
+updater --help                      # every command; updater <command> --help for one
+updater list --updates              # apps with an update waiting
+updater check --refresh             # check now and wait for the result
+updater update com.example.App      # or a path, or all; prints a job id
+updater status <job-id>             # waiting, running, updated, noChange, failed, needsQuit…
+updater history --limit 10
+```
+
+Add `--json` for one line of JSON. Exit codes: 0 ok, 1 Updater refused or failed, 2 usage, 3 Updater is not running and could not be started.
+
+- A second request for an app that is already updating gets the same job id back as `inProgress`. Jobs that share a tool (brew, msupdate, the App Store helper) wait their turn and show as `waiting`.
+- Apps that update somewhere else (App Store page, Creative Cloud, a Terminal command, a Chrome relaunch) come back as `handOff` with the place named. Only `update <app> --allow-handoff` opens it. `update all` never hands off.
+- A running app is quit only after you click Quit and Update in Updater's prompt. If nobody answers within five minutes, or you cancel, the job ends as `needsQuit` and nothing changes.
+- A request retried with the same `--request-id` within five minutes acts once and gets the first answer again. Nothing is ever sent or published.
+
+To connect the MCP server (needs Node.js 18 or later) to Claude Code:
+
+```sh
+claude mcp add updater -- node "/Applications/JuniorOS Apps/Updater.app/Contents/Resources/mcp/updater-mcp.mjs"
+```
+
+For Codex, add this to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.updater]
+command = "node"
+args = ["/Applications/JuniorOS Apps/Updater.app/Contents/Resources/mcp/updater-mcp.mjs"]
+```
+
+The tools (`list`, `check`, `update`, `status`, `history`) come from `updater mcp-manifest`, so they always match the command.
+
 ## Release notes
 
 `Latest/Resources/LatestReleaseNotes.json` supplies version-matched offline notes inherited from the Ertyoii fork. Updater does not update itself yet: it has no appcast or public key configured, and no menu item that opens a releases page.

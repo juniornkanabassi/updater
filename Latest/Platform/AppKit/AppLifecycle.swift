@@ -36,6 +36,13 @@ struct AppLifecycle: Sendable {
       alert.informativeText = "Save your work first. The app will reopen after the update."
       alert.addButton(withTitle: "Quit and Update")
       alert.addButton(withTitle: "Cancel")
+      // Nobody answering (a job started from the CLI while away) counts as Cancel, so the job
+      // ends as needsQuit instead of holding its tool lock for ever.
+      let timeout = Timer(timeInterval: 300, repeats: false) { _ in
+        MainActor.assumeIsolated { NSApp.abortModal() }
+      }
+      RunLoop.main.add(timeout, forMode: .modalPanel)
+      defer { timeout.invalidate() }
       return alert.runModal() == .alertFirstButtonReturn
     },
     reopen: { MacApplicationWorkspace.shared.openApplication(at: $0) })

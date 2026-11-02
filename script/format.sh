@@ -13,7 +13,7 @@ esac
 files=()
 while IFS= read -r -d '' file; do
   [[ -f "$file" ]] && files+=("$file")
-done < <(git ls-files --cached --others --exclude-standard -z -- 'Latest/*.swift' 'Tests/*.swift' 'UpdateInstaller/*.swift' 'script/*.swift')
+done < <(git ls-files --cached --others --exclude-standard -z -- 'Latest/*.swift' 'Tests/*.swift' 'UpdateInstaller/*.swift' 'UpdaterCLI/*.swift' 'script/*.swift')
 
 if [[ "${1:-}" != --check ]]; then
   xcrun swift-format format --configuration "$ROOT_DIR/.swift-format" --in-place --parallel "${files[@]}"

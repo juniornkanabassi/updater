@@ -80,6 +80,18 @@ final class UpdateHistoryStore: Sendable {
     }
   }
 
+  /// Every recorded entry, newest first, read from disk (a torn last line is skipped).
+  func entries(limit: Int) -> [UpdateHistoryEntry] {
+    latest.withLock { _ in
+      guard let data = try? Data(contentsOf: fileURL) else { return [] }
+      let decoder = JSONDecoder()
+      decoder.dateDecodingStrategy = .iso8601
+      return data.split(separator: 0x0A).reversed().lazy
+        .compactMap { try? decoder.decode(UpdateHistoryEntry.self, from: $0) }
+        .prefix(limit).map { $0 }
+    }
+  }
+
   func latestEntries() -> [UpdateHistoryEntry] {
     latest.withLock { cache in
       if cache == nil { cache = Self.load(from: fileURL) }

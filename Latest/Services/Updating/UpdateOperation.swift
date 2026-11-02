@@ -26,6 +26,9 @@ class UpdateOperation: StatefulOperation, @unchecked Sendable {
   /// The identifier of the updated app.
   let appIdentifier: App.Bundle.Identifier
 
+  /// Names this job to automation callers (`updater status <job-id>`).
+  let jobID = UUID().uuidString.lowercased()
+
   private let completionNotificationLock = NSLock()
 
   private var didPostCompletionNotification = false

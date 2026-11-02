@@ -53,6 +53,11 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
     operation(for: identifier)?.retryTermination()
   }
 
+  /// The unfinished job for the app, if any.
+  func jobID(for identifier: App.Bundle.Identifier) -> String? {
+    operation(for: identifier)?.jobID
+  }
+
   /// Whether the queue contains an update operation for the given app.
   func contains(_ identifier: App.Bundle.Identifier) -> Bool {
     return self.operation(for: identifier) != nil

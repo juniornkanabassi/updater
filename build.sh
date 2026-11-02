@@ -12,6 +12,8 @@ HELPER_ID="$APP_ID.helper"
 PRODUCTS="$DERIVED/Build/Products/Release"
 APP="$PRODUCTS/Updater.app"
 HELPER="$APP/Contents/Resources/UpdaterInstaller"
+CLI="$APP/Contents/Helpers/updater"
+MCP="$APP/Contents/Resources/mcp/updater-mcp.mjs"
 
 # Stale products (an old App.icns, a renamed helper) must not end up in the zip.
 /bin/rm -rf "$PRODUCTS"
@@ -22,12 +24,14 @@ HELPER="$APP/Contents/Resources/UpdaterInstaller"
 [[ -d "$APP" ]] || { print -u2 "Build did not produce $APP"; exit 1; }
 /usr/bin/codesign --verify --deep --strict "$APP"
 /usr/bin/codesign --verify --strict "$HELPER"
+/usr/bin/codesign --verify --strict "$CLI"
+[[ -f "$MCP" ]] || { print -u2 "The MCP adapter is missing from $MCP."; exit 1; }
 
 # Identity checks: bundle ID, helper signing identifier, and Junior's team on both binaries.
 plist() { /usr/libexec/PlistBuddy -c "Print $2" "$1"; }
 [[ "$(plist "$APP/Contents/Info.plist" CFBundleIdentifier)" == "$APP_ID" ]] || { print -u2 "Unexpected bundle identifier."; exit 1; }
 [[ "$(plist "$APP/Contents/Info.plist" UpdaterTeamIdentifier)" == "$TEAM" ]] || { print -u2 "Info.plist team is not $TEAM."; exit 1; }
-for binary in "$APP" "$HELPER"; do
+for binary in "$APP" "$HELPER" "$CLI"; do
   details="$(/usr/bin/codesign -dv "$binary" 2>&1)"
   [[ "$details" == *$'\n'"TeamIdentifier=$TEAM"$'\n'* ]] || { print -u2 "$binary is not signed by team $TEAM."; exit 1; }
 done

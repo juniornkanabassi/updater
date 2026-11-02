@@ -8,6 +8,8 @@ struct AppListUpdate: Sendable {
 }
 
 protocol AppProviding {
+  /// Every discovered app, for automation listings.
+  var apps: [App] { get }
   var updatableApps: [App] { get }
   func countOfAvailableUpdates(where condition: (App) -> Bool) -> Int
   @MainActor func updates() -> AsyncStream<AppListUpdate>

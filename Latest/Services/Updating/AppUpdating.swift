@@ -17,10 +17,13 @@ protocol AppUpdating: AnyObject, Sendable {
   func state(for identifier: App.Bundle.Identifier) -> UpdateProgressState
   @MainActor func states(for identifier: App.Bundle.Identifier) -> AsyncStream<UpdateProgressState>
   @MainActor func stateChanges(for identifier: App.Bundle.Identifier) -> UpdateStateFeed
+  /// The id of the unfinished job for this app, for automation callers.
+  func jobID(for identifier: App.Bundle.Identifier) -> String?
 }
 
 extension AppUpdating {
   func update(_ app: App) { update(app, isBulkUpdate: false) }
+  func jobID(for identifier: App.Bundle.Identifier) -> String? { nil }
 }
 
 /// The live adapter owns the queue dependency. Domain models contain only update
@@ -32,6 +35,7 @@ final class AppUpdateService: AppUpdating {
   init(queue: UpdateQueue) { self.queue = queue }
 
   func isUpdating(_ app: App) -> Bool { queue.contains(app.identifier) }
+  func jobID(for identifier: App.Bundle.Identifier) -> String? { queue.jobID(for: identifier) }
   /// The single entry point for GUI rows and Update All. Built-in actions submit to the
   /// scheduler; hand-offs open another updater and are recorded as such.
   func update(_ app: App, isBulkUpdate: Bool) {

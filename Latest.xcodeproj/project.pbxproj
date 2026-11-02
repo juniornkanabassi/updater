@@ -225,6 +225,13 @@
 		08F347536FF444A88C78F66C /* PermissionsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83D44866DFF542349F338E1C /* PermissionsSettingsView.swift */; };
 		3A4C1BA1DFCA4FF1B3A82C85 /* BackgroundTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BE7413728DB4FD2858736F1 /* BackgroundTest.swift */; };
 		DCD02534A0BF4D0AA3D935F8 /* AppDirectoryWatcherTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BC7F8D6916D4A4EA5857CF4 /* AppDirectoryWatcherTest.swift */; };
+		B7AD395C42CE481DB7225B9A /* ControlProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1507BE189104DD0848B7A61 /* ControlProtocol.swift */; };
+		123300EE3AB2434BA961C774 /* ControlService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75954CC973DE4753A247D989 /* ControlService.swift */; };
+		FA14348696E34FA08D9828A6 /* ControlProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1507BE189104DD0848B7A61 /* ControlProtocol.swift */; };
+		C10FAA75E5604C78A0647979 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 468A48037A38445B9DE444E6 /* main.swift */; };
+		07E6A74E71264F188D2AF4A0 /* updater in CopyFiles */ = {isa = PBXBuildFile; fileRef = CBA556AC01574B8EABE38C3D /* updater */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		B8E03E01EF81414E9113D4B0 /* mcp in Resources */ = {isa = PBXBuildFile; fileRef = EDB1439536064F48BC0293DA /* mcp */; };
+		00E7C3B027FC4EFE8CFBA011 /* ControlTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77780ABE8A704FDC979ECC73 /* ControlTest.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -241,6 +248,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 50290E701E53EB6A00133E3D;
 			remoteInfo = Latest;
+		};
+		A15BCAFB0A484CDCB34EB8E4 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 50290E691E53EB6A00133E3D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E018E5F9C12449F697B76BFF;
+			remoteInfo = UpdaterCLI;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -264,6 +278,17 @@
 			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 1;
+		};
+		01FE7AF5FDE34750AC83EB91 /* Embed CLI */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = Contents/Helpers;
+			dstSubfolderSpec = 1;
+			files = (
+				07E6A74E71264F188D2AF4A0 /* updater in CopyFiles */,
+			);
+			name = "Embed CLI";
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
 
@@ -569,6 +594,12 @@
 		83D44866DFF542349F338E1C /* PermissionsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionsSettingsView.swift; sourceTree = "<group>"; };
 		5BE7413728DB4FD2858736F1 /* BackgroundTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundTest.swift; sourceTree = "<group>"; };
 		6BC7F8D6916D4A4EA5857CF4 /* AppDirectoryWatcherTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDirectoryWatcherTest.swift; sourceTree = "<group>"; };
+		468A48037A38445B9DE444E6 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		B1507BE189104DD0848B7A61 /* ControlProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlProtocol.swift; sourceTree = "<group>"; };
+		75954CC973DE4753A247D989 /* ControlService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlService.swift; sourceTree = "<group>"; };
+		CBA556AC01574B8EABE38C3D /* updater */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = updater; sourceTree = BUILT_PRODUCTS_DIR; };
+		EDB1439536064F48BC0293DA /* mcp */ = {isa = PBXFileReference; lastKnownFileType = folder; path = mcp; sourceTree = "<group>"; };
+		77780ABE8A704FDC979ECC73 /* ControlTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlTest.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -605,12 +636,21 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F5FBE5D875594F2EAC9FF366 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		50290E681E53EB6A00133E3D = {
 			isa = PBXGroup;
 			children = (
+				C30BD9FB01014E0C8B034CFB /* UpdaterCLI */,
+				EDB1439536064F48BC0293DA /* mcp */,
 				50290E731E53EB6A00133E3D /* Latest */,
 				50C81D6A1FBADC5900324C2E /* Tests */,
 				5050621E2F0DBEB700998F84 /* UpdateInstaller */,
@@ -622,6 +662,7 @@
 		50290E721E53EB6A00133E3D /* Products */ = {
 			isa = PBXGroup;
 			children = (
+				CBA556AC01574B8EABE38C3D /* updater */,
 				7CCF35F698578974F2170F54 /* Latest Unit Tests.xctest */,
 				50290E711E53EB6A00133E3D /* Updater.app */,
 				50C81D691FBADC5900324C2E /* Latest Tests.xctest */,
@@ -633,6 +674,7 @@
 		50290E731E53EB6A00133E3D /* Latest */ = {
 			isa = PBXGroup;
 			children = (
+				FE2B5CB1D5924A95A452EB46 /* Control */,
 				52C000012FE0000000000001 /* App */,
 				52C000022FE0000000000001 /* Features */,
 				52C000062FE0000000000001 /* Domain */,
@@ -1044,6 +1086,7 @@
 		52D000042FE0000000000001 /* Updating */ = {
 			isa = PBXGroup;
 			children = (
+				77780ABE8A704FDC979ECC73 /* ControlTest.swift */,
 				5BE7413728DB4FD2858736F1 /* BackgroundTest.swift */,
 				14D3B936DA2F014392B22402 /* AppUpdatingBoundaryTest.swift */,
 				BC32934D27C9A1E207B84105 /* InstallHelperInteractionTest.swift */,
@@ -1175,6 +1218,23 @@
 			path = Download;
 			sourceTree = "<group>";
 		};
+		C30BD9FB01014E0C8B034CFB /* UpdaterCLI */ = {
+			isa = PBXGroup;
+			children = (
+				468A48037A38445B9DE444E6 /* main.swift */,
+			);
+			path = UpdaterCLI;
+			sourceTree = "<group>";
+		};
+		FE2B5CB1D5924A95A452EB46 /* Control */ = {
+			isa = PBXGroup;
+			children = (
+				B1507BE189104DD0848B7A61 /* ControlProtocol.swift */,
+				75954CC973DE4753A247D989 /* ControlService.swift */,
+			);
+			path = Control;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -1186,11 +1246,13 @@
 				50290E6E1E53EB6A00133E3D /* Frameworks */,
 				50290E6F1E53EB6A00133E3D /* Resources */,
 				505062062F0DA89A00998F84 /* CopyFiles */,
+				01FE7AF5FDE34750AC83EB91 /* Embed CLI */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				505062282F0DBEF400998F84 /* PBXTargetDependency */,
+				BB9AB78CCD7643848A8CBE04 /* PBXTargetDependency */,
 			);
 			name = Latest;
 			packageProductDependencies = (
@@ -1254,6 +1316,24 @@
 			productReference = 7CCF35F698578974F2170F54 /* Latest Unit Tests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		E018E5F9C12449F697B76BFF /* UpdaterCLI */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 2832C8C1130F451EAE822FD4 /* Build configuration list for PBXNativeTarget "UpdaterCLI" */;
+			buildPhases = (
+				5BEF456B79C94E9584A10A24 /* Sources */,
+				F5FBE5D875594F2EAC9FF366 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = UpdaterCLI;
+			packageProductDependencies = (
+			);
+			productName = UpdaterCLI;
+			productReference = CBA556AC01574B8EABE38C3D /* updater */;
+			productType = "com.apple.product-type.tool";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -1275,6 +1355,9 @@
 								enabled = 0;
 							};
 						};
+					};
+					E018E5F9C12449F697B76BFF = {
+						CreatedOnToolsVersion = 26.2;
 					};
 					505062102F0DBE5900998F84 = {
 						CreatedOnToolsVersion = 26.2;
@@ -1341,6 +1424,7 @@
 			targets = (
 				ED583133EE9A695EFBE0819C /* Latest Unit Tests */,
 				50290E701E53EB6A00133E3D /* Latest */,
+				E018E5F9C12449F697B76BFF /* UpdaterCLI */,
 				505062102F0DBE5900998F84 /* UpdateInstaller */,
 				50C81D681FBADC5900324C2E /* Latest Tests */,
 			);
@@ -1352,6 +1436,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B8E03E01EF81414E9113D4B0 /* mcp in Resources */,
 				5050622A2F0DBFD300998F84 /* UpdaterInstaller in Resources */,
 				50BC19E328230D41005945E8 /* InfoPlist.strings in Resources */,
 				50290E791E53EB6A00133E3D /* Assets.xcassets in Resources */,
@@ -1386,6 +1471,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B7AD395C42CE481DB7225B9A /* ControlProtocol.swift in Sources */,
+				123300EE3AB2434BA961C774 /* ControlService.swift in Sources */,
 				08F347536FF444A88C78F66C /* PermissionsSettingsView.swift in Sources */,
 				E35BDC8927964D79BA07EA94 /* MenuBarContent.swift in Sources */,
 				3D38866E04584978AE3E6FF6 /* BackgroundChecks.swift in Sources */,
@@ -1525,6 +1612,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				00E7C3B027FC4EFE8CFBA011 /* ControlTest.swift in Sources */,
 				DCD02534A0BF4D0AA3D935F8 /* AppDirectoryWatcherTest.swift in Sources */,
 				3A4C1BA1DFCA4FF1B3A82C85 /* BackgroundTest.swift in Sources */,
 				6DD7F180E6984BE6AEF9DAE3 /* VendorAdaptersTest.swift in Sources */,
@@ -1611,6 +1699,15 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		5BEF456B79C94E9584A10A24 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C10FAA75E5604C78A0647979 /* main.swift in Sources */,
+				FA14348696E34FA08D9828A6 /* ControlProtocol.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -1623,6 +1720,11 @@
 			isa = PBXTargetDependency;
 			target = 50290E701E53EB6A00133E3D /* Latest */;
 			targetProxy = 50C81D6E1FBADC5900324C2E /* PBXContainerItemProxy */;
+		};
+		BB9AB78CCD7643848A8CBE04 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = E018E5F9C12449F697B76BFF /* UpdaterCLI */;
+			targetProxy = A15BCAFB0A484CDCB34EB8E4 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -1876,7 +1978,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 9;
+				CURRENT_PROJECT_VERSION = 10;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DWARF_DSYM_FILE_NAME = "UpdaterApp.app.dSYM"; /* Sparkle ships its own Updater.app.dSYM */
@@ -1896,7 +1998,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.5.1;
+				MARKETING_VERSION = 0.6.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.juniornkanabassi.Updater";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Updater";
@@ -1919,7 +2021,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 9;
+				CURRENT_PROJECT_VERSION = 10;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DWARF_DSYM_FILE_NAME = "UpdaterApp.app.dSYM"; /* Sparkle ships its own Updater.app.dSYM */
@@ -1940,7 +2042,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.5.1;
+				MARKETING_VERSION = 0.6.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.juniornkanabassi.Updater";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Updater";
@@ -2108,6 +2210,42 @@
 			};
 			name = Release;
 		};
+		74112EF32B1248C9AC63FE31 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = M6L2VW4W5Z;
+				ENABLE_HARDENED_RUNTIME = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				OTHER_CODE_SIGN_FLAGS = "--identifier com.juniornkanabassi.Updater.cli";
+				PRODUCT_BUNDLE_IDENTIFIER = com.juniornkanabassi.Updater.cli;
+				PRODUCT_NAME = updater;
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		0CC62F92CCE743F1B4B69889 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = M6L2VW4W5Z;
+				ENABLE_HARDENED_RUNTIME = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				OTHER_CODE_SIGN_FLAGS = "--identifier com.juniornkanabassi.Updater.cli";
+				PRODUCT_BUNDLE_IDENTIFIER = com.juniornkanabassi.Updater.cli;
+				PRODUCT_NAME = updater;
+				SKIP_INSTALL = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -2152,6 +2290,15 @@
 			buildConfigurations = (
 				50C81D701FBADC5900324C2E /* Debug */,
 				50C81D711FBADC5900324C2E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		2832C8C1130F451EAE822FD4 /* Build configuration list for PBXNativeTarget "UpdaterCLI" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				74112EF32B1248C9AC63FE31 /* Debug */,
+				0CC62F92CCE743F1B4B69889 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

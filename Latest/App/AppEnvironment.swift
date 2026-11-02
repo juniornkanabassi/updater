@@ -25,6 +25,8 @@ final class AppEnvironment: ObservableObject {
   private var notifications: UpdateNotificationController?
   private let coordinator: any UpdateCheckCoordinating
   private let settings: any AppListSettingsProviding
+  private let updating: any AppUpdating
+  private var control: (service: ControlService, server: ControlServer)?
 
   init(
     searchFocusController: SearchFocusController = SearchFocusController(),
@@ -66,6 +68,7 @@ final class AppEnvironment: ObservableObject {
 
     self.searchFocusController = searchFocusController
     self.coordinator = coordinator
+    self.updating = updating
     self.settings = settings
     self.updateCheckingService = updateCheckingService
     self.updatesListViewModel = updatesListViewModel
@@ -115,6 +118,7 @@ final class AppEnvironment: ObservableObject {
     }
     menuBar.startObserving()
     checks.start()
+    startControlServer()
     startupTask?.cancel()
     startupTask = Task {
       await AppStartupSequence.run(
@@ -130,9 +134,36 @@ final class AppEnvironment: ObservableObject {
     backgroundChecks?.stop()
     backgroundChecks = nil
     coordinator.checkCompletion = nil
+    control?.server.stop()
+    control = nil
     menuBar.stopObserving()
     updatesListViewModel.stopObserving()
     updateCheckingService.stopReportingProgress()
+  }
+}
+
+extension AppEnvironment {
+  /// The `updater` CLI and the MCP server talk to this socket; it reuses the window's services.
+  fileprivate func startControlServer() {
+    let checking = updateCheckingService
+    let service = ControlService(
+      .init(
+        apps: { [coordinator] in coordinator.appProvider.apps },
+        isChecking: { checking.isRunning },
+        startCheck: { checking.checkForUpdates(hardRefresh: $0) },
+        updateAllCandidates: { checking.updateAllCandidates },
+        updateAll: { checking.updateAll() },
+        updating: updating,
+        history: .shared))
+    do {
+      let server = try ControlServer(path: ControlPaths.socket) { request in
+        await service.handle(request)
+      }
+      control = (service, server)
+    } catch {
+      // Another copy already answers, or the folder is unusable; the window still works.
+      NSLog("Updater control socket not started: \(error)")
+    }
   }
 }
 
