@@ -38,7 +38,9 @@ final class AppUpdateService: AppUpdating {
     guard app.isActionable, !isUpdating(app) else { return }
     guard !isBulkUpdate || app.capability.isAutomatic else { return }
     app.updateAction?.perform(with: app.bundle, isBulkUpdate: isBulkUpdate)
-    if app.capability == .handOff { queue.recordHandOff(of: app) }
+    // Being left out of Update All is not the same as handing off: Chrome's relaunch is a
+    // queued job that records its own outcome.
+    if app.capability == .handOff, !app.relaunchesToUpdate { queue.recordHandOff(of: app) }
   }
   func cancel(_ app: App) { queue.cancelUpdate(for: app.identifier) }
   @MainActor func retryTermination(_ app: App) {

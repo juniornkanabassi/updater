@@ -65,11 +65,19 @@ final class VendorToolOperation: UpdateOperation, @unchecked Sendable {
             at: self.appIdentifier,
             name: self.appIdentifier.deletingPathExtension().lastPathComponent))
       } catch is CancellationError {
+        // A declined quit is a cancel: nothing is recorded.
+        self.cancel()
         return self.finish()
       } catch {
         return self.finish(with: error)
       }
       do { try self.protection.takeClone() } catch {
+        self.outcomeOverride = .handedOff
+        return self.finish()
+      }
+      // The quit prompt can wait on the user for a long time: check the target again right
+      // before the vendor tool runs. finish() discards the clone and reopens the app.
+      guard await self.inScope() else {
         self.outcomeOverride = .handedOff
         return self.finish()
       }

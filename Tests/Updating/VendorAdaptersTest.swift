@@ -386,6 +386,150 @@ final class VendorAdaptersTest: XCTestCase {
     XCTAssertFalse(scoped, "rechecked right before the install")
   }
 
+  /// Sol R3-101: the registration and duplicate check runs again after the quit and the
+  /// clone, right before msupdate. A duplicate appearing during the quit prompt means a
+  /// hand-off, no MAU install, the clone discarded and the app reopened.
+  func testScopeIsRecheckedAfterQuitBeforeMsupdate() async throws {
+    let setup = try microsoftSetup()
+    let second = try FixtureApp.make(in: setup.root.appendingPathComponent("Copy"), version: "1.0")
+    let bundle = try XCTUnwrap(BundleCollector.collectBundle(at: setup.app))
+    let microsoft = setup.microsoft
+    let tool = setup.tool
+    let running = Mutex(true)
+    let reopens = Mutex(0)
+    let operation = VendorToolOperation(
+      app: bundle, lock: "msupdate", expectedVersion: nil,
+      inScope: {
+        await VendorAdapters.microsoftScope(
+          microsoft, appID: "FIXTURE01", app: bundle.fileURL,
+          bundleIdentifier: bundle.bundleIdentifier, copies: { _ in [] })
+      },
+      install: { try await microsoft.install("FIXTURE01") })
+    operation.lifecycle = AppLifecycle(
+      runningApps: { _ in
+        running.withLock { $0 }
+          ? [
+            .init(
+              terminate: { running.withLock { $0 = false } },
+              isTerminated: { !running.withLock { $0 } })
+          ]
+          : []
+      },
+      confirmQuit: { _ in
+        // While the user reads the quit prompt, MAU registers a second copy with the same ID.
+        try? tool.register([bundle.fileURL: "FIXTURE01", second: "FIXTURE01"], updates: [:])
+        return true
+      },
+      reopen: { _ in reopens.withLock { $0 += 1 } })
+    operation.requiresTeam = false
+    let before = try FixtureApp.digest(setup.app)
+    _ = try await run(operation, history: setup.history, app: setup.app)
+    XCTAssertEqual(operation.outcomeOverride, .handedOff)
+    XCTAssertFalse(setup.tool.calls().contains { $0.arguments.hasPrefix("--install") })
+    XCTAssertEqual(try FixtureApp.digest(setup.app), before)
+    for _ in 0..<100 where reopens.withLock({ $0 }) == 0 {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    XCTAssertEqual(reopens.withLock { $0 }, 1, "the quit app is reopened")
+  }
+
+  /// Sol R3-102: a stalled folder walk hits the shared deadline and counts as unsafe: a
+  /// hand-off, and no installer runs.
+  func testStalledCopyWalkIsUnsafe() async throws {
+    let setup = try microsoftSetup()
+    let bundle = try XCTUnwrap(BundleCollector.collectBundle(at: setup.app))
+    let stalled: @Sendable (String) throws -> Set<String> = { _ in
+      Thread.sleep(forTimeInterval: 2)
+      return []
+    }
+    var vendors = VendorAdapters(microsoft: setup.microsoft, copies: stalled)
+    vendors.copiesDeadline = .milliseconds(200)
+    let start = ContinuousClock.now
+    let update = try await vendors.update(for: bundle)
+    XCTAssertLessThan(ContinuousClock.now - start, .seconds(1.5), "answered at the deadline")
+    XCTAssertEqual(
+      App(bundle: bundle, update: update.map { .success($0) }, isIgnored: false).capability,
+      .handOff)
+    let microsoft = setup.microsoft
+    let operation = VendorToolOperation(
+      app: bundle, lock: "msupdate", expectedVersion: nil,
+      inScope: {
+        await VendorAdapters.microsoftScope(
+          microsoft, appID: "FIXTURE01", app: bundle.fileURL,
+          bundleIdentifier: bundle.bundleIdentifier, copies: stalled, deadline: .milliseconds(200))
+      },
+      install: { try await microsoft.install("FIXTURE01") })
+    operation.lifecycle = .notRunning
+    operation.requiresTeam = false
+    _ = try await run(operation, history: setup.history, app: setup.app)
+    XCTAssertEqual(operation.outcomeOverride, .handedOff)
+    XCTAssertFalse(setup.tool.calls().contains { $0.arguments.hasPrefix("--install") })
+  }
+
+  /// Sol R3-103: enqueueing Chrome's relaunch records no hand-off; only the job's own outcome
+  /// is recorded, and a declined quit is a cancel that leaves an earlier failure in place.
+  @MainActor
+  func testChromeRelaunchRecordsOnlyItsOwnOutcome() async throws {
+    let root = try disposableDirectory()
+    let chrome = try chromeFixture(root)
+    let bundle = try XCTUnwrap(BundleCollector.collectBundle(at: chrome))
+    let history = UpdateHistoryStore(fileURL: root.appendingPathComponent("history.jsonl"))
+    history.record(
+      UpdateHistoryEntry(
+        before: bundle, after: bundle, outcome: .failed(reason: "earlier failure", logPath: nil)))
+    let queue = UpdateQueue(history: history)
+    let accept = Mutex(false)
+    let done = Mutex(0)
+    let lifecycle: AppLifecycle = {
+      var lifecycle = AppLifecycle(
+        runningApps: { _ in [.init(terminate: {}, isTerminated: { true })] },
+        confirmQuit: { _ in accept.withLock { $0 } }, reopen: { _ in })
+      lifecycle.launch = { _ in }
+      return lifecycle
+    }()
+    let app = App(
+      bundle: bundle,
+      update: .success(
+        App.Update(
+          app: bundle, remoteVersion: Version(versionNumber: "1.1", buildNumber: nil),
+          minimumOSVersion: nil, source: .vendor, date: nil, releaseNotes: nil,
+          updateAction: .relaunch { target in
+            let operation = ChromeRelaunchOperation(app: target)
+            operation.lifecycle = lifecycle
+            operation.settleTime = .milliseconds(100)
+            operation.completionBlock = { done.withLock { $0 += 1 } }
+            queue.addOperation(operation)
+          })),
+      isIgnored: false)
+    let service = AppUpdateService(queue: queue)
+
+    service.update(app)  // the user declines the quit prompt
+    XCTAssertNotEqual(
+      history.latestEntry(for: chrome)?.outcome, .handedOff, "nothing recorded at enqueue")
+    for _ in 0..<200 where done.withLock({ $0 }) < 1 {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    try await Task.sleep(for: .milliseconds(100))
+    XCTAssertEqual(
+      history.latestEntry(for: chrome)?.outcome, .failed(reason: "earlier failure", logPath: nil),
+      "a declined quit records nothing")
+
+    accept.withLock { $0 = true }
+    service.update(app)
+    for _ in 0..<200 where done.withLock({ $0 }) < 2 {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    for _ in 0..<100
+    where history.latestEntry(for: chrome)?.outcome
+      == .failed(reason: "earlier failure", logPath: nil)
+    {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    XCTAssertEqual(
+      history.latestEntry(for: chrome)?.outcome,
+      .noChange(reason: "Chrome hasn't downloaded the update yet."), "the job's own outcome")
+  }
+
   func testRefusedQuitRunsNoVendorTool() async throws {
     let setup = try microsoftSetup()
     let refusing = AppLifecycle(

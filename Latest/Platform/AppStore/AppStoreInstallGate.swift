@@ -29,8 +29,7 @@ struct AppStoreInstallGate: Sendable {
     // One deadline covers every probe. The answer is taken once: a probe finishing after
     // the deadline cannot turn a hand-off into an install.
     let id = bundleIdentifier
-    return await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
-      let answer = ResumeOnce(continuation)
+    return await Self.answer(within: deadline) { answer in
       // The walk and LaunchServices block, so they run on a GCD thread, not the actor pool.
       DispatchQueue.global(qos: .userInitiated).async {
         // 2. A direct walk finds no other copy. 3. LaunchServices agrees.
@@ -38,19 +37,32 @@ struct AppStoreInstallGate: Sendable {
           (try? walk(id)) == [target.path]
           && (try? launchServicesURLs(id)).map { Set($0.map(\.standardizedFileURL.path)) }
             == [target.path]
-        guard local else { return answer.resume(false) }
+        guard local else { return answer(false) }
         Task {
           // 3. Spotlight agrees. 4. It is indexing, so an absent result is meaningful.
           let spotlight = (try? await spotlightURLs(id)).map {
             Set($0.map(\.standardizedFileURL.path))
           }
           let indexing = (try? await indexingEnabled()) == true
-          answer.resume(spotlight == [target.path] && indexing)
+          answer(spotlight == [target.path] && indexing)
         }
       }
-      Task { [deadline] in
+    }
+  }
+
+  /// One answer within `deadline`: `probe` gets a callback that takes only its first value;
+  /// at the deadline the answer is false, and a late value cannot change it. Shared by every
+  /// safety probe that may block (the App Store gate, the vendor folder walk).
+  static func answer(
+    within deadline: Duration,
+    _ probe: @escaping @Sendable (@escaping @Sendable (Bool) -> Void) -> Void
+  ) async -> Bool {
+    await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+      let once = ResumeOnce(continuation)
+      probe { once.resume($0) }
+      Task {
         try? await Task.sleep(for: deadline)
-        answer.resume(false)
+        once.resume(false)
       }
     }
   }

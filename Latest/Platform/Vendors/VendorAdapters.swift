@@ -10,6 +10,8 @@ struct VendorAdapters: Sendable {
   var adobe: AdobeCreativeCloud?
   /// The shared folder walk for other copies of a bundle ID.
   var copies: @Sendable (String) throws -> Set<String> = { try AppStoreInstallGate.live.walk($0) }
+  /// The walk's time limit; past it the app is treated as unsafe and handed off.
+  var copiesDeadline: Duration = .seconds(10)
   static let live = VendorAdapters(microsoft: .shared, google: .shared, adobe: .live)
   static let none = VendorAdapters()
 
@@ -30,7 +32,9 @@ struct VendorAdapters: Sendable {
       if let registration {
         let remote = try await microsoft.availableVersion(of: registration.identifier)
         guard case .unique(let appID) = registration,
-          Self.isOnlyCopy(bundle.fileURL, bundleIdentifier: bundle.bundleIdentifier, copies: copies)
+          await Self.isOnlyCopy(
+            bundle.fileURL, bundleIdentifier: bundle.bundleIdentifier, copies: copies,
+            deadline: copiesDeadline)
         else {
           // `msupdate --install --apps <ID>` has no path: with two copies it could update either.
           return Self.handOff(bundle, remote: remote, label: "Microsoft AutoUpdate") {
@@ -45,10 +49,10 @@ struct VendorAdapters: Sendable {
           bundle, remote: remote, lock: "msupdate",
           waitingStatus: "Waiting for Microsoft AutoUpdate to finish",
           vendorIsIdle: { await microsoft.assistantIsIdle() }
-        ) { [copies] app in
+        ) { [copies, copiesDeadline] app in
           await Self.microsoftScope(
             microsoft, appID: appID, app: app, bundleIdentifier: bundle.bundleIdentifier,
-            copies: copies)
+            copies: copies, deadline: copiesDeadline)
         } install: {
           try await microsoft.install(appID)
         }
@@ -97,22 +101,33 @@ struct VendorAdapters: Sendable {
       })
   }
 
-  /// Checked when the capability is decided and again right before the install.
+  /// Checked when the capability is decided, and again after the quit and the clone, right
+  /// before msupdate runs.
   static func microsoftScope(
     _ microsoft: MicrosoftAutoUpdate, appID: String, app: URL, bundleIdentifier: String,
-    copies: @Sendable (String) throws -> Set<String>
+    copies: @escaping @Sendable (String) throws -> Set<String>, deadline: Duration = .seconds(10)
   ) async -> Bool {
-    (try? await microsoft.registration(for: app, fresh: true)) == .unique(appID)
-      && isOnlyCopy(app, bundleIdentifier: bundleIdentifier, copies: copies)
+    guard (try? await microsoft.registration(for: app, fresh: true)) == .unique(appID) else {
+      return false
+    }
+    return await isOnlyCopy(
+      app, bundleIdentifier: bundleIdentifier, copies: copies, deadline: deadline)
   }
 
-  /// No other copy of the bundle ID on disk; an unreadable walk fails closed.
+  /// No other copy of the bundle ID on disk. The walk runs on its own thread under the
+  /// shared bounded wrapper: unreadable or too slow means unsafe.
   static func isOnlyCopy(
-    _ app: URL, bundleIdentifier: String, copies: (String) throws -> Set<String>
-  ) -> Bool {
-    guard let found = try? copies(bundleIdentifier) else { return false }
+    _ app: URL, bundleIdentifier: String,
+    copies: @escaping @Sendable (String) throws -> Set<String>,
+    deadline: Duration
+  ) async -> Bool {
     let selected = Homebrew.canonical(app)
-    return found.allSatisfy { Homebrew.canonical(URL(fileURLWithPath: $0)) == selected }
+    return await AppStoreInstallGate.answer(within: deadline) { answer in
+      DispatchQueue.global(qos: .userInitiated).async {
+        guard let found = try? copies(bundleIdentifier) else { return answer(false) }
+        answer(found.allSatisfy { Homebrew.canonical(URL(fileURLWithPath: $0)) == selected })
+      }
+    }
   }
 
   private static func handOff(

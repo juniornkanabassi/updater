@@ -98,6 +98,8 @@ final class ChromeRelaunchOperation: UpdateOperation, @unchecked Sendable {
           at: self.appIdentifier, name: self.appIdentifier.deletingPathExtension().lastPathComponent
         )
       } catch is CancellationError {
+        // A declined quit is a cancel: no outcome, and an earlier failure stays as it was.
+        self.cancel()
         return self.finish()
       } catch {
         return self.finish(with: error)
