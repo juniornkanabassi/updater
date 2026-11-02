@@ -302,7 +302,8 @@ final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
   /// Takes Updater's clone outside the normal flow; for tests of the install phase.
   /// The helper's PackageKit install is the writer; it is asked whether it is idle.
   func takeBackup() throws {
-    try protection.takeClone(mechanism: "appStore", lockKey: lockKey, writer: .helper)
+    try protection.takeClone(
+      mechanism: "appStore", lockKey: lockKey, writer: .helper, expected: expectedVersion)
   }
 
   @MainActor func installThroughHelper(_ package: URL, receipt: Data) async {

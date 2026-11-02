@@ -82,7 +82,8 @@ final class VendorToolOperation: UpdateOperation, @unchecked Sendable {
         : TransactionJournal.writer()
       do {
         try self.protection.takeClone(
-          mechanism: "vendorTool:" + self.lock, lockKey: self.lock, writer: writer)
+          mechanism: "vendorTool:" + self.lock, lockKey: self.lock, writer: writer,
+          expected: self.expectedVersion)
       } catch {
         self.recordHandOff(
           to: self.vendorUpdater, because: "Updater could not make its safety copy of the app.")

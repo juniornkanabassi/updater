@@ -279,7 +279,7 @@ actor Homebrew {
 
   /// `brew upgrade --cask <token>` with its output in a per-run log. Throws a plain reason
   /// and the log path on failure; a sudo prompt fails at once because stdin is closed.
-  func upgrade(_ token: String, onStart: @escaping @Sendable (Int32) -> Void = { _ in })
+  func upgrade(_ token: String, onStart: @escaping @Sendable (Int32) throws -> Void = { _ in })
     async throws
     -> URL
   {
@@ -337,11 +337,11 @@ actor Homebrew {
 
   /// brew is never interrupted: the job waits for it to exit, holding its lock.
   private func run(
-    _ arguments: [String], log: URL, onStart: @escaping @Sendable (Int32) -> Void = { _ in }
+    _ arguments: [String], log: URL, onStart: @escaping @Sendable (Int32) throws -> Void = { _ in }
   ) async throws -> Int32 {
     let (brew, env) = (try requireBrew(), processEnvironment)
     return try await serialized {
-      try await ToolProcess.run(brew, arguments, log: log, environment: env, onStart: onStart)
+      try await ToolProcess.run(brew, arguments, log: log, environment: env, beforeStart: onStart)
     }
   }
 

@@ -17,33 +17,55 @@ enum ToolProcess {
     return directory.appendingPathComponent("\(name)-\(stamp)-\(UUID().uuidString.prefix(8)).log")
   }
 
+  /// The child starts suspended; `beforeStart` (journaling its PID, say) runs first, and if it
+  /// throws the child is killed before it executed a single instruction of the tool.
   static func run(
     _ executable: URL, _ arguments: [String], log: URL, environment: [String: String] = [:],
-    onStart: @escaping @Sendable (Int32) -> Void = { _ in }
+    beforeStart: @escaping @Sendable (Int32) throws -> Void = { _ in }
   ) async throws -> Int32 {
     guard geteuid() != 0 else { throw RootRefused() }
     FileManager.default.createFile(atPath: log.path, contents: nil)
-    let handle = try FileHandle(forWritingTo: log)
-    defer { try? handle.close() }
-    let process = Process()
-    process.executableURL = executable
-    process.arguments = arguments
     var env = ProcessInfo.processInfo.environment
     env["SUDO_ASKPASS"] = nil
     env.merge(environment) { _, new in new }
-    process.environment = env
-    process.standardInput = FileHandle.nullDevice
-    process.standardOutput = handle
-    process.standardError = handle
-    return try await withCheckedThrowingContinuation { continuation in
-      process.terminationHandler = { continuation.resume(returning: $0.terminationStatus) }
-      do {
-        try process.run()
-        onStart(process.processIdentifier)
-      } catch {
-        process.terminationHandler = nil
-        continuation.resume(throwing: error)
-      }
+
+    var actions: posix_spawn_file_actions_t?
+    posix_spawn_file_actions_init(&actions)
+    defer { posix_spawn_file_actions_destroy(&actions) }
+    posix_spawn_file_actions_addopen(&actions, 0, "/dev/null", O_RDONLY, 0)
+    posix_spawn_file_actions_addopen(&actions, 1, log.path, O_WRONLY | O_APPEND, 0o644)
+    posix_spawn_file_actions_adddup2(&actions, 1, 2)
+    var attributes: posix_spawnattr_t?
+    posix_spawnattr_init(&attributes)
+    defer { posix_spawnattr_destroy(&attributes) }
+    posix_spawnattr_setflags(
+      &attributes, Int16(POSIX_SPAWN_START_SUSPENDED | POSIX_SPAWN_CLOEXEC_DEFAULT))
+
+    let argv = ([executable.path] + arguments).map { strdup($0) } + [nil]
+    let envp = env.map { strdup("\($0.key)=\($0.value)") } + [nil]
+    defer { (argv + envp).forEach { free($0) } }
+    var pid: pid_t = 0
+    let spawned = posix_spawn(&pid, executable.path, &actions, &attributes, argv, envp)
+    guard spawned == 0 else { throw POSIXError(POSIXErrorCode(rawValue: spawned) ?? .EIO) }
+    do {
+      try beforeStart(pid)
+    } catch {
+      kill(pid, SIGKILL)
+      _ = reap(pid)
+      throw error
     }
+    kill(pid, SIGCONT)
+    // Never killed part way: wait for it, off the cooperative pool.
+    return await withCheckedContinuation { continuation in
+      DispatchQueue.global(qos: .utility).async { continuation.resume(returning: reap(pid)) }
+    }
+  }
+
+  /// Exit code, or the signal number for a signalled child (as Process reports it).
+  private static func reap(_ pid: pid_t) -> Int32 {
+    var status: Int32 = 0
+    while waitpid(pid, &status, 0) == -1 && errno == EINTR {}
+    let low = status & 0x7f
+    return low == 0 ? (status >> 8) & 0xff : low
   }
 }

@@ -40,6 +40,14 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
   /// can be looked up after it finishes. Bounded; guarded by the index lock.
   private var finishedJobs = [String: UpdateJobRecord]()
   private var finishedOrder = [String]()
+  /// Jobs held back because a recovery record cannot be read: by target, by tool, or all when
+  /// the scope is unknown. They wait on a dependency that never finishes (no slot used).
+  private var heldTargets = Set<String>()
+  private var heldLocks = Set<String>()
+  private var holdsEverything = false
+  private var holdReasons = [String]()
+  private let holdBarrier = BlockOperation {}
+
   /// Unfinished jobs by id, kept until their record replaces them in one step, so a job id
   /// never stops resolving between `isFinished` and the completion block.
   private var jobsByID = [String: UpdateOperation]()
@@ -65,6 +73,19 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
   func jobID(for identifier: App.Bundle.Identifier) -> String? {
     operation(for: identifier)?.jobID
   }
+
+  /// Holds every later job on this target or tool (or every job, with neither) until relaunch.
+  func hold(target: String?, lockKey: String?, reason: String) {
+    operationIndexLock.withLock {
+      if let target { heldTargets.insert(URL(fileURLWithPath: target).standardizedFileURL.path) }
+      if let lockKey { heldLocks.insert(lockKey) }
+      if target == nil && lockKey == nil { holdsEverything = true }
+      holdReasons.append(reason)
+    }
+  }
+
+  /// Why jobs are held, for status reports.
+  var heldBecause: [String] { operationIndexLock.withLock { holdReasons } }
 
   /// A job by id: running or waiting (its current state), or finished (how it ended).
   func job(withID id: String) -> UpdateJob? {
@@ -154,10 +175,10 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
   private func resolveOutcome(of operation: UpdateOperation, before: App.Bundle?) -> UpdateOutcome?
   {
     let after = readBundle(operation.appIdentifier)
-    // A recovery job may start with the target missing; its outcome is set by itself.
-    guard let before = before ?? (operation.outcomeOverride != nil ? after : nil) else {
-      return nil
-    }
+    // A recovery job may start with the target missing, or find neither copy readable; its
+    // outcome is set by itself and its record of the app stands in.
+    let fallback = operation.outcomeOverride != nil ? (after ?? operation.recordedIdentity) : nil
+    guard let before = before ?? fallback else { return nil }
     guard let outcome = Self.outcome(of: operation, before: before, after: after) else {
       return nil
     }
@@ -327,6 +348,11 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
 
       operationsByIdentifier[operation.appIdentifier] = operation
       jobsByID[operation.jobID] = operation
+      if holdsEverything || heldLocks.contains(operation.lockKey)
+        || heldTargets.contains(operation.appIdentifier.standardizedFileURL.path)
+      {
+        operation.addDependency(holdBarrier)
+      }
       let holders = (operationsByLock[operation.lockKey] ?? []).filter { !$0.isFinished }
       holders.forEach(operation.addDependency)
       operationsByLock[operation.lockKey] = holders + [operation]

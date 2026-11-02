@@ -77,6 +77,14 @@ class UpdateOperation: StatefulOperation, @unchecked Sendable {
     }
   }
 
+  private let identityStorage = Mutex<App.Bundle?>(nil)
+  /// What history records when the bundle cannot be read at all (a recovery whose volume is
+  /// gone, say); taken from the job's own record of the app.
+  var recordedIdentity: App.Bundle? {
+    get { identityStorage.withLock { $0 } }
+    set { identityStorage.withLock { $0 = newValue } }
+  }
+
   private let resolvedStorage = Mutex<UpdateOutcome?>(nil)
   /// The outcome the scheduler recorded as the job finished, if any.
   var resolvedOutcome: UpdateOutcome? { resolvedStorage.withLock { $0 } }

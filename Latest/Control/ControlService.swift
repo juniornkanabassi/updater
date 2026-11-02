@@ -17,6 +17,8 @@ final class ControlService {
     var updateAll: @MainActor () -> Void
     var updating: any AppUpdating
     var history: UpdateHistoryStore?
+    /// Why the scheduler holds jobs back (an unreadable recovery record).
+    var heldBecause: @MainActor () -> [String] = { UpdateQueue.shared.heldBecause }
     /// How long a command waits for readiness before answering not_ready.
     var readinessWait: Duration = .seconds(20)
   }
@@ -208,12 +210,13 @@ final class ControlService {
         dependencies.updating.jobID(for: $0.identifier)
       }
       let recent = startedHere.suffix(20).reversed().filter { !active.contains($0) }
-      return ControlResponse(
-        ok: true,
-        data: [
-          "checking": .bool(dependencies.isChecking()), "updatesAvailable": JSONValue(waiting),
-          "jobs": .array((active + recent).compactMap(describeJob)),
-        ])
+      var data: [String: JSONValue] = [
+        "checking": .bool(dependencies.isChecking()), "updatesAvailable": JSONValue(waiting),
+        "jobs": .array((active + recent).compactMap(describeJob)),
+      ]
+      let held = dependencies.heldBecause()
+      if !held.isEmpty { data["held"] = .array(held.map(JSONValue.string)) }
+      return ControlResponse(ok: true, data: data)
     }
     guard let job = describeJob(jobID) else {
       return .failure("not_found", "No job \(jobID) since Updater started.")

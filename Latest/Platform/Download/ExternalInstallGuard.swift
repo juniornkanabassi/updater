@@ -43,7 +43,7 @@ final class ExternalInstallGuard: Sendable {
   /// together with the app. `writer` is whoever may change the target from now on.
   func takeClone(
     companions: [URL] = [], mechanism: String = "external", lockKey: String = "",
-    writer: TransactionRecord.Writer = TransactionJournal.writer()
+    writer: TransactionRecord.Writer = TransactionJournal.writer(), expected: Version? = nil
   ) throws {
     let directory = try journal.backupDirectory(for: target, id: UUID().uuidString)
     do {
@@ -61,7 +61,8 @@ final class ExternalInstallGuard: Sendable {
         companions: saved.map { .init(live: $0.live.path, saved: $0.saved.path) },
         bundleIdentifier: original.bundleIdentifier, teamIdentifier: original.teamIdentifier,
         originalVersion: original.shortVersion, originalBuild: original.bundleVersion,
-        expectedVersion: nil, phase: .external, mechanism: "clone:" + mechanism, writer: writer,
+        expectedVersion: expected?.versionNumber, expectedBuild: expected?.buildNumber,
+        phase: .external, mechanism: "clone:" + mechanism, writer: writer,
         lockKey: lockKey.isEmpty ? "target:" + target.path : lockKey)
       try journal.write(entry)
       record.withLock { $0 = entry }
@@ -72,15 +73,26 @@ final class ExternalInstallGuard: Sendable {
     }
   }
 
-  /// Records who now may change the target (the brew process that started, say).
-  func noteWriter(_ writer: TransactionRecord.Writer) {
-    guard
-      let entry = record.withLock({ value -> TransactionRecord? in
-        value?.writer = writer
-        return value
-      })
-    else { return }
-    try? journal.write(entry)
+  /// Records who now may change the target (the brew process that started, say). A failed
+  /// write throws: the caller must not start that writer.
+  func noteWriter(_ writer: TransactionRecord.Writer) throws {
+    try update { $0.writer = writer }
+  }
+
+  /// Records the version the installer promised once it is known (Sparkle's item), before
+  /// the installer can change anything.
+  func noteExpected(_ version: Version?) throws {
+    try update {
+      $0.expectedVersion = version?.versionNumber
+      $0.expectedBuild = version?.buildNumber
+    }
+  }
+
+  private func update(_ change: (inout TransactionRecord) -> Void) throws {
+    guard var entry = record.withLock({ $0 }) else { return }
+    change(&entry)
+    try journal.write(entry)
+    record.withLock { $0 = entry }
   }
 
   private func settled() {

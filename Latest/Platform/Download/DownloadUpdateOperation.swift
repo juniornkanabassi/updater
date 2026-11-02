@@ -42,14 +42,16 @@ class DownloadUpdateOperation: UpdateOperation, @unchecked Sendable {
 
   func performUpdate() async throws { fatalError("Subclasses must implement performUpdate") }
 
-  func download(from url: URL, into directory: URL, maximumSize: Int = 8 * 1_024 * 1_024 * 1_024)
-    async throws -> URL
-  {
+  func download(
+    from url: URL, into directory: URL, maximumSize: Int = 8 * 1_024 * 1_024 * 1_024,
+    allowedDomain: String? = nil
+  ) async throws -> URL {
     guard url.scheme == "https" || Self.allowsLoopbackHTTP(url) else {
       throw AppDownloadError.invalidMetadata
     }
     progressState = .downloading(loadedSize: 0, totalSize: 0)
-    let delegate = BoundedDownloadDelegate(maximumSize: maximumSize) { [weak self] loaded, total in
+    let delegate = BoundedDownloadDelegate(maximumSize: maximumSize, allowedDomain: allowedDomain) {
+      [weak self] loaded, total in
       self?.progressState = .downloading(loadedSize: loaded, totalSize: total)
     }
     let archive = directory.appendingPathComponent("download." + url.pathExtension.lowercased())
@@ -64,6 +66,7 @@ class DownloadUpdateOperation: UpdateOperation, @unchecked Sendable {
     guard !delegate.exceededLimit,
       (response as? HTTPURLResponse)?.statusCode == 200,
       response.url?.scheme == "https" || response.url.map(Self.allowsLoopbackHTTP) == true,
+      response.url.map(delegate.allows) ?? false,
       (try archive.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? Int.max) <= maximumSize
     else { throw AppDownloadError.invalidDownload }
     try Task.checkCancellation()
@@ -111,7 +114,8 @@ class DownloadUpdateOperation: UpdateOperation, @unchecked Sendable {
       bundleIdentifier: original?.bundleIdentifier ?? app.bundleIdentifier,
       teamIdentifier: original?.teamIdentifier, originalVersion: original?.shortVersion,
       originalBuild: original?.bundleVersion,
-      expectedVersion: expectedVersion?.versionNumber, phase: .prepared, mechanism: "replace",
+      expectedVersion: expectedVersion?.versionNumber, expectedBuild: expectedVersion?.buildNumber,
+      phase: .prepared, mechanism: "replace",
       writer: TransactionJournal.writer(), lockKey: lockKey)
     let journal = self.journal
     do {
@@ -162,6 +166,7 @@ class DownloadUpdateOperation: UpdateOperation, @unchecked Sendable {
 /// Content-Length. The final file-size check also covers a last callback race.
 final class BoundedDownloadDelegate: NSObject, URLSessionDownloadDelegate, Sendable {
   private let maximumSize: Int64
+  private let allowedDomain: String?
   private let progress: @Sendable (Int64, Int64) -> Void
   var exceededLimit: Bool { transfer.withLock { $0.exceededLimit } }
 
@@ -174,9 +179,32 @@ final class BoundedDownloadDelegate: NSObject, URLSessionDownloadDelegate, Senda
   }
   private let transfer = Mutex(Transfer())
 
-  init(maximumSize: Int, progress: @escaping @Sendable (Int64, Int64) -> Void) {
+  init(
+    maximumSize: Int, allowedDomain: String? = nil,
+    progress: @escaping @Sendable (Int64, Int64) -> Void
+  ) {
     self.maximumSize = Int64(maximumSize)
+    self.allowedDomain = allowedDomain
     self.progress = progress
+  }
+
+  /// HTTPS (or the Debug loopback) and, when a domain family is set, inside it.
+  func allows(_ url: URL) -> Bool {
+    guard url.scheme == "https" || DownloadUpdateOperation.allowsLoopbackHTTP(url) else {
+      return false
+    }
+    guard let allowedDomain else { return true }
+    return url.host().map(CatalogueInstall.registrableDomain) == allowedDomain
+  }
+
+  /// A redirect out of the permitted family is refused: the 3xx itself becomes the answer,
+  /// which is not a 200, so the download fails.
+  func urlSession(
+    _ session: URLSession, task: URLSessionTask,
+    willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
+    completionHandler: @escaping @Sendable (URLRequest?) -> Void
+  ) {
+    completionHandler(request.url.map(allows) == true ? request : nil)
   }
 
   /// Async download convenience APIs use a completion handler and omit the

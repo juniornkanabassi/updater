@@ -87,6 +87,7 @@ final class AppEnvironment: ObservableObject {
   }
 
   private var launchObserver: NSObjectProtocol?
+  private var volumeObserver: NSObjectProtocol?
 
   /// Background checks and the menu bar run whether or not the window opens or stays open.
   static func live() -> AppEnvironment {
@@ -102,7 +103,11 @@ final class AppEnvironment: ObservableObject {
     guard backgroundChecks == nil else { return }
     // Interrupted updates first: their targets and tools are held in the scheduler until put
     // right, before the window, the CLI or MCP can submit anything.
-    _ = RecoveryOperation.enqueuePending(from: .shared, into: .shared)
+    RecoveryOperation.enqueuePending(from: .shared, into: .shared)
+    // Records left unresolved (a volume that was not attached) are tried again when it is.
+    volumeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+      forName: NSWorkspace.didMountNotification, object: nil, queue: .main
+    ) { _ in RecoveryOperation.enqueuePending(from: .shared, into: .shared) }
     MigrationTelemetry.shared.applicationStarted()
     updateCheckingService.startReportingProgress()
     updatesListViewModel.startObserving()

@@ -149,6 +149,12 @@ extension SparkleUpdateOperation: SPUUserDriver {
   ) {
     expectedVersion = Version(
       versionNumber: appcastItem.displayVersionString, buildNumber: appcastItem.versionString)
+    // Journaled before Sparkle may install; if that fails, nothing is installed.
+    do { try protection.noteExpected(expectedVersion) } catch {
+      reply(.dismiss)
+      finish(with: error)
+      return
+    }
     // The feed may have turned informational since the check: never reply .install.
     if appcastItem.isInformationOnlyUpdate {
       reply(.dismiss)

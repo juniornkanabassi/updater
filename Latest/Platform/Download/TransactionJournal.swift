@@ -42,13 +42,25 @@ struct TransactionRecord: Codable, Equatable, Sendable {
   let teamIdentifier: String?
   let originalVersion: String?
   let originalBuild: String?
+  /// The version the route promised (number and build), recorded before the change or as
+  /// soon as it is known; recovery accepts a new version only if it reaches this.
   var expectedVersion: String?
+  var expectedBuild: String? = nil
   var phase: Phase
   /// "replace" (Updater moves bundles itself) or "clone:<installer>".
   let mechanism: String
   var writer: Writer
   /// The scheduler lock of the job, so recovery holds back jobs on the same tool.
   let lockKey: String
+  /// Recovery's own progress, so a crash during recovery resumes where it stopped.
+  var recovery: RecoveryProgress? = nil
+
+  struct RecoveryProgress: Codable, Equatable, Sendable {
+    enum Decision: String, Codable, Sendable { case restore, keepNew, unchanged }
+    var decision: Decision
+    var appRestored = false
+    var companionsRestored: [Int] = []
+  }
 }
 
 /// `~/Library/Application Support/Updater/transactions/<id>.json`, each write flushed to disk.
@@ -124,14 +136,43 @@ final class TransactionJournal: Sendable {
     Self.flush(directory)
   }
 
-  func pending() -> [TransactionRecord] {
-    let files =
-      (try? FileManager.default.contentsOfDirectory(
-        at: directory, includingPropertiesForKeys: nil)) ?? []
-    return files.filter { $0.pathExtension == "json" }.compactMap {
-      try? JSONDecoder().decode(TransactionRecord.self, from: Data(contentsOf: $0))
-    }.sorted { $0.id < $1.id }
+  /// What is on disk: readable records, and files that could not be read (with whatever
+  /// scope could still be recovered from them). A folder that cannot be listed is a failure.
+  struct Scan: Sendable {
+    var records: [TransactionRecord] = []
+    var unreadable: [(file: URL, target: String?, lockKey: String?)] = []
+    var failure: String?
   }
+
+  func scan() -> Scan {
+    var scan = Scan()
+    let files: [URL]
+    do {
+      files = try FileManager.default.contentsOfDirectory(
+        at: directory, includingPropertiesForKeys: nil)
+    } catch CocoaError.fileReadNoSuchFile {
+      return scan
+    } catch {
+      scan.failure =
+        "The recovery records in \(directory.path) cannot be listed: \(error.localizedDescription)"
+      return scan
+    }
+    for file in files.filter({ $0.pathExtension == "json" }).sorted(by: { $0.path < $1.path }) {
+      guard let data = try? Data(contentsOf: file),
+        let record = try? JSONDecoder().decode(TransactionRecord.self, from: data)
+      else {
+        let object = (try? Data(contentsOf: file)).flatMap {
+          try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
+        }
+        scan.unreadable.append((file, object?["target"] as? String, object?["lockKey"] as? String))
+        continue
+      }
+      scan.records.append(record)
+    }
+    return scan
+  }
+
+  func pending() -> [TransactionRecord] { scan().records }
 
   private static func flush(_ directory: URL) {
     let descriptor = open(directory.path, O_RDONLY)
@@ -182,84 +223,107 @@ final class TransactionJournal: Sendable {
   }
 }
 
-/// Settles what an interrupted transaction left, once its writer has stopped: a missing or
-/// unverified target is restored from the backup; a verified new version keeps it and drops
-/// the backup; anything else keeps both and says where.
+/// Settles what an interrupted transaction left, once its writer has stopped. Every step is
+/// journaled, so a crash during recovery resumes it; nothing is deleted until it settles.
 enum TransactionRecovery {
-  enum Result: Equatable, Sendable {
+  enum Outcome: Equatable, Sendable {
     case restored
     case keptNewVersion(String)
     case unchanged
-    case ambiguous(target: String, backup: String)
+    /// Kept as it is, both copies in place, the record kept for the next launch or mount.
+    case unresolved(String)
+    /// The target is open and its quit was refused; retried later.
+    case needsQuit
   }
 
-  static func reconcile(_ record: TransactionRecord, requiresTeam: Bool = true) -> Result {
-    let manager = FileManager.default
+  /// What to do, decided once from the disk and the record: restore a missing, damaged or
+  /// foreign target; keep a new version only if it passes the route's checks against the
+  /// promised version; an untouched app is unchanged; anything else is unresolved.
+  static func decide(_ record: TransactionRecord, requiresTeam: Bool) -> TransactionRecord
+    .RecoveryProgress.Decision?
+  {
     let target = URL(fileURLWithPath: record.target)
-    let backup = URL(fileURLWithPath: record.backup)
-    let hasBackup = manager.fileExists(atPath: backup.path)
+    let hasBackup = FileManager.default.fileExists(atPath: record.backup)
     let current = try? BundleIdentity.read(at: target, validate: true)
     let sameProduct =
       current.map {
-        $0.bundleIdentifier == record.bundleIdentifier
-          && (!requiresTeam || $0.teamIdentifier == record.teamIdentifier)
+        $0.bundleIdentifier == record.bundleIdentifier && $0.teamIdentifier == record.teamIdentifier
+          && (!requiresTeam || record.teamIdentifier != nil)
       } ?? false
     let original = Version(versionNumber: record.originalVersion, buildNumber: record.originalBuild)
-    let installed = current.map {
-      Version(versionNumber: $0.shortVersion, buildNumber: $0.bundleVersion)
-    }
-
-    if let installed, sameProduct, original.comparisonForUpdate(to: installed) == .older,
-      record.expectedVersion.map({
-        installed.comparisonForUpdate(to: Version(versionNumber: $0, buildNumber: nil)) != .older
-      }) ?? true
-    {
-      dropBackup(record)
-      return .keptNewVersion(installed.versionNumber ?? installed.buildNumber ?? "")
-    }
-    if let installed, sameProduct, installed == original {
-      dropBackup(record)
-      return .unchanged
-    }
-    guard hasBackup, current == nil || !sameProduct else {
-      return .ambiguous(target: target.path, backup: backup.path)
-    }
-    // Missing, damaged or not the same product: the original goes back.
-    do {
-      try ReplacementTransaction.restore(
-        target, backupDirectory: backup.deletingLastPathComponent(), originalIdentity: nil)
-      for companion in record.companions where manager.fileExists(atPath: companion.saved) {
-        let live = URL(fileURLWithPath: companion.live)
-        if manager.fileExists(atPath: live.path) {
-          try manager.moveItem(
-            at: live,
-            to: backup.deletingLastPathComponent().appendingPathComponent(
-              "failed-companion-" + UUID().uuidString))
-        }
-        try manager.moveItem(at: URL(fileURLWithPath: companion.saved), to: live)
+    if let current, sameProduct {
+      let installed = Version(
+        versionNumber: current.shortVersion, buildNumber: current.bundleVersion)
+      if current.shortVersion == record.originalVersion
+        && current.bundleVersion == record.originalBuild
+      {
+        return .unchanged
       }
-      return .restored
-    } catch {
-      return .ambiguous(target: target.path, backup: backup.path)
+      // A newer version is accepted only against what the route promised.
+      if let expected = record.expectedVersion ?? record.expectedBuild,
+        !expected.isEmpty,
+        (try? ReplacementTransaction.verifyVersion(
+          installed: installed, previous: original,
+          expected: Version(
+            versionNumber: record.expectedVersion, buildNumber: record.expectedBuild)))
+          != nil
+      {
+        return .keepNew
+      }
+      return nil
     }
+    return hasBackup ? .restore : nil
   }
 
-  private static func dropBackup(_ record: TransactionRecord) {
-    try? FileManager.default.removeItem(
-      at: URL(fileURLWithPath: record.backup).deletingLastPathComponent())
+  static func installedVersion(_ record: TransactionRecord) -> String {
+    let current = try? BundleIdentity.read(at: URL(fileURLWithPath: record.target), validate: false)
+    return current?.shortVersion ?? current?.bundleVersion ?? "?"
+  }
+
+  /// Puts the original back. Restartable: a crash after the swap leaves the original at the
+  /// target and no backup, which counts as done.
+  static func restoreApp(_ record: TransactionRecord) throws {
+    let manager = FileManager.default
+    let target = URL(fileURLWithPath: record.target)
+    let backup = URL(fileURLWithPath: record.backup)
+    guard manager.fileExists(atPath: backup.path) else {
+      let current = try? BundleIdentity.read(at: target, validate: false)
+      guard current?.bundleIdentifier == record.bundleIdentifier,
+        current?.shortVersion == record.originalVersion,
+        current?.bundleVersion == record.originalBuild
+      else { throw ReplacementError.restoreFailed(record.backup) }
+      return
+    }
+    try ReplacementTransaction.restore(
+      target, backupDirectory: backup.deletingLastPathComponent(), originalIdentity: nil)
+  }
+
+  /// One companion record back (Homebrew's Caskroom entry). Restartable the same way.
+  static func restoreCompanion(_ companion: TransactionRecord.Companion, aside: URL) throws {
+    let manager = FileManager.default
+    guard manager.fileExists(atPath: companion.saved) else { return }  // already moved back
+    if manager.fileExists(atPath: companion.live) {
+      try manager.moveItem(
+        at: URL(fileURLWithPath: companion.live),
+        to: aside.appendingPathComponent("failed-companion-" + UUID().uuidString))
+    }
+    try manager.moveItem(
+      at: URL(fileURLWithPath: companion.saved), to: URL(fileURLWithPath: companion.live))
   }
 }
 
 /// Holds a recovered target and its tool lock in the scheduler until the writer has stopped
 /// and the transaction is reconciled, so no job (window, CLI or MCP) runs on them meanwhile.
 final class RecoveryOperation: UpdateOperation, @unchecked Sendable {
-  let record: TransactionRecord
+  private(set) var record: TransactionRecord
   private let journal: TransactionJournal
   private let helperIsIdle: @Sendable () async -> Bool?
   var pollInterval: Duration = .seconds(2)
   var requiresTeam = true
+  /// A restore quits the target first, with the user's consent, like any update.
+  var lifecycle = AppLifecycle.live
   override var lockKey: String { record.lockKey }
-  private(set) var result: TransactionRecovery.Result?
+  private(set) var result: TransactionRecovery.Outcome?
 
   init(
     record: TransactionRecord, journal: TransactionJournal,
@@ -271,18 +335,24 @@ final class RecoveryOperation: UpdateOperation, @unchecked Sendable {
     super.init(
       bundleIdentifier: record.bundleIdentifier ?? "",
       appIdentifier: URL(fileURLWithPath: record.target))
+    // The journal's identity stands in for history when neither copy can be read.
+    recordedIdentity = App.Bundle(
+      version: Version(versionNumber: record.originalVersion, buildNumber: record.originalBuild),
+      name: URL(fileURLWithPath: record.target).deletingPathExtension().lastPathComponent,
+      bundleIdentifier: record.bundleIdentifier ?? "", fileURL: URL(fileURLWithPath: record.target),
+      source: .none, modificationDate: .distantPast)
   }
 
   override func execute() {
     super.execute()
-    Task.detached { [self] in
+    Task { @MainActor [self] in
       progressState = .waitingForVendor("Recovering an interrupted update")
       while await TransactionJournal.mayBeRunning(record.writer, helperIsIdle: helperIsIdle) {
         try? await Task.sleep(for: pollInterval)
       }
-      let result = TransactionRecovery.reconcile(record, requiresTeam: requiresTeam)
-      self.result = result
-      switch result {
+      let outcome = await reconcile()
+      result = outcome
+      switch outcome {
       case .restored:
         outcomeOverride = .failed(
           reason: "Updater was interrupted while updating this app; the original was put back.",
@@ -291,25 +361,86 @@ final class RecoveryOperation: UpdateOperation, @unchecked Sendable {
         outcomeOverride = .updated(from: record.originalVersion ?? "?", to: version)
       case .unchanged:
         outcomeOverride = .noChange(reason: "An interrupted update had not changed the app.")
-      case .ambiguous(let target, let backup):
-        outcomeOverride = .failed(
-          reason:
-            "Updater was interrupted while updating this app and cannot tell which copy is right. Both are kept: \(target) and the original at \(backup).",
-          logPath: nil)
+      case .unresolved(let reason):
+        outcomeOverride = .failed(reason: reason, logPath: nil)
+      case .needsQuit:
+        outcomeOverride = .needsQuit
       }
-      journal.remove(record.id)
       finish()
     }
   }
 
+  /// Settled outcomes remove the record and the backup; unresolved and refused ones keep both
+  /// for the next launch or volume mount.
+  @MainActor private func reconcile() async -> TransactionRecovery.Outcome {
+    let unresolved = TransactionRecovery.Outcome.unresolved(
+      "Updater was interrupted while updating this app and cannot settle it yet. Both copies are kept: \(record.target) and the original at \(record.backup)."
+    )
+    if record.recovery == nil {
+      guard let decision = TransactionRecovery.decide(record, requiresTeam: requiresTeam) else {
+        return unresolved
+      }
+      record.recovery = .init(decision: decision)
+      do { try journal.write(record) } catch { return unresolved }
+    }
+    guard let progress = record.recovery else { return unresolved }
+    let target = URL(fileURLWithPath: record.target)
+    let aside = URL(fileURLWithPath: record.backup).deletingLastPathComponent()
+    var wasRunning = false
+    do {
+      if progress.decision == .restore, !progress.appRestored {
+        do {
+          wasRunning = try await lifecycle.quit(
+            at: target, name: target.deletingPathExtension().lastPathComponent)
+        } catch { return .needsQuit }
+        try TransactionRecovery.restoreApp(record)
+        record.recovery?.appRestored = true
+        try journal.write(record)
+      }
+      // The app's records follow the app: back with a restored or untouched app, kept with
+      // a verified new one.
+      if progress.decision != .keepNew {
+        for (index, companion) in record.companions.enumerated()
+        where !(record.recovery?.companionsRestored.contains(index) ?? false) {
+          try TransactionRecovery.restoreCompanion(companion, aside: aside)
+          record.recovery?.companionsRestored.append(index)
+          try journal.write(record)
+        }
+      }
+    } catch {
+      return unresolved
+    }
+    if wasRunning { lifecycle.reopen(target) }
+    try? FileManager.default.removeItem(at: aside)
+    journal.remove(record.id)
+    switch progress.decision {
+    case .restore: return .restored
+    case .unchanged: return .unchanged
+    case .keepNew: return .keptNewVersion(TransactionRecovery.installedVersion(record))
+    }
+  }
+
   /// Every pending transaction goes back into the scheduler before any other job is accepted.
+  /// Records that cannot be read hold their target (or, with no scope, every job) and say why.
+  @discardableResult
   static func enqueuePending(
     from journal: TransactionJournal, into queue: UpdateQueue,
-    helperIsIdle: @escaping @Sendable () async -> Bool? = { await InstallHelper.isIdle() }
+    helperIsIdle: @escaping @Sendable () async -> Bool? = { await InstallHelper.isIdle() },
+    configure: (RecoveryOperation) -> Void = { _ in }
   ) -> [RecoveryOperation] {
-    journal.pending().map { record in
+    let scan = journal.scan()
+    if let failure = scan.failure { queue.hold(target: nil, lockKey: nil, reason: failure) }
+    for unreadable in scan.unreadable {
+      queue.hold(
+        target: unreadable.target, lockKey: unreadable.lockKey,
+        reason:
+          "The recovery record \(unreadable.file.path) cannot be read; Updater will not change \(unreadable.target ?? "any app") until it is fixed or removed."
+      )
+    }
+    return scan.records.map { record in
       let operation = RecoveryOperation(
         record: record, journal: journal, helperIsIdle: helperIsIdle)
+      configure(operation)
       queue.addOperation(operation)
       return operation
     }
@@ -331,12 +462,14 @@ final class RecoveryOperation: UpdateOperation, @unchecked Sendable {
       do {
         let backupDirectory = try journal.backupDirectory(for: target, id: UUID().uuidString)
         let original = try BundleIdentity.read(at: target, validate: false)
+        let promised = try BundleIdentity.read(at: candidate, validate: false)
         var record = TransactionRecord(
           id: backupDirectory.lastPathComponent, target: target.path,
           backup: backupDirectory.appendingPathComponent(ReplacementTransaction.backupName).path,
           bundleIdentifier: original.bundleIdentifier, teamIdentifier: original.teamIdentifier,
           originalVersion: original.shortVersion, originalBuild: original.bundleVersion,
-          expectedVersion: nil, phase: .prepared, mechanism: "replace",
+          expectedVersion: promised.shortVersion, expectedBuild: promised.bundleVersion,
+          phase: .prepared, mechanism: "replace",
           writer: TransactionJournal.writer(), lockKey: "target:" + target.path)
         try ReplacementTransaction.perform(
           at: target, backupDirectory: backupDirectory,

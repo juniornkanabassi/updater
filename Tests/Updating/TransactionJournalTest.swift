@@ -69,9 +69,12 @@ final class TransactionJournalTest: XCTestCase {
     -> RecoveryOperation
   {
     let operations = RecoveryOperation.enqueuePending(
-      from: scene.journal, into: queue, helperIsIdle: { true })
+      from: scene.journal, into: queue, helperIsIdle: { true }
+    ) {
+      $0.requiresTeam = false
+      $0.lifecycle = FakeTarget(running: false).lifecycle()
+    }
     let operation = try XCTUnwrap(operations.first)
-    operation.requiresTeam = false
     for _ in 0..<500 where !operation.isFinished { try await Task.sleep(for: .milliseconds(10)) }
     return operation
   }
@@ -99,28 +102,26 @@ final class TransactionJournalTest: XCTestCase {
     XCTAssertEqual(version(scene.target), "1.1")
     let backup = try XCTUnwrap(scene.journal.pending().first?.backup)
     let recovery = try await recover(scene)
-    XCTAssertEqual(recovery.result, .keptNewVersion("1.1"))
+    XCTAssertEqual(recovery.result, .keptNewVersion("1.1"), "the probe recorded 1.1 as promised")
     XCTAssertEqual(version(scene.target), "1.1")
     XCTAssertFalse(FileManager.default.fileExists(atPath: backup), "the backup is discarded")
   }
 
   /// A valid copy of the same product that is neither the original nor newer: both are kept,
-  /// the row fails with both paths, and nothing is deleted.
-  func testAmbiguousStateKeepsBothCopies() async throws {
+  /// the row fails with both paths, nothing is deleted, and the record stays (REV-004).
+  func testAmbiguousStateKeepsBothCopiesAndTheRecord() async throws {
     let scene = try scene()
     try await killDuring("originalAside", scene)
     try FixtureApp.make(in: scene.target.deletingLastPathComponent(), version: "0.9")
     let record = try XCTUnwrap(scene.journal.pending().first)
     let recovery = try await recover(scene)
-    guard case .ambiguous(let target, let backup) = recovery.result else {
-      return XCTFail("expected ambiguous, got \(String(describing: recovery.result))")
+    guard case .unresolved(let reason) = recovery.result else {
+      return XCTFail("expected unresolved, got \(String(describing: recovery.result))")
     }
-    XCTAssertEqual(target, scene.target.path)
-    XCTAssertEqual(backup, record.backup)
+    XCTAssertTrue(reason.contains(record.backup) && reason.contains(scene.target.path))
     XCTAssertEqual(version(scene.target), "0.9")
     XCTAssertTrue(FileManager.default.fileExists(atPath: record.backup), "nothing is deleted")
-    guard case .failed(let reason, _) = recovery.outcomeOverride else { return XCTFail() }
-    XCTAssertTrue(reason.contains(record.backup))
+    XCTAssertEqual(scene.journal.pending().map(\.id), [record.id], "kept for the next launch")
   }
 
   /// A writer that may still run (here a live process with the recorded start time) holds
@@ -145,10 +146,13 @@ final class TransactionJournalTest: XCTestCase {
 
     let queue = UpdateQueue()
     let operations = RecoveryOperation.enqueuePending(
-      from: scene.journal, into: queue, helperIsIdle: { true })
+      from: scene.journal, into: queue, helperIsIdle: { true }
+    ) {
+      $0.requiresTeam = false
+      $0.pollInterval = .milliseconds(50)
+      $0.lifecycle = FakeTarget(running: false).lifecycle()
+    }
     let recovery = try XCTUnwrap(operations.first)
-    recovery.requiresTeam = false
-    recovery.pollInterval = .milliseconds(50)
     let sameTarget = BlockedProbe(url: scene.target, lock: "unrelated")
     XCTAssertTrue(
       queue.submit(sameTarget) === recovery, "a job on the target gets the recovery job")
@@ -191,6 +195,220 @@ final class TransactionJournalTest: XCTestCase {
       error: nil, expected: nil, requiresTeam: false,
       lifecycle: FakeTarget(running: false).lifecycle())
     XCTAssertTrue(scene.journal.pending().isEmpty)
+  }
+
+  /// REV-001: a tool (brew) starts suspended. Its PID and start time are journaled before it
+  /// runs a single instruction; if that fails, it never runs.
+  func testToolsRunOnlyAfterTheirWriterIsRecorded() async throws {
+    let folder = try disposableDirectory()
+    let marker = folder.appendingPathComponent("ran")
+    let log = folder.appendingPathComponent("tool.log")
+    struct JournalDown: Error {}
+    do {
+      _ = try await ToolProcess.run(
+        URL(fileURLWithPath: "/usr/bin/touch"), [marker.path], log: log,
+        beforeStart: { _ in throw JournalDown() })
+      XCTFail("a failed journal write must stop the tool")
+    } catch is JournalDown {}
+    try await Task.sleep(for: .milliseconds(100))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path), "the tool never ran")
+
+    let scene = try scene()
+    let guarded = ExternalInstallGuard(target: scene.target, journal: scene.journal)
+    try guarded.takeClone(mechanism: "homebrew", lockKey: "homebrew")
+    let seenBeforeRun = Mutex<(TransactionRecord.Writer?, Bool)>((nil, true))
+    let status = try await ToolProcess.run(
+      URL(fileURLWithPath: "/usr/bin/touch"), [marker.path], log: log,
+      beforeStart: { pid in
+        try guarded.noteWriter(TransactionJournal.writer(pid: pid))
+        let recorded = scene.journal.pending().first?.writer
+        seenBeforeRun.withLock {
+          $0 = (recorded, FileManager.default.fileExists(atPath: marker.path))
+        }
+      })
+    XCTAssertEqual(status, 0)
+    let (writer, ranEarly) = seenBeforeRun.withLock { $0 }
+    guard case .process(_, let started)? = writer else { return XCTFail("PID journaled first") }
+    XCTAssertGreaterThan(started, 0)
+    XCTAssertFalse(ranEarly, "it was still suspended while its PID was journaled")
+    XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path), "then it ran")
+  }
+
+  // MARK: Sol's inspection (REV-002 to REV-006)
+
+  private func record(
+    _ scene: Scene, expected: String?, companions: [TransactionRecord.Companion] = [],
+    lockKey: String? = nil
+  ) throws -> TransactionRecord {
+    let backupDirectory = try scene.journal.backupDirectory(
+      for: scene.target, id: UUID().uuidString)
+    let backup = backupDirectory.appendingPathComponent(ReplacementTransaction.backupName)
+    try FileManager.default.copyItem(at: scene.target, to: backup)
+    let record = TransactionRecord(
+      id: backupDirectory.lastPathComponent, target: scene.target.path, backup: backup.path,
+      companions: companions, bundleIdentifier: FixtureApp.identifier, teamIdentifier: nil,
+      originalVersion: "1.0", originalBuild: "1.0", expectedVersion: expected,
+      expectedBuild: expected, phase: .external, mechanism: "clone:homebrew",
+      writer: .process(pid: 999_999, started: 1), lockKey: lockKey ?? "target:" + scene.target.path)
+    try scene.journal.write(record)
+    return record
+  }
+
+  private func replaceTarget(
+    _ scene: Scene, version: String, identifier: String = FixtureApp.identifier
+  ) throws {
+    try FileManager.default.removeItem(at: scene.target)
+    try FixtureApp.make(
+      in: scene.target.deletingLastPathComponent(), identifier: identifier, version: version)
+  }
+
+  /// REV-002: a newer version is kept only if it reaches the version the route promised.
+  func testNewVersionMustReachThePromisedVersion() async throws {
+    let short = try scene()
+    _ = try record(short, expected: "1.2")
+    try replaceTarget(short, version: "1.1")
+    let shortResult = try await recover(short).result
+    guard case .unresolved = shortResult else {
+      return XCTFail("short of 1.2: \(String(describing: shortResult))")
+    }
+
+    let unknown = try scene()
+    _ = try record(unknown, expected: nil)
+    try replaceTarget(unknown, version: "1.1")
+    let unknownResult = try await recover(unknown).result
+    guard case .unresolved = unknownResult else { return XCTFail("nothing was promised") }
+
+    let reached = try scene()
+    _ = try record(reached, expected: "1.1")
+    try replaceTarget(reached, version: "1.1")
+    let reachedResult = try await recover(reached).result
+    XCTAssertEqual(reachedResult, .keptNewVersion("1.1"))
+
+    // Routes record the promise in the clone's record, or as soon as it is known.
+    let guarded = ExternalInstallGuard(target: try scene().target, journal: unknown.journal)
+    try guarded.takeClone(mechanism: "sparkle", expected: nil)
+    try guarded.noteExpected(Version(versionNumber: "2.0", buildNumber: "200"))
+    let noted = try XCTUnwrap(unknown.journal.pending().first { $0.mechanism == "clone:sparkle" })
+    XCTAssertEqual(noted.expectedVersion, "2.0")
+    XCTAssertEqual(noted.expectedBuild, "200")
+  }
+
+  /// REV-003: recovery is journaled. A crash after the app was restored resumes with the
+  /// Caskroom record; an untouched app still gets its records back before anything is deleted.
+  func testRecoveryResumesAndPutsCompanionsBackBeforeDeleting() async throws {
+    let scene = try scene()
+    let live = scene.root.deletingLastPathComponent().appendingPathComponent("Caskroom-fixture")
+    try Data("new".utf8).write(to: live)
+    let savedDirectory = try scene.journal.backupDirectory(for: scene.target, id: "companions")
+    let saved = savedDirectory.appendingPathComponent("companion-0")
+    try Data("old".utf8).write(to: saved)
+    // Crash after the app was restored and recorded, before the companion.
+    var resumed = try record(
+      scene, expected: "1.1", companions: [.init(live: live.path, saved: saved.path)])
+    try FileManager.default.removeItem(atPath: resumed.backup)
+    resumed.recovery = .init(decision: .restore, appRestored: true)
+    try scene.journal.write(resumed)
+    let result = try await recover(scene).result
+    XCTAssertEqual(result, .restored)
+    XCTAssertEqual(try String(contentsOf: live, encoding: .utf8), "old", "Caskroom record back")
+    XCTAssertTrue(scene.journal.pending().isEmpty)
+
+    // Untouched app, changed record: unchanged is settled only after the record agrees.
+    let second = try self.scene()
+    let live2 = second.root.deletingLastPathComponent().appendingPathComponent("Caskroom-2")
+    try Data("brew's new".utf8).write(to: live2)
+    let dir2 = try second.journal.backupDirectory(for: second.target, id: "companions-2")
+    let saved2 = dir2.appendingPathComponent("companion-0")
+    try Data("previous".utf8).write(to: saved2)
+    _ = try record(
+      second, expected: "1.1", companions: [.init(live: live2.path, saved: saved2.path)])
+    let unchanged = try await recover(second).result
+    XCTAssertEqual(unchanged, .unchanged)
+    XCTAssertEqual(try String(contentsOf: live2, encoding: .utf8), "previous")
+  }
+
+  /// REV-004: nothing readable (an unplugged volume): the failure is recorded from the
+  /// journal's own identity, the record stays, and a later attempt settles it.
+  func testUnreadableTargetIsRecordedFromTheJournalAndRetried() async throws {
+    let scene = try scene()
+    let entry = try record(scene, expected: "1.1")
+    let parked = scene.root.deletingLastPathComponent().appendingPathComponent("parked")
+    try FileManager.default.moveItem(atPath: entry.backup, toPath: parked.path)
+    try FileManager.default.removeItem(at: scene.target)
+    let history = UpdateHistoryStore(
+      fileURL: try disposableDirectory().appendingPathComponent("h.jsonl"))
+    let first = try await recover(scene, queue: UpdateQueue(history: history))
+    guard case .unresolved = first.result else { return XCTFail("nothing can be read") }
+    XCTAssertEqual(history.latestEntry(for: scene.target)?.bundleIdentifier, FixtureApp.identifier)
+    XCTAssertEqual(scene.journal.pending().map(\.id), [entry.id])
+    // The volume comes back: the backup is there again and the next attempt restores.
+    try FileManager.default.moveItem(atPath: parked.path, toPath: entry.backup)
+    let second = try await recover(scene)
+    XCTAssertEqual(second.result, .restored)
+    XCTAssertEqual(version(scene.target), "1.0")
+  }
+
+  /// REV-005: a restore quits the target first, with consent; refused, everything is kept.
+  func testRecoveryAsksBeforeQuittingAndKeepsEverythingIfRefused() async throws {
+    let scene = try scene()
+    let entry = try record(scene, expected: "1.1")
+    try replaceTarget(scene, version: "5.0", identifier: "com.example.foreign")
+    let operations = RecoveryOperation.enqueuePending(
+      from: scene.journal, into: UpdateQueue(), helperIsIdle: { true }
+    ) {
+      $0.requiresTeam = false
+      $0.lifecycle = AppLifecycle(
+        runningApps: { _ in [.init(terminate: {}, isTerminated: { false })] },
+        confirmQuit: { _ in false }, reopen: { _ in })
+    }
+    let recovery = try XCTUnwrap(operations.first)
+    for _ in 0..<300 where !recovery.isFinished { try await Task.sleep(for: .milliseconds(10)) }
+    XCTAssertEqual(recovery.result, .needsQuit)
+    XCTAssertEqual(
+      BundleCollector.collectBundle(at: scene.target)?.bundleIdentifier, "com.example.foreign",
+      "nothing was moved")
+    XCTAssertTrue(FileManager.default.fileExists(atPath: entry.backup))
+    XCTAssertEqual(scene.journal.pending().count, 1)
+  }
+
+  /// REV-006: an unreadable record holds its own target and tool, or everything when it names
+  /// neither; a folder that cannot be listed holds everything.
+  func testUnreadableRecordsFailClosed() async throws {
+    let scoped = try scene()
+    try FileManager.default.createDirectory(
+      at: scoped.journal.directory, withIntermediateDirectories: true)
+    try Data(#"{"target": "/tmp/Held.app", "lockKey": "homebrew"}"#.utf8)
+      .write(to: scoped.journal.directory.appendingPathComponent("broken.json"))
+    let queue = UpdateQueue()
+    RecoveryOperation.enqueuePending(from: scoped.journal, into: queue, helperIsIdle: { true })
+    let held = BlockedProbe(url: URL(fileURLWithPath: "/tmp/Held.app"), lock: "other")
+    let sameTool = BlockedProbe(url: URL(fileURLWithPath: "/tmp/Else.app"), lock: "homebrew")
+    let free = BlockedProbe(url: URL(fileURLWithPath: "/tmp/Free.app"), lock: "free")
+    [held, sameTool, free].forEach(queue.addOperation)
+    try await Task.sleep(for: .milliseconds(300))
+    XCTAssertTrue(free.ran.withLock { $0 })
+    XCTAssertFalse(held.ran.withLock { $0 }, "its target is held")
+    XCTAssertFalse(sameTool.ran.withLock { $0 }, "its tool is held")
+    XCTAssertEqual(queue.heldBecause.count, 1)
+
+    let global = try scene()
+    try FileManager.default.createDirectory(
+      at: global.journal.directory, withIntermediateDirectories: true)
+    try Data("not json".utf8).write(
+      to: global.journal.directory.appendingPathComponent("torn.json"))
+    let everything = UpdateQueue()
+    RecoveryOperation.enqueuePending(from: global.journal, into: everything, helperIsIdle: { true })
+    let any = BlockedProbe(url: URL(fileURLWithPath: "/tmp/Any.app"), lock: "any")
+    everything.addOperation(any)
+    try await Task.sleep(for: .milliseconds(300))
+    XCTAssertFalse(any.ran.withLock { $0 }, "no scope: everything is held")
+
+    let locked = try scene()
+    try FileManager.default.createDirectory(
+      at: locked.journal.directory, withIntermediateDirectories: true)
+    chmod(locked.journal.directory.path, 0)
+    defer { chmod(locked.journal.directory.path, 0o755) }
+    XCTAssertNotNil(locked.journal.scan().failure)
   }
 }
 

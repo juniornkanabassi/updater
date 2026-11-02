@@ -93,7 +93,8 @@ final class HomebrewUpgradeOperation: UpdateOperation, @unchecked Sendable {
       let caskroom = await self.homebrew.caskroom(of: self.token)
       do {
         try self.protection.takeClone(
-          companions: [caskroom].compactMap { $0 }, mechanism: "homebrew", lockKey: self.lockKey)
+          companions: [caskroom].compactMap { $0 }, mechanism: "homebrew", lockKey: self.lockKey,
+          expected: self.expectedVersion)
       } catch {
         self.handOffBeforeChanges(because: "Updater could not make its safety copy of the app.")
         return
@@ -104,7 +105,7 @@ final class HomebrewUpgradeOperation: UpdateOperation, @unchecked Sendable {
       do {
         // brew is the writer from here; recovery waits for that exact process to end.
         _ = try await self.homebrew.upgrade(self.token) { [protection = self.protection] pid in
-          protection.noteWriter(TransactionJournal.writer(pid: pid))
+          try protection.noteWriter(TransactionJournal.writer(pid: pid))
         }
         await self.finalize(nil)
       } catch {
