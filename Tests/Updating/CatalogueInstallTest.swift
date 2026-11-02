@@ -109,7 +109,7 @@ final class CatalogueInstallTest: XCTestCase {
   private func install(
     _ scene: Scene, cask: Data, check transform: (inout CatalogueInstallCheck) -> Void = { _ in },
     lifecycle: AppLifecycle = FakeTarget(running: false).lifecycle(), requiresTeam: Bool = false,
-    calls: Calls = Calls()
+    calls: Calls = Calls(), journal: TransactionJournal? = nil
   ) async throws -> UpdateJobRecord {
     var check = CatalogueInstallCheck(
       fetchCask: { _ in
@@ -126,6 +126,7 @@ final class CatalogueInstallTest: XCTestCase {
     operation.requiresTeam = requiresTeam
     operation.launchProbe = { try FixtureApp.launchProbe($0) }
     operation.lifecycle = lifecycle
+    if let journal { operation.journal = journal }
     let queue = UpdateQueue(
       history: UpdateHistoryStore(
         fileURL: try disposableDirectory().appendingPathComponent("history.jsonl")))
@@ -246,29 +247,32 @@ final class CatalogueInstallTest: XCTestCase {
     XCTAssertEqual(try FixtureApp.digest(scene.installed), before, "no replacement happened")
   }
 
-  /// The real walk sees the job's own staged candidate (a hidden folder beside the app); the
-  /// recheck excludes exactly that folder, so the install still goes ahead.
+  /// The job stages in Updater's backup folder. Where the walk can see that folder (a
+  /// watched folder on another volume keeps it beside the app), the recheck excludes exactly
+  /// this job's staging folder, so the install still goes ahead.
   func testOwnStagedCandidateIsNotASecondCopy() async throws {
     let scene = try scene()
     let server = try await LocalFileServer.start(serving: scene.payloads)
     defer { server.stop() }
     let (name, hash) = try payload(in: scene, kind: .zip)
+    let journal = TransactionJournal(root: try disposableDirectory())
     let seen = Mutex<[Set<String>]>([])
-    let real = walk(scene)
+    let folders = [scene.apps, journal.backups]
     let record = try await install(
       scene,
       cask: try cask(url: server.baseURL.appendingPathComponent(name).absoluteString, sha256: hash),
       check: {
         $0.copies = { id in
-          let found = try real(id)
+          let found = try AppStoreInstallGate.copies(of: id, in: folders)
           seen.withLock { $0.append(found) }
           return found
         }
-      })
+      }, journal: journal)
     XCTAssertEqual(record.outcome, .updated(from: "1.0", to: "1.1"))
     XCTAssertTrue(
-      seen.withLock { $0 }.contains { $0.contains { $0.contains("/.latest-update-") } },
+      seen.withLock { $0 }.contains { $0.contains { $0.hasPrefix(journal.backups.path) } },
       "the walk did see the staged candidate")
+    XCTAssertTrue(journal.pending().isEmpty, "the replacement's journal record is gone")
     XCTAssertEqual(
       CatalogueInstall.outerApps(in: scene.apps).map(\.lastPathComponent), ["Fixture.app"])
   }

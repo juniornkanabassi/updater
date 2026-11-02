@@ -235,6 +235,8 @@
 		018068F9ECCE4A92B54AD847 /* ControlFollowUpTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B2652E06EEC4171962ED608 /* ControlFollowUpTest.swift */; };
 		71DF633AD3CD4D739BF4C381 /* CatalogueInstall.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAB991672A5749A485405C99 /* CatalogueInstall.swift */; };
 		5EBC419A15074012A53335AF /* CatalogueInstallTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D61335B308493994A02626 /* CatalogueInstallTest.swift */; };
+		A520CEDCFB9F49B0A2113BC5 /* TransactionJournal.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3E98B7F93664A3B96278F88 /* TransactionJournal.swift */; };
+		2E4AA41B3CB6408ABCA08C9A /* TransactionJournalTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = D749BCDAFEBE4F33A20051B5 /* TransactionJournalTest.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -606,6 +608,8 @@
 		0B2652E06EEC4171962ED608 /* ControlFollowUpTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlFollowUpTest.swift; sourceTree = "<group>"; };
 		CAB991672A5749A485405C99 /* CatalogueInstall.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogueInstall.swift; sourceTree = "<group>"; };
 		C3D61335B308493994A02626 /* CatalogueInstallTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogueInstallTest.swift; sourceTree = "<group>"; };
+		F3E98B7F93664A3B96278F88 /* TransactionJournal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransactionJournal.swift; sourceTree = "<group>"; };
+		D749BCDAFEBE4F33A20051B5 /* TransactionJournalTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransactionJournalTest.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1092,6 +1096,7 @@
 		52D000042FE0000000000001 /* Updating */ = {
 			isa = PBXGroup;
 			children = (
+				D749BCDAFEBE4F33A20051B5 /* TransactionJournalTest.swift */,
 				C3D61335B308493994A02626 /* CatalogueInstallTest.swift */,
 				0B2652E06EEC4171962ED608 /* ControlFollowUpTest.swift */,
 				77780ABE8A704FDC979ECC73 /* ControlTest.swift */,
@@ -1215,6 +1220,7 @@
 		A0310000000000000000000D /* Download */ = {
 			isa = PBXGroup;
 			children = (
+				F3E98B7F93664A3B96278F88 /* TransactionJournal.swift */,
 				CAB991672A5749A485405C99 /* CatalogueInstall.swift */,
 				A03100000000000000000007 /* ObsidianUpdate.swift */,
 				A03100000000000000000005 /* AppDownloadUpdateOperation.swift */,
@@ -1480,6 +1486,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A520CEDCFB9F49B0A2113BC5 /* TransactionJournal.swift in Sources */,
 				71DF633AD3CD4D739BF4C381 /* CatalogueInstall.swift in Sources */,
 				B7AD395C42CE481DB7225B9A /* ControlProtocol.swift in Sources */,
 				123300EE3AB2434BA961C774 /* ControlService.swift in Sources */,
@@ -1622,6 +1629,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				2E4AA41B3CB6408ABCA08C9A /* TransactionJournalTest.swift in Sources */,
 				5EBC419A15074012A53335AF /* CatalogueInstallTest.swift in Sources */,
 				018068F9ECCE4A92B54AD847 /* ControlFollowUpTest.swift in Sources */,
 				00E7C3B027FC4EFE8CFBA011 /* ControlTest.swift in Sources */,

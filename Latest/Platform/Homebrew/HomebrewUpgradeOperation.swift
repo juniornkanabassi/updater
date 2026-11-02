@@ -91,7 +91,10 @@ final class HomebrewUpgradeOperation: UpdateOperation, @unchecked Sendable {
       }
       // brew's Caskroom record is cloned with the app so a rollback leaves them agreeing.
       let caskroom = await self.homebrew.caskroom(of: self.token)
-      do { try self.protection.takeClone(companions: [caskroom].compactMap { $0 }) } catch {
+      do {
+        try self.protection.takeClone(
+          companions: [caskroom].compactMap { $0 }, mechanism: "homebrew", lockKey: self.lockKey)
+      } catch {
         self.handOffBeforeChanges(because: "Updater could not make its safety copy of the app.")
         return
       }
@@ -99,7 +102,10 @@ final class HomebrewUpgradeOperation: UpdateOperation, @unchecked Sendable {
       do { try self.beginCommit() } catch { return await self.finalize(nil) }
       self.progressState = .installing
       do {
-        _ = try await self.homebrew.upgrade(self.token)
+        // brew is the writer from here; recovery waits for that exact process to end.
+        _ = try await self.homebrew.upgrade(self.token) { [protection = self.protection] pid in
+          protection.noteWriter(TransactionJournal.writer(pid: pid))
+        }
         await self.finalize(nil)
       } catch {
         await self.finalize(error)

@@ -153,8 +153,11 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
   /// Called by the job as it finishes, before its terminal state is published.
   private func resolveOutcome(of operation: UpdateOperation, before: App.Bundle?) -> UpdateOutcome?
   {
-    guard let before else { return nil }
     let after = readBundle(operation.appIdentifier)
+    // A recovery job may start with the target missing; its outcome is set by itself.
+    guard let before = before ?? (operation.outcomeOverride != nil ? after : nil) else {
+      return nil
+    }
     guard let outcome = Self.outcome(of: operation, before: before, after: after) else {
       return nil
     }

@@ -76,7 +76,14 @@ final class VendorToolOperation: UpdateOperation, @unchecked Sendable {
       } catch {
         return self.finish(with: error)
       }
-      do { try self.protection.takeClone() } catch {
+      let writer: TransactionRecord.Writer =
+        self.lock == "msupdate"
+        ? .named(["msupdate", "Microsoft Update Assistant", "Microsoft AutoUpdate"])
+        : TransactionJournal.writer()
+      do {
+        try self.protection.takeClone(
+          mechanism: "vendorTool:" + self.lock, lockKey: self.lock, writer: writer)
+      } catch {
         self.recordHandOff(
           to: self.vendorUpdater, because: "Updater could not make its safety copy of the app.")
         return self.finish()

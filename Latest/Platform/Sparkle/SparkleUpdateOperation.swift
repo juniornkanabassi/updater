@@ -76,7 +76,10 @@ final class SparkleUpdateOperation: UpdateOperation, @unchecked Sendable {
     self.finish()
   }
 
-  func takeBackup() throws { try protection.takeClone() }
+  /// Sparkle's own installer (Autoupdate) is the writer that can replace the app.
+  func takeBackup() throws {
+    try protection.takeClone(mechanism: "sparkle", lockKey: lockKey, writer: .named(["Autoupdate"]))
+  }
 
   /// Every terminal path ends here: the shared guard verifies what Sparkle left at the exact
   /// URL (restoring the clone on failure) and reopens an app Updater quit, then the result

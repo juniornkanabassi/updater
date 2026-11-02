@@ -18,7 +18,8 @@ enum ToolProcess {
   }
 
   static func run(
-    _ executable: URL, _ arguments: [String], log: URL, environment: [String: String] = [:]
+    _ executable: URL, _ arguments: [String], log: URL, environment: [String: String] = [:],
+    onStart: @escaping @Sendable (Int32) -> Void = { _ in }
   ) async throws -> Int32 {
     guard geteuid() != 0 else { throw RootRefused() }
     FileManager.default.createFile(atPath: log.path, contents: nil)
@@ -36,7 +37,10 @@ enum ToolProcess {
     process.standardError = handle
     return try await withCheckedThrowingContinuation { continuation in
       process.terminationHandler = { continuation.resume(returning: $0.terminationStatus) }
-      do { try process.run() } catch {
+      do {
+        try process.run()
+        onStart(process.processIdentifier)
+      } catch {
         process.terminationHandler = nil
         continuation.resume(throwing: error)
       }

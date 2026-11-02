@@ -100,6 +100,9 @@ final class AppEnvironment: ObservableObject {
   /// Runs once at launch; closing the window leaves it running for the menu bar.
   func start() {
     guard backgroundChecks == nil else { return }
+    // Interrupted updates first: their targets and tools are held in the scheduler until put
+    // right, before the window, the CLI or MCP can submit anything.
+    _ = RecoveryOperation.enqueuePending(from: .shared, into: .shared)
     MigrationTelemetry.shared.applicationStarted()
     updateCheckingService.startReportingProgress()
     updatesListViewModel.startObserving()

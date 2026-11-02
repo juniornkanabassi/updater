@@ -138,7 +138,7 @@ final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
         return self.finish(with: error)
       }
       guard !self.isCancelled else { return self.finishOnMain() }
-      do { try self.protection.takeClone() } catch {
+      do { try self.takeBackup() } catch {
         self.handOff(because: "Updater could not make its safety copy of the app.")
         return self.finishOnMain()
       }
@@ -300,7 +300,10 @@ final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
   }
 
   /// Takes Updater's clone outside the normal flow; for tests of the install phase.
-  func takeBackup() throws { try protection.takeClone() }
+  /// The helper's PackageKit install is the writer; it is asked whether it is idle.
+  func takeBackup() throws {
+    try protection.takeClone(mechanism: "appStore", lockKey: lockKey, writer: .helper)
+  }
 
   @MainActor func installThroughHelper(_ package: URL, receipt: Data) async {
     isInstalling = true

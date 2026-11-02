@@ -30,6 +30,12 @@ private struct LatestUnitTestHostApplication: SwiftUI.App {
   }
 }
 
+#if DEBUG
+  if let index = CommandLine.arguments.firstIndex(of: "--journal-crash-probe") {
+    JournalCrashProbe.run(Array(CommandLine.arguments[(index + 1)...]))
+  }
+#endif
+
 if isRunningUnitTests {
   if ProcessInfo.processInfo.environment["LATEST_UI_TESTS"] != "1" {
     // The background lane has no visible scenes and must not activate over the

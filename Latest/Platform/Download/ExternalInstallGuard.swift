@@ -17,6 +17,9 @@ final class ExternalInstallGuard: Sendable {
     let companions: [(live: URL, saved: URL)]
   }
   private let quitByUpdater = Mutex(false)
+  private let journal: TransactionJournal
+  /// The journal record while a clone exists.
+  private let record = Mutex<TransactionRecord?>(nil)
   /// The one settlement every caller awaits, so a second finalizer cannot return while the
   /// first is still restoring.
   private let settlement = Mutex<Task<Error?, Never>?>(nil)
@@ -25,20 +28,24 @@ final class ExternalInstallGuard: Sendable {
   private let companionMove: @Sendable (URL, URL) throws -> Void
 
   init(
-    target: URL,
+    target: URL, journal: TransactionJournal = .shared,
     companionMove: @escaping @Sendable (URL, URL) throws -> Void = {
       try FileManager.default.moveItem(at: $0, to: $1)
     }
   ) {
     self.target = target
+    self.journal = journal
     self.companionMove = companionMove
   }
 
-  /// Clones into a private folder on the target's volume. `companions` are cloned too and
-  /// restored together with the app.
-  func takeClone(companions: [URL] = []) throws {
-    let directory = try FileManager.default.url(
-      for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: target, create: true)
+  /// Clones into Updater's backup folder on the target's volume and journals it, so an
+  /// interruption is reconciled at the next launch. `companions` are cloned too and restored
+  /// together with the app. `writer` is whoever may change the target from now on.
+  func takeClone(
+    companions: [URL] = [], mechanism: String = "external", lockKey: String = "",
+    writer: TransactionRecord.Writer = TransactionJournal.writer()
+  ) throws {
+    let directory = try journal.backupDirectory(for: target, id: UUID().uuidString)
     do {
       let original = try ReplacementTransaction.cloneOriginal(at: target, into: directory)
       var saved = [(live: URL, saved: URL)]()
@@ -48,11 +55,42 @@ final class ExternalInstallGuard: Sendable {
         try FileManager.default.copyItem(at: companion, to: copy)
         saved.append((companion, copy))
       }
+      let entry = TransactionRecord(
+        id: directory.lastPathComponent, target: target.path,
+        backup: directory.appendingPathComponent(ReplacementTransaction.backupName).path,
+        companions: saved.map { .init(live: $0.live.path, saved: $0.saved.path) },
+        bundleIdentifier: original.bundleIdentifier, teamIdentifier: original.teamIdentifier,
+        originalVersion: original.shortVersion, originalBuild: original.bundleVersion,
+        expectedVersion: nil, phase: .external, mechanism: "clone:" + mechanism, writer: writer,
+        lockKey: lockKey.isEmpty ? "target:" + target.path : lockKey)
+      try journal.write(entry)
+      record.withLock { $0 = entry }
       clone.withLock { $0 = Saved(directory: directory, original: original, companions: saved) }
     } catch {
       try? FileManager.default.removeItem(at: directory)
       throw error
     }
+  }
+
+  /// Records who now may change the target (the brew process that started, say).
+  func noteWriter(_ writer: TransactionRecord.Writer) {
+    guard
+      let entry = record.withLock({ value -> TransactionRecord? in
+        value?.writer = writer
+        return value
+      })
+    else { return }
+    try? journal.write(entry)
+  }
+
+  private func settled() {
+    guard
+      let entry = record.withLock({ value -> TransactionRecord? in
+        defer { value = nil }
+        return value
+      })
+    else { return }
+    journal.remove(entry.id)
   }
 
   /// Records that Updater quit the app, so it is reopened however the attempt ends.
@@ -64,12 +102,15 @@ final class ExternalInstallGuard: Sendable {
   /// deleted, and the app is not reopened. Returns where the original was kept.
   func abandon() -> URL? {
     quitByUpdater.withLock { $0 = false }
+    // The outcome is unknown: the journal stays, so the next launch reconciles it.
+    record.withLock { $0 = nil }
     return takeSaved()?.directory.appendingPathComponent(ReplacementTransaction.backupName)
   }
 
   /// For exits before the installer could touch the bundle.
   func discard() {
     if let saved = takeSaved() { try? FileManager.default.removeItem(at: saved.directory) }
+    settled()
   }
 
   /// Verifies the destination; on failure closes the app if it is running (a relaunched bad
@@ -152,6 +193,12 @@ final class ExternalInstallGuard: Sendable {
       }
     }
     reopenIfQuit(lifecycle)
+    // A failed restore keeps the record: the next launch tries again or keeps both copies.
+    if case ReplacementError.restoreFailed? = result as? ReplacementError {
+      record.withLock { $0 = nil }
+    } else {
+      settled()
+    }
     return result
   }
 

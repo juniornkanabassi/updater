@@ -95,6 +95,51 @@ class DownloadUpdateOperation: UpdateOperation, @unchecked Sendable {
     }
   }
 
+  /// Journal for interruption recovery; tests use their own.
+  var journal = TransactionJournal.shared
+
+  /// A replacement journaled phase by phase: the record is written before the original moves
+  /// and removed once the attempt settles, either way.
+  func journaledReplace(
+    with candidate: URL, backupDirectory: URL, expectedVersion: Version?,
+    verify: (URL) throws -> Void
+  ) throws {
+    let original = try? BundleIdentity.read(at: app.fileURL, validate: false)
+    var record = TransactionRecord(
+      id: backupDirectory.lastPathComponent, target: app.fileURL.path,
+      backup: backupDirectory.appendingPathComponent(ReplacementTransaction.backupName).path,
+      bundleIdentifier: original?.bundleIdentifier ?? app.bundleIdentifier,
+      teamIdentifier: original?.teamIdentifier, originalVersion: original?.shortVersion,
+      originalBuild: original?.bundleVersion,
+      expectedVersion: expectedVersion?.versionNumber, phase: .prepared, mechanism: "replace",
+      writer: TransactionJournal.writer(), lockKey: lockKey)
+    let journal = self.journal
+    do {
+      try perform()
+      journal.remove(record.id)
+    } catch ReplacementError.restoreFailed(let path) {
+      // Not settled: the next launch tries again, or keeps both copies and says where.
+      throw ReplacementError.restoreFailed(path)
+    } catch {
+      journal.remove(record.id)
+      throw error
+    }
+    func perform() throws {
+      try ReplacementTransaction.perform(
+        at: app.fileURL, backupDirectory: backupDirectory,
+        install: { try FileManager.default.moveItem(at: candidate, to: app.fileURL) },
+        verify: verify,
+        onPhase: { phase in
+          switch phase {
+          case .prepared: record.phase = .prepared
+          case .originalAside: record.phase = .originalAside
+          case .installed: record.phase = .installed
+          }
+          try journal.write(record)
+        })
+    }
+  }
+
   /// Same-volume renames. The original stays in `backupDirectory` until `verify` accepts
   /// the installed destination, and is restored on any failure.
   static func replaceItem(

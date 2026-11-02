@@ -126,6 +126,12 @@ Apps the Homebrew catalogue knows but brew did not install can be updated by Upd
 
 The original stays until the new app verifies, and is put back on any failure.
 
+Under the rules above, two catalogue entries that are channels of one product (`notion` and `notion@beta`) are told apart only when the installed copy names its channel (in its bundle ID, name or version); a plain release with no channel word takes the plain cask. A cask without a published checksum (`sha256 :no_check`) installs only from the vendor's own domain and only when every trust check passes.
+
+## Interrupted updates
+
+Every route that moves or clones an app (direct downloads, Sparkle, Homebrew with its Caskroom record, vendor tools, the App Store helper) first writes a record to `~/Library/Application Support/Updater/transactions/` and keeps the original in `~/Library/Application Support/Updater/Backups/` (or a `.Updater Backups` folder beside the app when it is on another volume). The record is flushed at each step and removed once the attempt settles. At launch, before the window, the CLI or MCP can start anything, Updater waits for any installer named in a record to stop (the row says it is recovering, and jobs on that app or tool wait), then puts things right: a missing or damaged app gets its original back, a verified new version keeps it and drops the backup, and anything unclear keeps both copies and says where they are.
+
 ## Release notes
 
 `Latest/Resources/LatestReleaseNotes.json` supplies version-matched offline notes inherited from the Ertyoii fork. Updater does not update itself yet: it has no appcast or public key configured, and no menu item that opens a releases page.

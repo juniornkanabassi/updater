@@ -53,9 +53,8 @@ final class AppDownloadUpdateOperation: DownloadUpdateOperation, @unchecked Send
     if let hash = release.sha256 { try Self.verifyChecksum(of: archive, expected: hash) }
 
     // Stage on the destination volume before touching the installed app.
-    let stage = app.fileURL.deletingLastPathComponent()
-      .appendingPathComponent(".latest-update-" + UUID().uuidString)
-    try manager.createDirectory(at: stage, withIntermediateDirectories: true)
+    // Staged and backed up in Updater's own folder on the app's volume.
+    let stage = try journal.backupDirectory(for: app.fileURL, id: jobID)
     defer { Self.removeStageUnlessRecoveryIsNeeded(stage) }
     let candidate = stage.appendingPathComponent("candidate.app")
     let extracted = work.appendingPathComponent("payload")
@@ -73,7 +72,9 @@ final class AppDownloadUpdateOperation: DownloadUpdateOperation, @unchecked Send
       else { throw AppDownloadError.versionMismatch }
       try beginCommit()
       progressState = .installing
-      try Self.replaceItem(at: app.fileURL, with: candidate, backupDirectory: stage) { url in
+      try journaledReplace(
+        with: candidate, backupDirectory: stage, expectedVersion: release.version
+      ) { url in
         try Self.verifyInstalled(
           at: url, original: original, expectedVersion: release.version,
           requiresTeam: requiresTeam, launchProbe: launchProbe)
@@ -111,8 +112,7 @@ final class AppDownloadUpdateOperation: DownloadUpdateOperation, @unchecked Send
         "The download is not a zip, disk image or tar archive.")
     }
 
-    let stage = folder.appendingPathComponent(".latest-update-" + UUID().uuidString)
-    try manager.createDirectory(at: stage, withIntermediateDirectories: true)
+    let stage = try journal.backupDirectory(for: app.fileURL, id: jobID)
     defer { Self.removeStageUnlessRecoveryIsNeeded(stage) }
     let candidate = stage.appendingPathComponent("candidate.app")
     let extracted = work.appendingPathComponent("payload")
@@ -160,7 +160,9 @@ final class AppDownloadUpdateOperation: DownloadUpdateOperation, @unchecked Send
       }
       try beginCommit()
       progressState = .installing
-      try Self.replaceItem(at: app.fileURL, with: candidate, backupDirectory: stage) { url in
+      try journaledReplace(
+        with: candidate, backupDirectory: stage, expectedVersion: release.version
+      ) { url in
         try Self.verifyInstalled(
           at: url, original: original, expectedVersion: release.version,
           requiresTeam: requiresTeam, launchProbe: launchProbe)

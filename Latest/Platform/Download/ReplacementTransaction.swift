@@ -71,6 +71,11 @@ enum ReplacementError: LocalizedError, Equatable {
   }
 }
 
+/// Steps of a replacement, reported so the app can journal each before it happens.
+enum ReplacementPhase: Sendable {
+  case prepared, originalAside, installed
+}
+
 /// Keeps the original until the installed destination passes `verify`, restoring it otherwise.
 enum ReplacementTransaction {
   static let backupName = "original"
@@ -79,12 +84,15 @@ enum ReplacementTransaction {
   /// (PackageKit); otherwise it is moved aside and `install` puts the candidate at `target`.
   static func perform(
     at target: URL, backupDirectory: URL, copyingOriginal: Bool = false,
-    install: () throws -> Void, verify: (URL) throws -> Void
+    install: () throws -> Void, verify: (URL) throws -> Void,
+    onPhase: (ReplacementPhase) throws -> Void = { _ in }
   ) throws {
     let manager = FileManager.default
     let backup = backupDirectory.appendingPathComponent(backupName)
     let hadOriginal = manager.fileExists(atPath: target.path)
     let originalIdentity = hadOriginal ? try? BundleIdentity.read(at: target, validate: false) : nil
+    // Recorded before the first change, so an interruption can always be put right.
+    try onPhase(.prepared)
     if hadOriginal {
       if copyingOriginal {
         try manager.copyItem(at: target, to: backup)
@@ -93,7 +101,9 @@ enum ReplacementTransaction {
       }
     }
     do {
+      try onPhase(.originalAside)
       try install()
+      try onPhase(.installed)
       try verify(target)
     } catch {
       guard hadOriginal else {
