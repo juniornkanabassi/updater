@@ -158,16 +158,19 @@ struct PermissionsSettingsView: View {
   @StateObject private var model = PermissionsViewModel()
 
   var body: some View {
-    GroupBox {
-      VStack(alignment: .leading, spacing: 14) {
-        ForEach(Array(PermissionKind.allCases.enumerated()), id: \.element) { index, kind in
-          if index > 0 { Divider() }
+    Form {
+      Section {
+        ForEach(PermissionKind.allCases) { kind in
           row(for: kind)
         }
+      } footer: {
+        Text("Updater never asks for or stores your password.")
+          .font(.caption)
+          .foregroundStyle(.secondary)
       }
-      .padding(10)
     }
-    .padding(20)
+    .formStyle(.grouped)
+    .scrollDisabled(true)
     .task { await model.refresh() }
     // States change in System Settings, so re-read them whenever Updater comes back.
     .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification))
@@ -176,34 +179,52 @@ struct PermissionsSettingsView: View {
 
   private func row(for kind: PermissionKind) -> some View {
     let state = model.state(of: kind)
-    return HStack(alignment: .top, spacing: 12) {
-      VStack(alignment: .leading, spacing: 4) {
-        HStack(spacing: 6) {
-          Text(kind.title)
-          Text(state.title)
+    return LabeledContent {
+      Button("Open Settings") { model.openSettings(for: kind) }
+        .accessibilityLabel("Open System Settings for \(kind.title)")
+    } label: {
+      HStack(alignment: .firstTextBaseline, spacing: 8) {
+        Image(systemName: state.symbol)
+          .foregroundStyle(state.tint)
+          .frame(width: 16)
+          .accessibilityHidden(true)
+        VStack(alignment: .leading, spacing: 2) {
+          Text("\(kind.title) · \(state.title)")
+          Text(kind.explanation)
             .font(.caption)
-            .foregroundStyle(
-              state == .granted ? .green : state == .notGranted ? .orange : .secondary)
-        }
-        Text(kind.explanation)
-          .font(.caption)
-          .foregroundStyle(.secondary)
-          .fixedSize(horizontal: false, vertical: true)
-        if let note = model.notes[kind] {
-          Text(note)
-            .font(.caption)
-            .foregroundStyle(.orange)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+          if let note = model.notes[kind] {
+            Text(note)
+              .font(.caption)
+              .foregroundStyle(Color(nsColor: .systemOrange))
+          }
         }
       }
-      .frame(maxWidth: .infinity, alignment: .leading)
       .accessibilityElement(children: .combine)
       .accessibilityLabel(
         [kind.title, state.title, model.notes[kind]].compactMap { $0 }.joined(separator: ", ")
       )
       .accessibilityHint(kind.explanation)
+    }
+  }
+}
 
-      Button("Open Settings") { model.openSettings(for: kind) }
-        .accessibilityLabel("Open System Settings for \(kind.title)")
+extension PermissionState {
+  /// A shape as well as a colour, so the state never depends on colour alone.
+  fileprivate var symbol: String {
+    switch self {
+    case .granted: "checkmark.circle.fill"
+    case .notGranted: "exclamationmark.circle.fill"
+    case .unknown: "questionmark.circle"
+    }
+  }
+
+  fileprivate var tint: Color {
+    switch self {
+    case .granted: Color(nsColor: .systemGreen)
+    case .notGranted: Color(nsColor: .systemOrange)
+    case .unknown: .secondary
     }
   }
 }

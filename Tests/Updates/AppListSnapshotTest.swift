@@ -139,12 +139,12 @@ final class AppListSnapshotTest: XCTestCase {
     }
     let snapshot = AppListSnapshot(withApps: apps, filterQuery: nil, settings: settings)
 
-    XCTAssertEqual(snapshot.sections.count, 1)
+    // BetterDisplay has no lookup result, so it is not claimed to be up to date.
+    XCTAssertEqual(snapshot.sections.map(\.section.title), ["Up to Date", "Other Apps"])
     XCTAssertEqual(
-      snapshot.sections[0].apps.map(\.name),
-      ["Alpha", "Amazon Kindle", "WhatsApp", "BetterDisplay"])
+      snapshot.sections[0].apps.map(\.name), ["Alpha", "Amazon Kindle", "WhatsApp"])
     XCTAssertEqual(
-      snapshot.refiltered(with: "a").sections[0].apps.map(\.name),
+      snapshot.refiltered(with: "a").sections.flatMap(\.apps).map(\.name),
       ["Alpha", "Amazon Kindle", "WhatsApp", "BetterDisplay"])
   }
 
@@ -190,8 +190,50 @@ final class AppListSnapshotTest: XCTestCase {
     settings.sortOrder = .updateDate
     let settled = AppListSnapshot(withApps: [alpha, beta], filterQuery: nil, settings: settings)
     XCTAssertEqual(settled.sections[0].apps.map(\.name), ["Beta", "Alpha"])
+    XCTAssertEqual(settled.sections[0].section.title, "Ready to Update")
+  }
+
+  /// Round 6: Ready to Update holds exactly what Update All runs; hand-offs and Adobe-style
+  /// unknowns are Needs You; only compared versions count as Up to Date.
+  func testSettledSnapshotGroupsByWhatUpdateDoes() throws {
+    let settings = try isolatedAppListSettings(for: self)
+    let installs = makeTestApp(name: "Installs", version: "1", remoteVersion: "2")
+    let vendorTool = makeTestApp(
+      name: "Office", version: "1", remoteVersion: "2", updateAction: .vendorTool { _ in })
+    let handOff = makeApp(name: "Store", versionNumber: "1", remoteVersionNumber: "2")
+    let relaunch = makeTestApp(
+      name: "Chrome", version: "1", remoteVersion: "2", updateAction: .relaunch { _ in })
+    let current = makeTestApp(name: "Current", version: "2", remoteVersion: "2")
+    let unknownBundle = App.Bundle(
+      version: Version(versionNumber: "25", buildNumber: nil), name: "Premiere",
+      bundleIdentifier: "com.adobe.premiere", fileURL: URL(fileURLWithPath: "/tmp/Premiere.app"),
+      source: .vendor, modificationDate: .distantPast)
+    let unknown = App(
+      bundle: unknownBundle,
+      update: .success(
+        App.Update(
+          app: unknownBundle, remoteVersion: unknownBundle.version, minimumOSVersion: nil,
+          source: .vendor, date: nil, releaseNotes: nil,
+          updateAction: .external(label: "Creative Cloud") { _ in }, availabilityUnknown: true)),
+      isIgnored: false)
+    let unchecked = makeApp(name: "Unchecked", versionNumber: "1")
+    let snapshot = AppListSnapshot(
+      withApps: [installs, vendorTool, handOff, relaunch, current, unknown, unchecked],
+      filterQuery: nil, settings: settings)
     XCTAssertEqual(
-      settled.sections[0].section.title, NSLocalizedString("AvailableUpdatesSection", comment: ""))
+      snapshot.sections.map(\.section.title),
+      ["Ready to Update", "Needs You", "Up to Date", "Other Apps"])
+    XCTAssertEqual(snapshot.sections[0].apps.map(\.name), ["Installs", "Office"])
+    XCTAssertEqual(snapshot.sections[1].apps.map(\.name), ["Chrome", "Premiere", "Store"])
+    XCTAssertEqual(snapshot.sections[2].apps.map(\.name), ["Current"])
+    XCTAssertEqual(snapshot.sections[3].apps.map(\.name), ["Unchecked"])
+    XCTAssertEqual(
+      Set(snapshot.sections[0].apps.map(\.identifier)),
+      // UpdateCheckingService.updateAllCandidates over AppDataStore.updatableApps.
+      Set(
+        snapshot.apps.filter { $0.updateAvailable && $0.capability.isAutomatic }
+          .map(\.identifier)),
+      "Ready to Update must be exactly Update All's apps")
   }
 
   func testCheckingFiltersDoNotTreatUnknownSourceAsUnsupportedOrAnAvailableUpdate() throws {

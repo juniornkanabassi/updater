@@ -746,7 +746,8 @@ final class VendorAdaptersTest: XCTestCase {
 
     let snapshot = AppListSnapshot(
       withApps: [app], filterQuery: nil, settings: try isolatedAppListSettings(for: self))
-    XCTAssertEqual(snapshot.sections.map(\.section.title), ["Check in Creative Cloud"])
+    XCTAssertEqual(snapshot.sections.map(\.section.title), ["Needs You"])
+    XCTAssertEqual(app.versionSummary, "Check in Creative Cloud", "never an invented version")
 
     let model = UpdateActionViewModel(app: app, updating: AppUpdateService(queue: UpdateQueue()))
     XCTAssertEqual(model.presentation, .update)

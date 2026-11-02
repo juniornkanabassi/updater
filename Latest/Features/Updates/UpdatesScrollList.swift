@@ -7,7 +7,6 @@ import SwiftUI
 
 struct UpdatesScrollList: View {
   @ObservedObject var viewModel: UpdatesListViewModel
-  let showsSupportStatusOverride: Bool?
   let focus: FocusState<SidebarFocus?>.Binding
   @State private var navigation = SidebarScrollState()
   @Environment(\.controlActiveState) private var controlActiveState
@@ -22,7 +21,6 @@ struct UpdatesScrollList: View {
             ForEach(group.apps, id: \.identifier) { app in
               UpdatesScrollRow(
                 app: app, viewModel: viewModel,
-                showsSupportStatus: showsSupportStatusOverride ?? true,
                 focus: focus,
                 selection: navigation.selection(for: app),
                 select: { select($0, keyboard: false) }
@@ -75,6 +73,11 @@ struct UpdatesScrollList: View {
     }
     .onChange(of: controlActiveState) { _, _ in
       navigation.setEmphasized(focus.wrappedValue == .list && controlActiveState != .inactive)
+    }
+    .overlay {
+      if viewModel.snapshot.entries.isEmpty && !viewModel.searchQuery.isEmpty {
+        ContentUnavailableView.search(text: viewModel.searchQuery)
+      }
     }
     .accessibilityIdentifier("updates.list")
     .accessibilityLabel("Apps")
@@ -224,19 +227,17 @@ private struct UpdatesScrollRow: View {
   let selection: UpdateRowSelection
   let select: (App) -> Void
   private let initialApp: App
-  private let showsSupportStatus: Bool
   private var app: App {
     viewModel.snapshot.app(withIdentifier: initialApp.identifier) ?? initialApp
   }
   private var isSelected: Bool { selection.isSelected }
 
   init(
-    app: App, viewModel: UpdatesListViewModel, showsSupportStatus: Bool,
+    app: App, viewModel: UpdatesListViewModel,
     focus: FocusState<SidebarFocus?>.Binding, selection: UpdateRowSelection,
     select: @escaping (App) -> Void
   ) {
     self.initialApp = app
-    self.showsSupportStatus = showsSupportStatus
     self._viewModel = ObservedObject(wrappedValue: viewModel)
     self.focus = focus
     self.selection = selection
@@ -247,8 +248,7 @@ private struct UpdatesScrollRow: View {
     let app = self.app
     let content = UpdateRowView(
       app: app, selection: selection,
-      date: Self.dateFormatter.string(from: app.updateDate),
-      showsSupportStatus: showsSupportStatus, updating: viewModel.updating)
+      date: Self.dateFormatter.string(from: app.updateDate), updating: viewModel.updating)
     GeometryReader { geometry in
       ZStack {
         content

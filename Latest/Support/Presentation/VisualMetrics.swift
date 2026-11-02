@@ -39,8 +39,5 @@ enum VisualMetrics {
   static let detailMetadataVerticalOffset: CGFloat = -7
   static let detailMetadataLineVerticalCorrection: CGFloat = 1
   static let detailTitleVerticalCorrection: CGFloat = 0
-  static let supportStatusHorizontalCorrection: CGFloat = -1
-  static let detailUpdateButtonWidth: CGFloat = 59
-  static let detailUpdateButtonHeight: CGFloat = 24
 
 }

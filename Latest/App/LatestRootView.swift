@@ -23,8 +23,7 @@ struct LatestRootView: View {
     HStack(spacing: 0) {
       UpdatesSidebarView(
         viewModel: updatesViewModel,
-        searchFocusController: environment.searchFocusController,
-        showsSupportStatusOverride: updatesViewModel.showsSupportStatus
+        searchFocusController: environment.searchFocusController
       )
       .frame(width: VisualMetrics.sidebarIdealWidth)
       .frame(maxHeight: .infinity)
@@ -32,17 +31,14 @@ struct LatestRootView: View {
         Divider().ignoresSafeArea(.container, edges: .top)
       }
 
-      ReleaseNotesDetailView(
-        updatesViewModel: updatesViewModel,
-        showsSupportStatus: updatesViewModel.showsSupportStatus
-      )
-      .frame(minWidth: VisualMetrics.detailMinWidth)
-      .overlay(alignment: .top) {
-        Rectangle()
-          .fill(Color(nsColor: .separatorColor))
-          .frame(height: 1)
-          .allowsHitTesting(false)
-      }
+      ReleaseNotesDetailView(updatesViewModel: updatesViewModel)
+        .frame(minWidth: VisualMetrics.detailMinWidth)
+        .overlay(alignment: .top) {
+          Rectangle()
+            .fill(Color(nsColor: .separatorColor))
+            .frame(height: 1)
+            .allowsHitTesting(false)
+        }
     }
     .environment(\.windowFocus, $focus)
     .modifier(UpdateInstallHelperPresentation())
@@ -61,9 +57,10 @@ struct LatestRootView: View {
           .accessibilityIdentifier("toolbar.title")
       }
       .sharedBackgroundVisibility(.hidden)
-      UpdatesToolbar(service: environment.updateCheckingService) {
-        environment.commands.reload()
-      }
+      UpdatesToolbar(
+        service: environment.updateCheckingService, summary: environment.menuBar,
+        reload: { environment.commands.reload() },
+        updateAll: { environment.commands.updateAll() })
     }
   }
 }

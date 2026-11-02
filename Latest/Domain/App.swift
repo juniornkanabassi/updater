@@ -148,6 +148,9 @@ extension App {
   /// The update action can be offered: an update is available, or it is a check hand-off.
   var isActionable: Bool { updateAvailable || availabilityUnknown }
 
+  /// This is the running Updater's own bundle (presentation only: it never updates itself yet).
+  var isUpdaterItself: Bool { bundleIdentifier == Foundation.Bundle.main.bundleIdentifier }
+
   /// The action relaunches the app instead of installing (Chrome).
   var relaunchesToUpdate: Bool {
     if case .relaunch? = updateAction { return true }

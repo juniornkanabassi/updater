@@ -10,7 +10,9 @@ final class MenuBarViewModel: ObservableObject {
   nonisolated static let showsItemKey = "ShowsMenuBarItem"
 
   @Published private(set) var updates = [App]()
-  @Published private(set) var canUpdateAll = false
+  /// How many apps Update All would start now (the window's toolbar shows it too).
+  @Published private(set) var updateAllCount = 0
+  var canUpdateAll: Bool { updateAllCount > 0 }
 
   private let appProvider: any AppProviding
   private let settings: any AppListSettingsProviding
@@ -84,7 +86,7 @@ final class MenuBarViewModel: ObservableObject {
     if let apps { self.apps = apps }
     updates = UpdateNotificationController.waitingUpdates(
       in: self.apps, includeExternal: settings.includeAppsWithLimitedSupport)
-    canUpdateAll = !updateAllCandidates().isEmpty
+    updateAllCount = updateAllCandidates().count
   }
 }
 
@@ -138,21 +140,27 @@ struct MenuBarContentView: View {
 
   var body: some View {
     Group {
+      let ready = model.updates.filter { $0.capability.isAutomatic }
+      let needsYou = model.updates.filter { !$0.capability.isAutomatic }
       if model.updates.isEmpty {
-        Text(checking.isRunning ? "Checking for updates…" : "No updates available")
-      } else {
-        ForEach(model.updates, id: \.identifier) { app in
-          Button(Self.title(for: app)) {
-            select(app)
-            MainWindow.show()
-          }
-          .accessibilityLabel(Self.title(for: app).replacingOccurrences(of: "→", with: "to"))
-        }
+        Text(checking.isRunning ? "Checking for updates…" : "Everything is up to date")
+      }
+      // Plain headers keep the menu free of the extra separators SwiftUI adds around Sections.
+      if !ready.isEmpty {
+        Text("Ready to Update")
+        rows(ready)
+      }
+      if !needsYou.isEmpty {
+        if !ready.isEmpty { Divider() }
+        Text("Needs You")
+        rows(needsYou)
       }
       Divider()
-      Button("Update All") { checking.updateAll() }
-        .disabled(!model.canUpdateAll)
-        .accessibilityHint("Installs every update Updater can install itself")
+      Button(model.updateAllCount > 0 ? "Update All (\(model.updateAllCount))" : "Update All") {
+        checking.updateAll()
+      }
+      .disabled(!model.canUpdateAll)
+      .accessibilityHint("Installs every update under Ready to Update")
       Button("Check Now") { checking.checkForUpdates() }
         .disabled(checking.isRunning)
       Divider()
@@ -163,11 +171,22 @@ struct MenuBarContentView: View {
     .modifier(MainWindowOpenerCapture())
   }
 
-  static func title(for app: App) -> String {
-    guard let versions = app.localizedVersionInformation, let available = versions.rawNew else {
-      return app.name
+  private func rows(_ apps: [App]) -> some View {
+    ForEach(apps, id: \.identifier) { app in
+      Button(Self.title(for: app)) {
+        select(app)
+        MainWindow.show()
+      }
+      .accessibilityLabel(Self.title(for: app).replacingOccurrences(of: "→", with: "to"))
     }
-    return "\(app.name)  \(versions.rawCurrent) → \(available)"
+  }
+
+  /// "Goodnotes  7.1.32 → 7.1.34" for installs; hand-offs add where they go.
+  static func title(for app: App) -> String {
+    let versions = app.versionSummary
+    let base = versions.isEmpty ? app.name : "\(app.name)  \(versions)"
+    return app.capability.isAutomatic
+      ? base : "\(base)  ·  \(SidebarUpdateActionTitle.text(for: app))"
   }
 }
 

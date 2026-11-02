@@ -29,7 +29,6 @@ struct SettingsRootView: View {
       .controlSize(.large)
       .frame(width: 330)
       .padding(.top, 12)
-      .padding(.bottom, 4)
 
       switch viewModel.selectedTab {
       case .general:

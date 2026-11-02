@@ -14,21 +14,15 @@ import SwiftUI
 struct UpdatesSidebarView: View {
   @ObservedObject var viewModel: UpdatesListViewModel
   @ObservedObject var searchFocusController: SearchFocusController
-  let showsSupportStatusOverride: Bool?
   @FocusState private var focus: SidebarFocus?
   @Environment(\.windowFocus) private var windowFocus
   @State private var previousFocus = SidebarFocus.list
 
   private var activeFocus: FocusState<SidebarFocus?>.Binding { windowFocus ?? $focus }
 
-  init(
-    viewModel: UpdatesListViewModel,
-    searchFocusController: SearchFocusController,
-    showsSupportStatusOverride: Bool? = nil
-  ) {
+  init(viewModel: UpdatesListViewModel, searchFocusController: SearchFocusController) {
     self.viewModel = viewModel
     self.searchFocusController = searchFocusController
-    self.showsSupportStatusOverride = showsSupportStatusOverride
   }
 
   var body: some View {
@@ -40,9 +34,7 @@ struct UpdatesSidebarView: View {
       // Keep the glass shadow above the scrolling content so the first
       // opaque section header does not cut it off at the search/list seam.
       .zIndex(1)
-      UpdatesScrollList(
-        viewModel: viewModel, showsSupportStatusOverride: showsSupportStatusOverride,
-        focus: activeFocus)
+      UpdatesScrollList(viewModel: viewModel, focus: activeFocus)
     }
     .onChange(of: activeFocus.wrappedValue) { _, new in
       if let new, new != .search { previousFocus = new }

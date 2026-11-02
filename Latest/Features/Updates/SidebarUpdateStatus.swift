@@ -4,14 +4,12 @@
 import AppKit
 import SwiftUI
 
-/// One update-state subscription owns both the status dot and progress control.
-struct SidebarUpdateStatus: View {
+/// One update-state subscription per row or detail pane; the content reads its presentation.
+struct ObservedUpdatePresentation<Content: View>: View {
   let app: App
-  let selection: UpdateRowSelection
-  let showsSupportStatus: Bool
   let updating: any AppUpdating
+  @ViewBuilder let content: (UpdateActionPresentation) -> Content
   @State private var observed: ObservedState?
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   private struct ObservationKey: Equatable {
     let app: App.Bundle.Identifier
@@ -33,75 +31,90 @@ struct SidebarUpdateStatus: View {
   }
 
   var body: some View {
-    Group {
-      switch presentation {
-      case .retryTermination:
-        Button {
-          updating.retryTermination(app)
-        } label: {
-          Image(systemName: "arrow.clockwise")
-            .foregroundStyle(
-              Color(
-                nsColor: selection.usesActiveSelectionColors
-                  ? .alternateSelectedControlTextColor : .controlAccentColor))
+    content(presentation)
+      .task(id: key) {
+        let key = key
+        for await state in updating.states(for: app.identifier) {
+          guard !Task.isCancelled else { return }
+          let next = ObservedState(key: key, presentation: .make(for: app, progressState: state))
+          if observed?.key != key || observed?.presentation != next.presentation { observed = next }
         }
-        .buttonStyle(.plain)
-        .help("Save your work, then retry quitting \(app.name) to finish the update.")
-        .accessibilityLabel("Retry quitting \(app.name)")
-        .accessibilityIdentifier("updates.retry-termination")
-      case .waiting(let status):
-        TimelineView(.animation(paused: reduceMotion)) { context in
-          SidebarIndicatorGlyph(
-            fraction: nil,
-            angle: reduceMotion
-              ? 0
-              : context.date.timeIntervalSinceReferenceDate
-                .truncatingRemainder(dividingBy: 1) * 360,
-            tint: Color(
-              nsColor: selection.usesActiveSelectionColors
-                ? .alternateSelectedControlTextColor : .tertiaryLabelColor))
-        }
-        .help(status)
-        .accessibilityLabel(status)
-      case .progress(let fraction, let status, let cancellable):
-        Button {
-          updating.cancel(app)
-        } label: {
-          Color.clear
-        }
-        .buttonStyle(
-          SidebarProgressButtonStyle(
-            fraction: fraction, selection: selection, cancellable: cancellable)
+      }
+  }
+}
+
+/// The row's trailing control: an Update/Open button like the App Store's, or progress in place.
+struct SidebarUpdateStatus: View {
+  let app: App
+  let presentation: UpdateActionPresentation
+  let selection: UpdateRowSelection
+  let updating: any AppUpdating
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  var body: some View {
+    switch presentation {
+    case .update:
+      Button(SidebarUpdateActionTitle.shortText(for: app)) { updating.update(app) }
+        .buttonStyle(.bordered)
+        .buttonBorderShape(.capsule)
+        .controlSize(.small)
+        .help(app.updateExplanation)
+        .accessibilityLabel(SidebarUpdateActionTitle.text(for: app))
+        .accessibilityIdentifier("updates.action")
+    case .open:
+      EmptyView()
+    case .failed:
+      Image(systemName: "exclamationmark.triangle.fill")
+        .foregroundStyle(
+          selection.usesActiveSelectionColors
+            ? Color(nsColor: .alternateSelectedControlTextColor) : Color(nsColor: .systemOrange)
         )
-        .disabled(!cancellable)
-        .help(status)
-        .accessibilityLabel(status)
-        .accessibilityHint(cancellable ? "Cancel update" : "")
-        .accessibilityIdentifier("updates.progress")
-      case .update, .open, .failed:
-        Group {
-          if app.isSourcePending {
-            Image(systemName: "ellipsis").foregroundStyle(.secondary)
-          } else {
-            Image(nsImage: app.source.supportState.statusImage)
-          }
-        }
-        .frame(width: 16, height: 16)
-        .offset(y: -13)
-        .opacity(showsSupportStatus ? 1 : 0)
-        .help(app.localizedSupportStatus)
-        .accessibilityLabel(app.localizedSupportStatus)
-        .accessibilityHidden(!showsSupportStatus)
+        .accessibilityLabel("Update failed")
+    case .retryTermination:
+      Button {
+        updating.retryTermination(app)
+      } label: {
+        Image(systemName: "arrow.clockwise")
+          .foregroundStyle(
+            Color(
+              nsColor: selection.usesActiveSelectionColors
+                ? .alternateSelectedControlTextColor : .controlAccentColor))
       }
-    }
-    .frame(width: 24, height: 24)
-    .task(id: key) {
-      let key = key
-      for await state in updating.states(for: app.identifier) {
-        guard !Task.isCancelled else { return }
-        let next = ObservedState(key: key, presentation: .make(for: app, progressState: state))
-        if observed?.key != key || observed?.presentation != next.presentation { observed = next }
+      .buttonStyle(.plain)
+      .frame(width: 24, height: 24)
+      .help("Save your work, then retry quitting \(app.name) to finish the update.")
+      .accessibilityLabel("Retry quitting \(app.name)")
+      .accessibilityIdentifier("updates.retry-termination")
+    case .waiting(let status):
+      TimelineView(.animation(paused: reduceMotion)) { context in
+        SidebarIndicatorGlyph(
+          fraction: nil,
+          angle: reduceMotion
+            ? 0
+            : context.date.timeIntervalSinceReferenceDate
+              .truncatingRemainder(dividingBy: 1) * 360,
+          tint: Color(
+            nsColor: selection.usesActiveSelectionColors
+              ? .alternateSelectedControlTextColor : .tertiaryLabelColor))
       }
+      .frame(width: 24, height: 24)
+      .help(status)
+      .accessibilityLabel(status)
+    case .progress(let fraction, let status, let cancellable):
+      Button {
+        updating.cancel(app)
+      } label: {
+        Color.clear
+      }
+      .buttonStyle(
+        SidebarProgressButtonStyle(
+          fraction: fraction, selection: selection, cancellable: cancellable)
+      )
+      .disabled(!cancellable)
+      .help(status)
+      .accessibilityLabel(status)
+      .accessibilityHint(cancellable ? "Cancel update" : "")
+      .accessibilityIdentifier("updates.progress")
     }
   }
 }

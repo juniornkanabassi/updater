@@ -78,7 +78,9 @@ final class UpdateActionViewModel: ObservableObject {
   }
 
   /// A failure recorded as `needsPermission` that a System Settings pane can fix.
-  var missingPermission: PermissionKind? {
+  var missingPermission: PermissionKind? { Self.missingPermission(for: app, updating: updating) }
+
+  static func missingPermission(for app: App, updating: any AppUpdating) -> PermissionKind? {
     guard case .error(let error) = updating.state(for: app.identifier),
       case .needsPermission(let kind)? = (error as? UpdateOutcomeError)?.outcome
     else { return nil }
@@ -139,79 +141,24 @@ struct UpdateActionSurface: View {
   let presentation: UpdateActionPresentation
   let performAction: () -> Void
 
-  init(
-    app: App,
-    presentation: UpdateActionPresentation,
-    performAction: @escaping () -> Void
-  ) {
-    self.app = app
-    self.presentation = presentation
-    self.performAction = performAction
-  }
-
   var body: some View {
-    VStack(spacing: 5) {
-      UpdateActionControl(
-        appName: app.name,
-        // Hand-offs read "Open" with "in <Vendor>" below; Updater installs only on "Update".
-        isHandOff: app.capability == .handOff,
-        relaunches: app.relaunchesToUpdate && SidebarUpdateActionTitle.isRunning(app),
-        presentation: presentation,
-        performAction: performAction
-      )
-      .frame(
-        width: VisualMetrics.detailUpdateButtonWidth,
-        height: VisualMetrics.detailUpdateButtonHeight
-      )
-
-      if app.isActionable,
-        let externalUpdaterName = app.externalUpdaterName
-      {
-        Text(
-          String(
-            format: NSLocalizedString(
-              "ExternalUpdateActionWithAppName",
-              comment: "Explanatory label below an external update button"
-            ),
-            externalUpdaterName
-          )
-        )
-        .font(.system(size: 9))
-        .lineLimit(1)
-        .fixedSize(horizontal: true, vertical: false)
-      }
-    }
-    .frame(width: VisualMetrics.detailUpdateButtonWidth, height: VisualMetrics.detailIconSize)
+    UpdateActionControl(app: app, presentation: presentation, performAction: performAction)
+      .frame(height: VisualMetrics.detailIconSize)
   }
 }
 
 @MainActor
 enum UpdateActionVisualStyle {
-  static let backgroundColor = Color(
-    .sRGB, red: 0.9488552213,
-    green: 0.9487094283,
-    blue: 0.9693081975,
-    opacity: 1
-  )
-  static let highlightedBackgroundColor = Color(
-    .sRGB, red: 0.7995074391,
-    green: 0.8113409281,
-    blue: 0.8403512836,
-    opacity: 1
-  )
-  static let errorImage = NSImage(
-    systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: nil)
-  static let capsuleHorizontalInset: CGFloat = 0.25
   static let progressDiameter: CGFloat = 20
   static let progressLineWidth: CGFloat = 2.5
   static let pauseBarSize = CGSize(width: 2, height: 8)
   static let pauseBarSpacing: CGFloat = 2
 }
 
+/// The button names exactly what happens: "Update" only when Updater installs it itself,
+/// otherwise the place it opens ("Open App Store", "Relaunch Chrome").
 private struct UpdateActionControl: View {
-  let appName: String
-  let isHandOff: Bool
-  let relaunches: Bool
+  let app: App
   let presentation: UpdateActionPresentation
   let performAction: () -> Void
 
@@ -219,32 +166,35 @@ private struct UpdateActionControl: View {
   var body: some View {
     switch presentation {
     case .update:
-      UpdateActionCapsule(
-        content: .title(
-          relaunches
-            ? "Relaunch"
-            : isHandOff
-              ? NSLocalizedString("OpenAction", comment: "Action to open an app")
-              : NSLocalizedString("UpdateAction", comment: "Action to update an app")),
-        accessibilityLabel: relaunches
-          ? "Relaunch \(appName) to apply its update"
-          : isHandOff ? "Open the updater for \(appName)" : "Update \(appName)",
-        performAction: performAction
-      )
+      if app.capability.isAutomatic {
+        Button(SidebarUpdateActionTitle.text(for: app), action: performAction)
+          .buttonStyle(.borderedProminent)
+          .modifier(HeaderButtonMetrics())
+          .accessibilityLabel("Update \(app.name)")
+          .accessibilityIdentifier("update.action")
+      } else {
+        Button(SidebarUpdateActionTitle.text(for: app), action: performAction)
+          .buttonStyle(.bordered)
+          .modifier(HeaderButtonMetrics())
+          .help(app.updateExplanation)
+          .accessibilityIdentifier("update.action")
+      }
     case .open:
-      UpdateActionCapsule(
-        content: .title(NSLocalizedString("OpenAction", comment: "Action to open an app")),
-        accessibilityLabel: "Open \(appName)",
-        performAction: performAction
-      )
+      if !app.isUpdaterItself {
+        Button(
+          NSLocalizedString("OpenAction", comment: "Action to open an app"), action: performAction
+        )
+        .buttonStyle(.bordered)
+        .modifier(HeaderButtonMetrics())
+        .accessibilityLabel("Open \(app.name)")
+      }
     case .retryTermination:
-      UpdateActionCapsule(
-        content: .title(NSLocalizedString("RetryAction", comment: "Retry quitting the app")),
-        accessibilityLabel: "Retry quitting \(appName)",
-        performAction: performAction
-      )
-      .help("Save your work, then retry quitting \(appName) to finish the update.")
-      .accessibilityIdentifier("update.retry-termination")
+      Button("Retry Quit", action: performAction)
+        .buttonStyle(.bordered)
+        .modifier(HeaderButtonMetrics())
+        .help("Save your work, then retry quitting \(app.name) to finish the update.")
+        .accessibilityLabel("Retry quitting \(app.name)")
+        .accessibilityIdentifier("update.retry-termination")
     case .waiting(let status):
       UpdateActionIndeterminateIndicator()
         .help(status)
@@ -263,184 +213,18 @@ private struct UpdateActionControl: View {
       .accessibilityHint(cancellable ? "Cancel update" : "")
       .accessibilityIdentifier("update.progress")
     case .failed:
-      UpdateActionCapsule(
-        content: .image(UpdateActionVisualStyle.errorImage),
-        accessibilityLabel: NSLocalizedString(
-          "ErrorButtonAccessibilityTitle",
-          comment: "Description of button that opens an error dialogue"
-        ),
-        performAction: performAction
-      )
+      // Opens the failure alert: Retry, Open Settings when a permission fixes it, or Cancel.
+      Button("Retry…", action: performAction)
+        .buttonStyle(.bordered)
+        .modifier(HeaderButtonMetrics())
+        .accessibilityLabel("Retry updating \(app.name)")
     }
   }
 }
 
-/// macOS 26 retains the established native glyph and capsule rasterization.
-private struct UpdateActionCapsule: View {
-  let content: UpdateActionCapsuleDrawing.Content
-  let accessibilityLabel: String
-  let performAction: () -> Void
-
-  var body: some View {
-    if #available(macOS 27, *) {
-      button.buttonStyle(UpdateActionCapsuleStyle())
-    } else {
-      button.buttonStyle(UpdateActionNativeCapsuleStyle(content: content))
-    }
-  }
-
-  private var button: some View {
-    Button(action: performAction) {
-      switch content {
-      case .title(let title): Text(title)
-      case .image(let image):
-        if let image { Image(nsImage: image).offset(x: -0.25, y: -0.5) }
-      }
-    }
-    .accessibilityLabel(accessibilityLabel)
-  }
-}
-
-private struct UpdateActionNativeCapsuleStyle: ButtonStyle {
-  let content: UpdateActionCapsuleDrawing.Content
-
-  func makeBody(configuration: Configuration) -> some View {
-    configuration.label.hidden()
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
-      .background {
-        UpdateActionCapsuleDrawing(content: content, isPressed: configuration.isPressed)
-          .allowsHitTesting(false)
-          .accessibilityHidden(true)
-      }
-      .contentShape(Rectangle())
-  }
-}
-
-/// macOS 26 needs AppKit's title, symbol and capsule rasterization. SwiftUI
-/// owns input and actions; the native control is only a noninteractive drawing.
-private struct UpdateActionCapsuleDrawing: NSViewRepresentable {
-  enum Content {
-    case title(String)
-    case image(NSImage?)
-  }
-
-  let content: Content
-  let isPressed: Bool
-
-  func makeNSView(context: Context) -> CapsuleHostView {
-    let button = PixelMatchedActionButton(frame: .zero)
-    button.cell = PixelMatchedActionButtonCell()
-    button.isBordered = false
-    button.refusesFirstResponder = true
-    button.setAccessibilityElement(false)
-    button.contentTintColor = .controlAccentColor
-    configure(button)
-    return CapsuleHostView(button: button)
-  }
-
-  func updateNSView(_ hostView: CapsuleHostView, context: Context) {
-    configure(hostView.button)
-  }
-
-  private func configure(_ button: PixelMatchedActionButton) {
-    button.backgroundColor = NSColor(
-      isPressed
-        ? UpdateActionVisualStyle.highlightedBackgroundColor
-        : UpdateActionVisualStyle.backgroundColor)
-    button.highlight(isPressed)
-    switch content {
-    case .title(let title):
-      button.title = title
-      button.image = nil
-    case .image(let image):
-      button.title = ""
-      button.image = image
-    }
-  }
-
-  @MainActor
-  final class CapsuleHostView: NSView {
-    let button: PixelMatchedActionButton
-
-    init(button: PixelMatchedActionButton) {
-      self.button = button
-      super.init(frame: .zero)
-      addSubview(button)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-      fatalError("init(coder:) has not been implemented")
-    }
-
-    override func layout() {
-      super.layout()
-      button.frame = bounds.insetBy(dx: UpdateActionVisualStyle.capsuleHorizontalInset, dy: 0)
-    }
-  }
-
-}
-
-@MainActor
-private final class PixelMatchedActionButton: NSButton {
-  var backgroundColor = NSColor(UpdateActionVisualStyle.backgroundColor) {
-    didSet { needsDisplay = true }
-  }
-}
-
-private final class PixelMatchedActionButtonCell: NSButtonCell {
-  override func drawInterior(withFrame cellFrame: NSRect, in controlView: NSView) {
-    guard let button = controlView as? PixelMatchedActionButton else { return }
-    let radius = cellFrame.height / 2
-    button.backgroundColor.setFill()
-    NSBezierPath(roundedRect: cellFrame, xRadius: radius, yRadius: radius).fill()
-    super.drawInterior(withFrame: cellFrame, in: controlView)
-  }
-
-  override func drawTitle(
-    _ title: NSAttributedString,
-    withFrame frame: NSRect,
-    in controlView: NSView
-  ) -> NSRect {
-    let string = NSMutableAttributedString(attributedString: title)
-    let range = NSRange(location: 0, length: string.length)
-    string.addAttribute(.foregroundColor, value: NSColor.controlAccentColor, range: range)
-    let pointSize = font?.pointSize ?? NSFont.systemFontSize
-    string.addAttribute(
-      .font,
-      value: NSFont.systemFont(ofSize: pointSize - 1, weight: .medium),
-      range: range
-    )
-    var adjustedFrame = frame
-    adjustedFrame.origin.y -= 1
-    return super.drawTitle(string, withFrame: adjustedFrame, in: controlView)
-  }
-
-  override func drawImage(_ image: NSImage, withFrame frame: NSRect, in controlView: NSView) {
-    var adjustedFrame = frame
-    adjustedFrame.origin.y -= 1
-    super.drawImage(image, withFrame: adjustedFrame, in: controlView)
-  }
-}
-
-private struct UpdateActionCapsuleStyle: ButtonStyle {
-  func makeBody(configuration: Configuration) -> some View {
-    configuration.label
-      .font(.system(size: 12, weight: .medium))
-      .foregroundStyle(Color(nsColor: .controlAccentColor))
-      .offset(x: -0.25, y: -0.5)
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
-      .background {
-        Capsule(style: .circular)
-          .fill(
-            configuration.isPressed
-              ? UpdateActionVisualStyle.highlightedBackgroundColor
-              : UpdateActionVisualStyle.backgroundColor
-          )
-          .offset(x: -0.25)
-      }
-      .padding(.horizontal, UpdateActionVisualStyle.capsuleHorizontalInset)
-      .contentShape(Rectangle())
+private struct HeaderButtonMetrics: ViewModifier {
+  func body(content: Content) -> some View {
+    content.controlSize(.large).buttonBorderShape(.capsule).fixedSize()
   }
 }
 

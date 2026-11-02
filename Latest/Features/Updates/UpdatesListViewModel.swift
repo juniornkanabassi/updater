@@ -47,6 +47,8 @@ final class UpdatesListViewModel: ObservableObject {
     set { selection.app = newValue }
   }
   var isKeyboardSelection: Bool { selection.isKeyboardSelection }
+  /// The user picked the selection; automatic choices may still move to the first update.
+  private var userChoseSelection = false
   @Published private(set) var searchQuery = ""
 
   private struct ListPreferences: Equatable {
@@ -144,6 +146,7 @@ final class UpdatesListViewModel: ObservableObject {
   }
 
   func select(_ app: App?, isKeyboardSelection: Bool = false) {
+    userChoseSelection = app != nil
     guard app?.identifier != selectedApp?.identifier else { return }
     if let app, app !== selectedApp {
       MigrationTelemetry.shared.selectionStarted(appName: app.name)
@@ -171,10 +174,6 @@ final class UpdatesListViewModel: ObservableObject {
     !appProvider.updatableApps.isEmpty
   }
 
-  var showsSupportStatus: Bool {
-    settings.includeAppsWithLimitedSupport || settings.includeUnsupportedApps
-  }
-
   private var normalizedSearchQuery: String? {
     searchQuery.isEmpty ? nil : searchQuery
   }
@@ -194,16 +193,23 @@ final class UpdatesListViewModel: ObservableObject {
     )
   }
 
+  /// The automatic selection is the first app with an update or hand-off, never an arbitrary
+  /// installed app (such as Updater itself); with none, the detail pane shows the overview.
+  /// A selection the user made stays until it leaves the list.
   private func maintainSelectionAfterSnapshotChange() {
-    if let selectedApp,
-      snapshot.firstIndex(of: selectedApp) != nil
-    {
+    let firstActionable = snapshot.sections.lazy.flatMap(\.apps).first(where: \.isActionable)
+    if let selectedApp, snapshot.firstIndex(of: selectedApp) != nil {
       let refreshedApp = snapshot.app(withIdentifier: selectedApp.identifier)
-      if refreshedApp !== selectedApp { self.selectedApp = refreshedApp }
+      if !userChoseSelection, refreshedApp?.isActionable != true, let firstActionable {
+        self.selectedApp = firstActionable
+      } else if refreshedApp !== selectedApp {
+        self.selectedApp = refreshedApp
+      }
       return
     }
 
-    selectedApp = snapshot.sections.first?.apps.first
+    userChoseSelection = false
+    selectedApp = firstActionable
   }
 
   private func updateDockBadge() {

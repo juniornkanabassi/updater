@@ -100,7 +100,7 @@ final class UpdateCheckDiscoveryTest: XCTestCase {
     coordinator.updateDiscoveredBundles([bundle("A"), bundle("B")])
     await fulfillment(of: [started, discovered], timeout: 2)
     XCTAssertEqual(model.snapshot.sections.flatMap(\.apps).map(\.name), ["A", "B"])
-    XCTAssertEqual(model.selectedApp?.name, "A")
+    XCTAssertNil(model.selectedApp, "No automatic selection before anything has an update")
     await checks.complete("A", date: Date(timeIntervalSince1970: 10))
     await fulfillment(of: [incremental], timeout: 2)
     XCTAssertEqual(model.snapshot.sections.flatMap(\.apps).map(\.name), ["A", "B"])
@@ -137,7 +137,8 @@ final class UpdateCheckDiscoveryTest: XCTestCase {
     coordinator.updateDiscoveredBundles([bundle("A"), bundle("B")])
     await fulfillment(of: [initialStarted], timeout: 2)
     try await waitForSnapshot(model) { $0.apps.count == 2 }
-    XCTAssertEqual(model.selectedApp?.name, "A")
+    XCTAssertNil(model.selectedApp, "No automatic selection before anything has an update")
+    model.select(try XCTUnwrap(model.snapshot.apps.first { $0.name == "A" }))
     await checks.complete("B", remoteVersion: "1", date: Date(timeIntervalSince1970: 20))
     try await waitForSnapshot(model) {
       $0.apps.first(where: { $0.name == "B" })?.remoteVersion != nil
@@ -147,7 +148,7 @@ final class UpdateCheckDiscoveryTest: XCTestCase {
     try await waitForSnapshot(model) { $0.checkingGeneration == nil }
     XCTAssertEqual(model.snapshot.sections.flatMap(\.apps).map(\.name), ["B", "A"])
     XCTAssertEqual(
-      model.selectedApp?.name, "A", "Automatic initial selection must also survive settlement")
+      model.selectedApp?.name, "A", "A chosen selection must survive settlement")
     let identifier = try XCTUnwrap(model.selectedApp?.identifier)
     coordinator.updateDiscoveredBundles(
       [bundle("A"), bundle("B"), bundle("C")], forceRefresh: true)
@@ -180,7 +181,7 @@ final class UpdateCheckDiscoveryTest: XCTestCase {
     XCTAssertEqual(model.snapshot.sections.flatMap(\.apps).map(\.name), ["B", "A", "C"])
     await checks.complete("C", remoteVersion: "1", date: Date(timeIntervalSince1970: 40))
     try await waitForSnapshot(model) { $0.checkingGeneration == nil }
-    XCTAssertEqual(model.snapshot.sections.map { $0.apps.map(\.name) }, [["A"], ["C", "B"]])
+    XCTAssertEqual(model.snapshot.sections.map { $0.apps.map(\.name) }, [["A"], ["C"], ["B"]])
     XCTAssertEqual(model.selectedApp?.identifier, identifier)
     coordinator.updateDiscoveredBundles([])
     try await waitForSnapshot(model) { $0.apps.isEmpty }

@@ -14,15 +14,12 @@ import SwiftUI
 struct ReleaseNotesDetailView: View {
   @ObservedObject var updatesViewModel: UpdatesListViewModel
   @StateObject private var detailViewModel: ReleaseNotesDetailViewModel
-  let showsSupportStatus: Bool
 
   init(
     updatesViewModel: UpdatesListViewModel,
-    detailViewModel: ReleaseNotesDetailViewModel = ReleaseNotesDetailViewModel(),
-    showsSupportStatus: Bool = true
+    detailViewModel: ReleaseNotesDetailViewModel = ReleaseNotesDetailViewModel()
   ) {
     self.updatesViewModel = updatesViewModel
-    self.showsSupportStatus = showsSupportStatus
     _detailViewModel = StateObject(wrappedValue: detailViewModel)
   }
 
@@ -30,8 +27,8 @@ struct ReleaseNotesDetailView: View {
     ReleaseNotesDetailSurface(
       app: detailViewModel.app,
       contentState: detailViewModel.contentState,
-      showsSupportStatus: showsSupportStatus,
-      updating: updatesViewModel.updating
+      updating: updatesViewModel.updating,
+      overview: DetailOverview(snapshot: updatesViewModel.snapshot)
     )
     .task(id: updatesViewModel.selectedApp.map(ObjectIdentifier.init)) {
       detailViewModel.display(
@@ -55,32 +52,62 @@ struct ReleaseNotesDetailView: View {
 
 }
 
+/// What the detail pane shows with no app selected: the state of the whole list.
+enum DetailOverview: Equatable {
+  case lookingForApps
+  case checking
+  case offline
+  case upToDate(checked: Int)
+  case chooseApp
+
+  init(snapshot: AppListSnapshot) {
+    let apps = snapshot.apps
+    if apps.isEmpty {
+      self = .lookingForApps
+    } else if snapshot.checkingGeneration != nil {
+      self = .checking
+    } else if apps.contains(where: \.isActionable) {
+      self = .chooseApp
+    } else if !apps.contains(where: { $0.remoteVersion != nil }),
+      apps.contains(where: { ($0.error as NSError?)?.domain == NSURLErrorDomain })
+    {
+      // shortcut: offline is inferred from every check failing with a URL error; switch to
+      // NWPathMonitor if checks start failing for other reasons while online.
+      self = .offline
+    } else {
+      self = .upToDate(checked: apps.filter { $0.remoteVersion != nil }.count)
+    }
+  }
+}
+
 struct ReleaseNotesDetailSurface: View {
   let app: App?
   let contentState: ReleaseNotesDetailContentState
-  var showsSupportStatus = true
   var updating: any AppUpdating = AppUpdateService.shared
-  // SwiftUI compares stored view inputs using App equality. Object identity
-  // keeps equal-version source/action refreshes from skipping this surface.
-  private let appIdentity: ObjectIdentifier?
+  var overview = DetailOverview.chooseApp
+  var history = UpdateHistoryStore.shared
 
   init(
-    app: App?, contentState: ReleaseNotesDetailContentState, showsSupportStatus: Bool = true,
-    updating: any AppUpdating = AppUpdateService.shared
+    app: App?, contentState: ReleaseNotesDetailContentState,
+    updating: any AppUpdating = AppUpdateService.shared,
+    overview: DetailOverview = .chooseApp, history: UpdateHistoryStore = .shared
   ) {
     self.app = app
     self.contentState = contentState
-    self.showsSupportStatus = showsSupportStatus
     self.updating = updating
-    appIdentity = app.map(ObjectIdentifier.init)
+    self.overview = overview
+    self.history = history
   }
 
   var body: some View {
     VStack(spacing: 0) {
       if let app {
-        ReleaseNotesHeaderView(
-          app: app, showsSupportStatus: showsSupportStatus, updating: updating)
-
+        ReleaseNotesHeaderView(app: app, updating: updating)
+        ObservedUpdatePresentation(app: app, updating: updating) { presentation in
+          UpdateSummaryView(app: app, presentation: presentation, updating: updating)
+        }
+        .id(ObjectIdentifier(app))
+        Divider()
       }
       content
     }
@@ -95,15 +122,20 @@ struct ReleaseNotesDetailSurface: View {
         .allowsHitTesting(displayedText != nil)
         .accessibilityHidden(displayedText == nil)
 
-      switch contentState {
-      case .message(let message):
-        ReleaseNotesMessageView(message: message)
-      case .loading:
-        ProgressView()
-          .controlSize(.regular)
-          .accessibilityLabel("Loading Release Notes")
-      case .text:
-        EmptyView()
+      if let app {
+        switch contentState {
+        case .message:
+          // No notes for this version: the facts about the app take their place.
+          AppInfoPanel(app: app, lastResult: history.latestEntry(for: app.fileURL))
+        case .loading:
+          ProgressView()
+            .controlSize(.regular)
+            .accessibilityLabel("Loading Release Notes")
+        case .text:
+          EmptyView()
+        }
+      } else {
+        DetailOverviewView(overview: overview)
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -117,18 +149,13 @@ struct ReleaseNotesDetailSurface: View {
 
 struct ReleaseNotesHeaderView: View {
   let app: App
-  let showsSupportStatus: Bool
   let updating: any AppUpdating
   // App equality compares identifiers and versions; refreshed metadata/actions need object identity.
   private let appIdentity: ObjectIdentifier
   @State private var icon: NSImage?
 
-  init(
-    app: App, showsSupportStatus: Bool = true,
-    updating: any AppUpdating = AppUpdateService.shared
-  ) {
+  init(app: App, updating: any AppUpdating = AppUpdateService.shared) {
     self.app = app
-    self.showsSupportStatus = showsSupportStatus
     self.updating = updating
     appIdentity = ObjectIdentifier(app)
   }
@@ -148,25 +175,25 @@ struct ReleaseNotesHeaderView: View {
       .accessibilityHidden(true)
 
       VStack(alignment: .leading, spacing: 0) {
-        appTitle
+        Text(app.name)
+          .font(.system(size: 15, weight: .semibold))
+          .lineLimit(1)
+          .truncationMode(.tail)
           .offset(y: VisualMetrics.detailTitleVerticalCorrection)
           .frame(height: 19)
 
-        if let version = app.localizedVersionInformation?.combined(includeNew: app.updateAvailable)
-        {
-          Text(version)
-            .font(.system(size: 11))
-            .foregroundStyle(Color(nsColor: .secondaryLabelColor))
-            .offset(y: VisualMetrics.detailMetadataLineVerticalCorrection)
-            .lineLimit(1)
-        }
+        Text(versionLine)
+          .font(.system(size: 11).monospacedDigit())
+          .foregroundStyle(Color(nsColor: .secondaryLabelColor))
+          .offset(y: VisualMetrics.detailMetadataLineVerticalCorrection)
+          .lineLimit(1)
       }
       .frame(maxWidth: .infinity, alignment: .leading)
       // The optional date extends below the two-line block without recentering it.
       .overlay(alignment: .topLeading) {
         if let date = app.latestUpdateDate {
           GeometryReader { geometry in
-            Text(date, format: .dateTime.year().month(.wide).day())
+            Text("Released \(date.formatted(.dateTime.year().month(.wide).day()))")
               .font(.system(size: 11))
               .foregroundStyle(Color(nsColor: .secondaryLabelColor))
               .lineLimit(1)
@@ -196,52 +223,182 @@ struct ReleaseNotesHeaderView: View {
     }
   }
 
-  @ViewBuilder
-  private var appTitle: some View {
-    if showsSupportStatus {
-      ViewThatFits(in: .horizontal) {
-        HStack(spacing: 8) {
-          appName
-            .fixedSize(horizontal: true, vertical: false)
-          SupportStatusButton(app: app)
-            .id(appIdentity)
-        }
-
-        HStack(spacing: 5) {
-          appName
-          SupportStatusButton(app: app, showsLabel: false)
-            .id(appIdentity)
-        }
-      }
-    } else {
-      appName
+  private var versionLine: String {
+    let current = app.localizedVersionInformation?.rawCurrent ?? ""
+    if app.availabilityUnknown {
+      return "Version \(current) · newer version unknown"
     }
-  }
-
-  private var appName: some View {
-    Text(app.name)
-      .font(.system(size: 13, weight: .semibold))
-      .lineLimit(1)
-      .truncationMode(.tail)
+    if app.updateAvailable, let new = app.localizedVersionInformation?.rawNew {
+      return "Version \(current) → \(new)"
+    }
+    return current.isEmpty ? "" : "Version \(current)"
   }
 }
 
-private struct ReleaseNotesMessageView: View {
-  let message: ReleaseNotesMessage
+/// One plain sentence under the header: what clicking the button does, or what is happening.
+private struct UpdateSummaryView: View {
+  let app: App
+  let presentation: UpdateActionPresentation
+  let updating: any AppUpdating
 
   var body: some View {
-    VStack(spacing: 8) {
-      if let title = message.title, !title.isEmpty {
-        Text(title)
-          .font(.headline)
+    HStack(alignment: .firstTextBaseline, spacing: 8) {
+      Image(systemName: symbol)
+        .foregroundStyle(tint)
+        .frame(width: 16)
+        .accessibilityHidden(true)
+      VStack(alignment: .leading, spacing: 8) {
+        Text(sentence)
+          .fixedSize(horizontal: false, vertical: true)
+          .textSelection(.enabled)
+        if case .failed = presentation,
+          let permission = UpdateActionViewModel.missingPermission(for: app, updating: updating)
+        {
+          Button("Open \(permission.title) Settings") {
+            MacApplicationWorkspace.shared.open(permission.settingsURL)
+          }
+          .controlSize(.small)
+          .accessibilityLabel("Open System Settings for \(permission.title)")
+        }
       }
-      Text(message.description)
-        .multilineTextAlignment(.center)
+      .frame(maxWidth: .infinity, alignment: .leading)
     }
-    .frame(maxWidth: 420)
-    .padding(24)
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .font(.system(size: 13))
+    .padding(.horizontal, VisualMetrics.detailHeaderHorizontalPadding)
+    .padding(.vertical, 12)
     .accessibilityElement(children: .combine)
-    .accessibilityIdentifier("release-notes.message")
+    .accessibilityIdentifier("detail.summary")
+  }
+
+  private var sentence: String {
+    switch presentation {
+    case .failed(let reason): "The last attempt didn't finish. \(reason)"
+    case .waiting(let status), .progress(_, let status, _): "\(status)…"
+    case .retryTermination:
+      "Waiting for \(app.name) to quit. Save your work in it, then click Retry Quit."
+    case .update, .open: app.updateExplanation
+    }
+  }
+
+  private var symbol: String {
+    switch presentation {
+    case .failed: return "exclamationmark.triangle.fill"
+    case .waiting, .progress, .retryTermination: return "arrow.down.circle"
+    case .update, .open:
+      if app.isActionable {
+        return app.capability.isAutomatic ? "arrow.down.circle.fill" : "arrow.up.forward.app"
+      }
+      return app.remoteVersion != nil && !app.isUpdaterItself
+        ? "checkmark.circle.fill" : "info.circle"
+    }
+  }
+
+  private var tint: Color {
+    switch presentation {
+    case .failed: return Color(nsColor: .systemOrange)
+    case .update, .open:
+      if !app.isActionable, app.remoteVersion != nil, !app.isUpdaterItself {
+        return Color(nsColor: .systemGreen)
+      }
+      return app.isActionable ? .accentColor : .secondary
+    case .waiting, .progress, .retryTermination: return .accentColor
+    }
+  }
+}
+
+/// Shown instead of release notes when there are none: versions, route, place and last result.
+private struct AppInfoPanel: View {
+  let app: App
+  let lastResult: UpdateHistoryEntry?
+
+  var body: some View {
+    ScrollView {
+      Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16, verticalSpacing: 10) {
+        row("Installed", app.localizedVersionInformation?.rawCurrent ?? "Unknown")
+        if app.availabilityUnknown {
+          row("Available", "Unknown, only \(app.externalUpdaterName ?? "the vendor") knows")
+        } else if app.updateAvailable, let new = app.localizedVersionInformation?.rawNew {
+          row("Available", new)
+        }
+        row("Updates via", app.isUpdaterItself ? "Not yet available" : app.sourceName)
+        row(
+          "Location",
+          (app.fileURL.deletingLastPathComponent().path as NSString)
+            .abbreviatingWithTildeInPath)
+        if let lastResult, let summary = Self.describe(lastResult) {
+          row("Last update", summary)
+        }
+      }
+      .font(.system(size: 12))
+      .padding(.horizontal, VisualMetrics.detailHeaderHorizontalPadding)
+      .padding(.vertical, 16)
+      .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    .accessibilityIdentifier("detail.info")
+  }
+
+  private func row(_ label: String, _ value: String) -> some View {
+    GridRow {
+      Text(label)
+        .foregroundStyle(.secondary)
+        .gridColumnAlignment(.trailing)
+      Text(value)
+        .textSelection(.enabled)
+        .lineLimit(2)
+        .truncationMode(.middle)
+    }
+    .accessibilityElement(children: .combine)
+  }
+
+  static func describe(_ entry: UpdateHistoryEntry) -> String? {
+    let when = entry.date.formatted(.dateTime.day().month(.abbreviated).year())
+    let what: String
+    switch entry.outcome {
+    case .updated(let from, let to): what = "Updated \(from) → \(to)"
+    case .noChange(let reason): what = "Nothing changed" + (reason.map { ": \($0)" } ?? "")
+    case .needsPermission(let kind):
+      what = kind == "administrator" ? "Needed your password" : "Blocked by App Management"
+    case .needsQuit: what = "Not updated: the app didn't quit"
+    case .failed(let reason, _): what = "Failed: \(reason)"
+    case .handedOff: what = "Opened \(entry.handOff?.destination ?? "its updater")"
+    }
+    return "\(what), \(when)"
+  }
+}
+
+private struct DetailOverviewView: View {
+  let overview: DetailOverview
+
+  var body: some View {
+    Group {
+      switch overview {
+      case .lookingForApps:
+        ContentUnavailableView {
+          ProgressView().controlSize(.large)
+        } description: {
+          Text("Looking for apps on this Mac…")
+        }
+      case .checking:
+        ContentUnavailableView {
+          ProgressView().controlSize(.large)
+        } description: {
+          Text("Checking for updates. Apps with updates appear on the left as they're found.")
+        }
+      case .offline:
+        ContentUnavailableView(
+          "Can't Reach Update Servers", systemImage: "wifi.exclamationmark",
+          description: Text("Check your internet connection, then click Check for Updates."))
+      case .upToDate(let checked):
+        ContentUnavailableView(
+          "Everything Is Up to Date", systemImage: "checkmark.circle",
+          description: Text(
+            checked == 1 ? "Updater checked 1 app." : "Updater checked \(checked) apps."))
+      case .chooseApp:
+        ContentUnavailableView(
+          "No App Selected", systemImage: "square.stack",
+          description: Text("Select an app to see what Update will do."))
+      }
+    }
+    .accessibilityIdentifier("detail.overview")
   }
 }

@@ -12,7 +12,10 @@ import SwiftUI
 /// Observe scan progress at the toolbar boundary, without invalidating the app list.
 struct UpdatesToolbar: ToolbarContent {
   @ObservedObject var service: UpdateCheckingService
+  /// The same count the menu bar's Update All uses: exactly the apps Update All would start.
+  @ObservedObject var summary: MenuBarViewModel
   let reload: () -> Void
+  let updateAll: () -> Void
 
   var body: some ToolbarContent {
     ToolbarSpacer(.flexible, placement: .primaryAction)
@@ -26,6 +29,32 @@ struct UpdatesToolbar: ToolbarContent {
     ToolbarItem(placement: .primaryAction) {
       RefreshToolbarButton(isEnabled: !service.isRunning, action: reload)
     }
+    ToolbarItem(placement: .primaryAction) {
+      UpdateAllToolbarButton(count: summary.updateAllCount, action: updateAll)
+    }
+  }
+}
+
+/// The window's one primary action. It names its count so it is clear what will happen;
+/// apps under Needs You are never touched by it.
+struct UpdateAllToolbarButton: View {
+  let count: Int
+  let action: () -> Void
+
+  var body: some View {
+    Button(action: action) {
+      Text(count > 0 ? "Update All (\(count))" : "Update All")
+        .padding(.horizontal, 4)
+    }
+    .buttonStyle(.borderedProminent)
+    .disabled(count == 0)
+    .help(
+      count == 0
+        ? "Nothing Updater can install by itself right now."
+        : "Installs the \(count == 1 ? "update" : "\(count) updates") under Ready to Update. Apps under Needs You are left alone."
+    )
+    .accessibilityIdentifier("toolbar.updateAll")
+    .accessibilityLabel(count == 1 ? "Update 1 app" : "Update all \(count) apps")
   }
 }
 

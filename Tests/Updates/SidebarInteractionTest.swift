@@ -41,18 +41,16 @@ final class SidebarInteractionTest: XCTestCase {
       store.beginUpdateCheck(generation: 1)
       let pending = store.set(nil, for: bundle)
       try await Task.sleep(for: .milliseconds(300))
-      let header = try XCTUnwrap(
-        fixture.accessibilityElements().first {
-          $0.accessibilityIdentifier() == "release-notes.header"
-        })
-      func supportButton() throws -> SidebarAccessibilityElement {
+      // The summary under the header says what Update does; it reads "Checking" until resolved.
+      func summary() throws -> SidebarAccessibilityElement {
         try XCTUnwrap(
           fixture.accessibilityElements().first {
-            $0.accessibilityFrame().intersects(header.accessibilityFrame())
-              && $0.accessibilityLabel() == model.selectedApp?.localizedSupportStatus
+            $0.accessibilityIdentifier() == "detail.summary"
           })
       }
-      XCTAssertEqual(try supportButton().accessibilityEnabled(), false)
+      model.select(pending)
+      try await Task.sleep(for: .milliseconds(300))
+      XCTAssertEqual(try summary().accessibilityLabel(), pending.updateExplanation)
       let resolved = try XCTUnwrap(store.accept(result, for: bundle))
       store.finishUpdateCheck(generation: 1)
       try await Task.sleep(for: .milliseconds(300))
@@ -66,8 +64,8 @@ final class SidebarInteractionTest: XCTestCase {
       attachment.lifetime = .keepAlways
       add(attachment)
       XCTAssertEqual(
-        try supportButton().accessibilityEnabled(), true,
-        "The selected header must replace Checking with the resolved support status")
+        try summary().accessibilityLabel(), resolved.updateExplanation,
+        "The selected detail must replace Checking with the resolved explanation")
     }
   }
 
@@ -519,7 +517,7 @@ final class SidebarAccessibilityTest: XCTestCase {
 
     let row = UpdateRowView(
       app: app, selection: UpdateRowSelection(),
-      date: formatter.string(from: app.updateDate), showsSupportStatus: true,
+      date: formatter.string(from: app.updateDate),
       updating: AppUpdateService(queue: UpdateQueue()))
     let label = row.accessibilityLabel
     XCTAssertTrue(label.contains("Discord"))

@@ -104,7 +104,6 @@
 		51F100052FD0000000000001 /* MigrationTelemetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51F100142FD0000000000001 /* MigrationTelemetry.swift */; };
 		51F100072FD0000000000001 /* ReleaseNotesDetailViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51F100162FD0000000000001 /* ReleaseNotesDetailViewModel.swift */; };
 		51F100082FD0000000000001 /* ReleaseNotesWebView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51F100172FD0000000000001 /* ReleaseNotesWebView.swift */; };
-		51F100092FD0000000000001 /* SupportStatusInfoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51F100182FD0000000000001 /* SupportStatusInfoView.swift */; };
 		51F1000A2FD0000000000001 /* UpdateActionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51F100192FD0000000000001 /* UpdateActionView.swift */; };
 		52A001012FE0000000000001 /* ReleaseNotesMemoryCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52A000012FE0000000000001 /* ReleaseNotesMemoryCache.swift */; };
 		52A001022FE0000000000001 /* ReleaseNotesPersistentCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52A000022FE0000000000001 /* ReleaseNotesPersistentCache.swift */; };
@@ -171,6 +170,7 @@
 		A76786499C62D4E382408A41 /* VersionTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50C81D731FBADC9100324C2E /* VersionTest.swift */; };
 		A80F115A2EC1D7F0D7FE7597 /* UpdateProgressTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66A1D5442BE91F0FB0A039CB /* UpdateProgressTest.swift */; };
 		ADFC740067ED3581E329114F /* MainWindowAppearanceTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98B1BB9E84D3147454AC01A6 /* MainWindowAppearanceTest.swift */; };
+		6A6B000000000000000000B1 /* Round6VisualTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A6B000000000000000000F1 /* Round6VisualTest.swift */; };
 		B19FFBF5C471F9724704AE54 /* ReleaseNotesHTMLExtraction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FDE96FFFEC9B3854A230E64 /* ReleaseNotesHTMLExtraction.swift */; };
 		A20261008000000000000011 /* SidebarRenderingTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20261008000000000000012 /* SidebarRenderingTest.swift */; };
 		B3641FA81C414F40B4717F15 /* SidebarAppearanceTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7E6CF3DAEC2C29A3BA56545 /* SidebarAppearanceTest.swift */; };
@@ -488,7 +488,6 @@
 		51F100142FD0000000000001 /* MigrationTelemetry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MigrationTelemetry.swift; sourceTree = "<group>"; };
 		51F100162FD0000000000001 /* ReleaseNotesDetailViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseNotesDetailViewModel.swift; sourceTree = "<group>"; };
 		51F100172FD0000000000001 /* ReleaseNotesWebView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseNotesWebView.swift; sourceTree = "<group>"; };
-		51F100182FD0000000000001 /* SupportStatusInfoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupportStatusInfoView.swift; sourceTree = "<group>"; };
 		51F100192FD0000000000001 /* UpdateActionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateActionView.swift; sourceTree = "<group>"; };
 		52A000012FE0000000000001 /* ReleaseNotesMemoryCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseNotesMemoryCache.swift; sourceTree = "<group>"; };
 		52A000022FE0000000000001 /* ReleaseNotesPersistentCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseNotesPersistentCache.swift; sourceTree = "<group>"; };
@@ -542,6 +541,7 @@
 		8F7D497DE3A7D3B325C635EA /* ChromeReleaseNotesExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChromeReleaseNotesExtractor.swift; sourceTree = "<group>"; };
 		903BBFF6BD25262BCF8BE89A /* ReleaseNotesTextNormalization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseNotesTextNormalization.swift; sourceTree = "<group>"; };
 		98B1BB9E84D3147454AC01A6 /* MainWindowAppearanceTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindowAppearanceTest.swift; sourceTree = "<group>"; };
+		6A6B000000000000000000F1 /* Round6VisualTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Round6VisualTest.swift; sourceTree = "<group>"; };
 		9E2D81739D6F59AAF79D6518 /* SidebarInteractionTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarInteractionTest.swift; sourceTree = "<group>"; };
 		A03100000000000000000001 /* InstalledAppVersion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstalledAppVersion.swift; sourceTree = "<group>"; };
 		A03100000000000000000003 /* AppDownloadSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDownloadSource.swift; sourceTree = "<group>"; };
@@ -848,7 +848,6 @@
 				51A000142FC3000000000001 /* ReleaseNotesDetailView.swift */,
 				51F100172FD0000000000001 /* ReleaseNotesWebView.swift */,
 				51F100162FD0000000000001 /* ReleaseNotesDetailViewModel.swift */,
-				51F100182FD0000000000001 /* SupportStatusInfoView.swift */,
 				51F100192FD0000000000001 /* UpdateActionView.swift */,
 			);
 			path = ReleaseNotes;
@@ -1165,6 +1164,7 @@
 				59863A8B8C0F5456263CB382 /* ApplicationLifecycleTest.swift */,
 				8A873D313BACF2FD42FD97A5 /* ComponentAppearanceTest.swift */,
 				98B1BB9E84D3147454AC01A6 /* MainWindowAppearanceTest.swift */,
+				6A6B000000000000000000F1 /* Round6VisualTest.swift */,
 				07D1435C388987B25D471273 /* WindowCaptureSupport.swift */,
 				53D000022FF0000000000001 /* AppFixtures.swift */,
 				52E100012FE1000000000001 /* AppDependencyBoundaryTest.swift */,
@@ -1532,7 +1532,6 @@
 				51A001142FC3000000000001 /* ReleaseNotesDetailView.swift in Sources */,
 				51F100072FD0000000000001 /* ReleaseNotesDetailViewModel.swift in Sources */,
 				51F100082FD0000000000001 /* ReleaseNotesWebView.swift in Sources */,
-				51F100092FD0000000000001 /* SupportStatusInfoView.swift in Sources */,
 				51F1000A2FD0000000000001 /* UpdateActionView.swift in Sources */,
 				51A020052FC4000000000001 /* SettingsViewModel.swift in Sources */,
 				51A020072FC4000000000001 /* SettingsRootView.swift in Sources */,
@@ -1650,6 +1649,7 @@
 				17946A50CF7CB8444E0CCACA /* ApplicationLifecycleTest.swift in Sources */,
 				9F81C345F61158D46F010816 /* ComponentAppearanceTest.swift in Sources */,
 				ADFC740067ED3581E329114F /* MainWindowAppearanceTest.swift in Sources */,
+				6A6B000000000000000000B1 /* Round6VisualTest.swift in Sources */,
 				E92CE522C9A55B44944704E1 /* WindowCaptureSupport.swift in Sources */,
 				7C543CC34A7F1C427C35B3DD /* AppPerformanceTest.swift in Sources */,
 				565895573ABF0C6C031F1A39 /* ReleaseNotesDetailViewModelTest.swift in Sources */,

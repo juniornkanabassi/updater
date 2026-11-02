@@ -12,7 +12,7 @@ final class ReleaseNotesHeaderLayoutTest: XCTestCase {
     func render(date: Date?) throws -> NSBitmapImageRep {
       let app = makeTestApp(name: "Example", version: "1.0", date: date)
       let host = NSHostingView(
-        rootView: ReleaseNotesHeaderView(app: app, showsSupportStatus: false))
+        rootView: ReleaseNotesHeaderView(app: app))
       host.appearance = NSAppearance(named: .aqua)
       host.frame = NSRect(x: 0, y: 0, width: 460, height: VisualMetrics.detailHeaderHeight)
       host.layoutSubtreeIfNeeded()

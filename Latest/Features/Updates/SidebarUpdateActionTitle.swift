@@ -8,6 +8,7 @@ enum SidebarUpdateActionTitle {
     if app.relaunchesToUpdate {
       return (isRunning(app) ? "Relaunch " : "Open ") + app.name
     }
+    if app.externalUpdaterName == HomebrewCheckerOperation.handOffLabel { return "Open Terminal" }
     if let externalUpdater = app.externalUpdaterName {
       return String(
         format: NSLocalizedString(
@@ -20,6 +21,13 @@ enum SidebarUpdateActionTitle {
     }
 
     return NSLocalizedString("UpdateAction", comment: "Action to update a given app.")
+  }
+
+  /// The row button: one word, with the row's third line naming where it goes.
+  static func shortText(for app: App) -> String {
+    if app.relaunchesToUpdate { return isRunning(app) ? "Relaunch" : "Open" }
+    return app.capability.isAutomatic
+      ? NSLocalizedString("UpdateAction", comment: "Action to update a given app.") : "Open"
   }
 
   /// Whether the app at this exact path is running: Relaunch for a running app, Open for a

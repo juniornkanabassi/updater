@@ -17,10 +17,14 @@ import Foundation
 @MainActor
 struct AppListSnapshot {
   private struct PreparedSections {
+    /// Updates Updater installs itself: the same apps Update All runs.
     let availableUpdates: [App]
-    /// Apps whose availability is only known to the vendor's app (Adobe): "Check in …".
+    /// Hand-offs (App Store page, Creative Cloud, Terminal, a relaunch, the app itself) and
+    /// apps whose availability only the vendor's app knows (Adobe).
     var checkElsewhere: [App] = []
     let installedUpdates: [App]
+    /// Settled apps without a compared version: no source, a failed check, or Updater itself.
+    var otherApps: [App] = []
     let ignoredUpdates: [App]
   }
 
@@ -67,7 +71,8 @@ struct AppListSnapshot {
     self.settings = settings
     self.checkingGeneration = checkingGeneration
     self.preparedSections = preparedSections
-    let sections = Self.generateSections(from: preparedSections, filterQuery: filterQuery)
+    let sections = Self.generateSections(
+      from: preparedSections, filterQuery: filterQuery, checking: checkingGeneration != nil)
     self.sections = sections
     let entries = Self.generateEntries(from: sections)
     self.entries = entries
@@ -122,6 +127,7 @@ struct AppListSnapshot {
     var availableUpdates = [App]()
     var checkElsewhere = [App]()
     var installedUpdates = [App]()
+    var otherApps = [App]()
     var ignoredUpdates = [App]()
 
     for app in apps {
@@ -151,10 +157,12 @@ struct AppListSnapshot {
         installedUpdates.append(app)
       } else if app.isIgnored {
         ignoredUpdates.append(app)
-      } else if app.updateAvailable {
+      } else if app.updateAvailable && app.capability.isAutomatic {
         availableUpdates.append(app)
-      } else if app.availabilityUnknown {
+      } else if app.isActionable {
         checkElsewhere.append(app)
+      } else if app.remoteVersion == nil || app.isUpdaterItself {
+        otherApps.append(app)
       } else {
         installedUpdates.append(app)
       }
@@ -167,7 +175,7 @@ struct AppListSnapshot {
         previous.map {
           $0.preparedSections.availableUpdates
             + $0.preparedSections.checkElsewhere + $0.preparedSections.installedUpdates
-            + $0.preparedSections.ignoredUpdates
+            + $0.preparedSections.otherApps + $0.preparedSections.ignoredUpdates
         } ?? []
       Self.sort(&installedUpdates, by: sortOrder, previousOrder: previousOrder)
       return PreparedSections(
@@ -179,19 +187,21 @@ struct AppListSnapshot {
     Self.sort(&checkElsewhere, by: sortOrder)
     Self.sort(&ignoredUpdates, by: sortOrder)
     Self.sort(&installedUpdates, by: .updateDate)
+    Self.sort(&otherApps, by: .updateDate)
     return PreparedSections(
       availableUpdates: availableUpdates, checkElsewhere: checkElsewhere,
-      installedUpdates: installedUpdates,
+      installedUpdates: installedUpdates, otherApps: otherApps,
       ignoredUpdates: ignoredUpdates
     )
   }
 
   private static func generateSections(
-    from preparedSections: PreparedSections, filterQuery: String?
+    from preparedSections: PreparedSections, filterQuery: String?, checking: Bool
   ) -> [SectionContent] {
     let availableUpdates = Self.filtered(preparedSections.availableUpdates, with: filterQuery)
     let checkElsewhere = Self.filtered(preparedSections.checkElsewhere, with: filterQuery)
     let installedUpdates = Self.filtered(preparedSections.installedUpdates, with: filterQuery)
+    let otherApps = Self.filtered(preparedSections.otherApps, with: filterQuery)
     let ignoredUpdates = Self.filtered(preparedSections.ignoredUpdates, with: filterQuery)
 
     return [
@@ -199,12 +209,15 @@ struct AppListSnapshot {
         section: Self.updatableAppsSection(withCount: availableUpdates.count),
         apps: availableUpdates),
       SectionContent(
-        section: Section(
-          title: "Check in \(checkElsewhere.first?.externalUpdaterName ?? "the vendor's app")",
-          numberOfApps: checkElsewhere.count),
+        section: Section(title: "Needs You", numberOfApps: checkElsewhere.count),
         apps: checkElsewhere),
       SectionContent(
-        section: Self.updatedAppsSection(withCount: installedUpdates.count), apps: installedUpdates),
+        section: checking
+          ? Self.installedAppsSection(withCount: installedUpdates.count)
+          : Section(title: "Up to Date", numberOfApps: installedUpdates.count),
+        apps: installedUpdates),
+      SectionContent(
+        section: Section(title: "Other Apps", numberOfApps: otherApps.count), apps: otherApps),
       SectionContent(
         section: Self.ignoredAppsSection(withCount: ignoredUpdates.count), apps: ignoredUpdates),
     ].filter { !$0.apps.isEmpty }
@@ -271,12 +284,11 @@ struct AppListSnapshot {
   // MARK: - Section Builder
 
   private static func updatableAppsSection(withCount numberOfApps: Int) -> Section {
-    let title = NSLocalizedString(
-      "AvailableUpdatesSection", comment: "Table Section Header for available updates")
-    return Section(title: title, numberOfApps: numberOfApps)
+    Section(title: "Ready to Update", numberOfApps: numberOfApps)
   }
 
-  private static func updatedAppsSection(withCount numberOfApps: Int) -> Section {
+  /// The neutral heading while a check runs: nothing is claimed to be up to date yet.
+  private static func installedAppsSection(withCount numberOfApps: Int) -> Section {
     let title = NSLocalizedString(
       "InstalledAppsSection", comment: "Table Section Header for already installed apps")
     return Section(title: title, numberOfApps: numberOfApps)

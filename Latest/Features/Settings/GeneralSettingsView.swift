@@ -19,13 +19,63 @@ struct GeneralSettingsView: View {
   @AppStorage(MenuBarViewModel.showsItemKey) private var showsMenuBarItem = true
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 16) {
-      settingsForm
+    Form {
+      Section {
+        Picker("Appearance", selection: $appearanceRawValue) {
+          ForEach(ApplicationAppearance.allCases) { appearance in
+            Text(appearance.title).tag(appearance.rawValue)
+          }
+        }
+        .pickerStyle(.segmented)
+        .accessibilityIdentifier("settings.appearance")
+      }
+
+      Section("In the Background") {
+        Picker(selection: $checkIntervalHours) {
+          ForEach(BackgroundCheckInterval.allCases) { Text($0.title).tag($0.rawValue) }
+        } label: {
+          labelled(
+            "Check for updates",
+            "Also on launch and after sleep. Updater never installs on its own.")
+        }
+        .accessibilityLabel("Check for updates")
+        .accessibilityIdentifier("settings.checkInterval")
+
+        preferenceOption(
+          title: "Show in menu bar",
+          description: "Updater keeps running there when you close its window.",
+          isOn: $showsMenuBarItem
+        )
+      }
+
+      Section("In the List") {
+        preferenceOption(
+          title: "Apps that update elsewhere",
+          description:
+            "Apps you finish updating in the App Store, Creative Cloud, Terminal or the app itself. They appear under Needs You.",
+          isOn: limitedSupportBinding
+        )
+        preferenceOption(
+          title: "Apps Updater can't check",
+          description: "Apps with no update information. They appear under Other Apps.",
+          isOn: unsupportedAppsBinding
+        )
+      }
+
       if viewModel.showsInstallHelperBanner {
-        installHelperBanner
+        Section("App Store") {
+          LabeledContent {
+            Button("Enable") { viewModel.registerInstallHelper() }
+          } label: {
+            labelled(
+              "Install App Store updates here",
+              "Enables a helper so Updater can install App Store apps itself.")
+          }
+        }
       }
     }
-    .padding(20)
+    .formStyle(.grouped)
+    .scrollDisabled(true)
     .onAppear {
       viewModel.refreshInstallHelperAvailability()
     }
@@ -41,100 +91,13 @@ struct GeneralSettingsView: View {
     }
   }
 
-  private var settingsForm: some View {
-    VStack(spacing: 16) {
-      GroupBox {
-        HStack {
-          Text("Appearance")
-          Spacer(minLength: 16)
-          appearancePicker
-        }
-        .padding(10)
-      }
-
-      GroupBox("In the background") {
-        VStack(alignment: .leading, spacing: 14) {
-          HStack {
-            VStack(alignment: .leading, spacing: 4) {
-              Text("Check for updates")
-              Text("Also on launch and after sleep. Updater never installs on its own.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 16)
-            Picker("Check for updates", selection: $checkIntervalHours) {
-              ForEach(BackgroundCheckInterval.allCases) { Text($0.title).tag($0.rawValue) }
-            }
-            .labelsHidden()
-            .fixedSize()
-            .accessibilityLabel("Check for updates")
-            .accessibilityIdentifier("settings.checkInterval")
-          }
-
-          Divider()
-
-          preferenceOption(
-            title: "Show in menu bar",
-            description:
-              "Shows the waiting updates. Updater keeps running there when you close its window.",
-            isOn: $showsMenuBarItem
-          )
-        }
-        .padding(10)
-      }
-
-      GroupBox("App visibility") {
-        VStack(alignment: .leading, spacing: 14) {
-          preferenceOption(
-            title: "Apps with limited support",
-            description: "Update information may be inaccurate. Update these apps outside Updater.",
-            isOn: limitedSupportBinding
-          )
-
-          Divider()
-
-          preferenceOption(
-            title: "Unsupported apps",
-            description: "Show apps without any available update information.",
-            isOn: unsupportedAppsBinding
-          )
-        }
-        .padding(10)
-      }
-    }
-  }
-
-  private var appearancePicker: some View {
-    Picker("Appearance", selection: $appearanceRawValue) {
-      ForEach(ApplicationAppearance.allCases) { appearance in
-        Text(appearance.title)
-          .tag(appearance.rawValue)
-      }
-    }
-    .labelsHidden()
-    .pickerStyle(.segmented)
-    .frame(width: 230)
-    .accessibilityIdentifier("settings.appearance")
-  }
-
-  private var installHelperBanner: some View {
-    GroupBox {
-      HStack(spacing: 12) {
-        VStack(alignment: .leading, spacing: 4) {
-          Text("App Store updates")
-          Text("Enable a helper to update App Store apps within Updater.")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-
-        Button("Enable") {
-          viewModel.registerInstallHelper()
-        }
-      }
-      .padding(10)
+  private func labelled(_ title: String, _ description: String) -> some View {
+    VStack(alignment: .leading, spacing: 2) {
+      Text(title)
+      Text(description)
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
     }
   }
 
@@ -143,19 +106,10 @@ struct GeneralSettingsView: View {
     description: String,
     isOn: Binding<Bool>
   ) -> some View {
-    Toggle(isOn: isOn) {
-      VStack(alignment: .leading, spacing: 4) {
-        Text(title)
-        Text(description)
-          .font(.caption)
-          .foregroundStyle(.secondary)
-          .fixedSize(horizontal: false, vertical: true)
-      }
-      .frame(maxWidth: .infinity, alignment: .leading)
-    }
-    .toggleStyle(.switch)
-    .accessibilityLabel(title)
-    .accessibilityHint(description)
+    Toggle(isOn: isOn) { labelled(title, description) }
+      .toggleStyle(.switch)
+      .accessibilityLabel(title)
+      .accessibilityHint(description)
   }
 
   private var limitedSupportBinding: Binding<Bool> {
