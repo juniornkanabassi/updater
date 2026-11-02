@@ -25,20 +25,59 @@ enum CatalogueInstall {
 
   // MARK: 1. Identity
 
+  /// Channel words a cask token can carry after `@`.
+  static let channels: Set<String> = [
+    "beta", "nightly", "dev", "test", "preview", "canary", "insiders",
+  ]
+
   /// The one cask with identifier evidence for this bundle ID. Name-only matches (no
-  /// evidence), duplicate identifiers and denied apps are refused.
-  static func token(for bundleIdentifier: String, candidates: [String]) throws(Refusal) -> String {
-    guard !deniedBundleIdentifiers.contains(bundleIdentifier) else {
+  /// evidence), competing products and denied apps are refused. Channel variants of one
+  /// product (`<base>@<channel>`) are told apart only by positive evidence of the installed
+  /// channel; a plain release with no channel word takes the non-channel cask.
+  static func token(for bundle: App.Bundle, candidates: [String]) throws(Refusal) -> String {
+    guard !deniedBundleIdentifiers.contains(bundle.bundleIdentifier) else {
       throw .scope("Its own updater keeps state outside the app, so it updates itself.")
     }
     let tokens = Set(candidates)
-    guard let token = tokens.first else {
+    guard let only = tokens.first else {
       throw .identity("No catalogue entry names this app's bundle ID.")
     }
-    guard tokens.count == 1 else {
-      throw .identity("Several catalogue entries name this app's bundle ID.")
+    if tokens.count == 1 { return only }
+    let parts = tokens.map { token -> (token: String, base: Substring, channel: String?) in
+      guard let at = token.firstIndex(of: "@") else { return (token, Substring(token), nil) }
+      return (token, token[..<at], String(token[token.index(after: at)...]))
+    }
+    guard Set(parts.map(\.base)).count == 1,
+      parts.allSatisfy({ $0.channel.map(channels.contains) ?? true })
+    else { throw .identity("Several catalogue entries name this app's bundle ID.") }
+    let evidence = channelEvidence(of: bundle)
+    let picked: [String]
+    switch evidence.count {
+    case 1: picked = parts.filter { $0.channel == evidence.first }.map(\.token)
+    case 0 where isPlainRelease(bundle.version):
+      picked = parts.filter { $0.channel == nil }.map(\.token)
+    default: picked = []
+    }
+    guard picked.count == 1, let token = picked.first else {
+      throw .identity("Updater cannot tell which release channel this copy follows.")
     }
     return token
+  }
+
+  /// Channel words in the bundle ID (past its top-level domain, so `dev.zed.Zed` is not "dev"),
+  /// the app's name or file name, or its version.
+  static func channelEvidence(of bundle: App.Bundle) -> Set<String> {
+    let text = [
+      bundle.bundleIdentifier.split(separator: ".").dropFirst().joined(separator: "."),
+      bundle.name, bundle.fileURL.deletingPathExtension().lastPathComponent,
+      bundle.version.versionNumber ?? "", bundle.version.buildNumber ?? "",
+    ].joined(separator: " ").lowercased()
+    return channels.intersection(text.split { !$0.isLetter }.map(String.init))
+  }
+
+  static func isPlainRelease(_ version: Version) -> Bool {
+    guard let number = version.versionNumber else { return false }
+    return number.range(of: #"^\d+(\.\d+)*$"#, options: .regularExpression) != nil
   }
 
   // MARK: 2. Shape (and the payload's metadata)
@@ -59,8 +98,9 @@ enum CatalogueInstall {
       throw .shape("The catalogue does not name a version (version :latest).")
     }
     guard let hash = cask["sha256"] as? String,
-      hash.range(of: #"^[a-fA-F0-9]{64}$"#, options: .regularExpression) != nil
-    else { throw .shape("The catalogue has no checksum for the download (sha256 :no_check).") }
+      hash == "no_check"
+        || hash.range(of: #"^[a-fA-F0-9]{64}$"#, options: .regularExpression) != nil
+    else { throw .shape("The catalogue's checksum for the download is not usable.") }
     guard let artifacts = cask["artifacts"] as? [[String: Any]],
       let quits = HomebrewAllowList.quits(in: artifacts),
       quits.allSatisfy({ $0 == bundleIdentifier })
@@ -78,9 +118,32 @@ enum CatalogueInstall {
       url.user == nil, url.password == nil,
       url.scheme == "https" || DownloadUpdateOperation.allowsLoopbackHTTP(url)
     else { throw .shape("The download is not offered over HTTPS.") }
+    // A rolling download (sha256 :no_check) is accepted only from the vendor's own domain;
+    // every Trust check (signature, Gatekeeper, the same Team ID, newer) still applies.
+    if hash == "no_check" {
+      let homepage = (cask["homepage"] as? String).flatMap(URL.init(string:))?.host()
+      guard let host = url.host(), let homepage,
+        registrableDomain(host) == registrableDomain(homepage)
+      else {
+        throw .shape("The download has no published checksum and is not on the vendor's own site.")
+      }
+    }
     let version = VersionParser.parse(combinedVersionNumber: rawVersion)
     guard !version.isEmpty else { throw .shape("The catalogue version could not be read.") }
-    return AppDownloadRelease(version: version, url: url, sha256: hash.lowercased(), appPath: path)
+    return AppDownloadRelease(
+      version: version, url: url, sha256: hash == "no_check" ? nil : hash.lowercased(),
+      appPath: path)
+  }
+
+  /// The domain family of a host: its last two labels, or three under a two-letter country
+  /// code with a generic second level (`vendor.co.uk`).
+  /// shortcut: no public-suffix list; upgrade if a vendor's domain needs one.
+  static func registrableDomain(_ host: String) -> String {
+    let labels = host.lowercased().split(separator: ".")
+    guard labels.count > 2 else { return labels.joined(separator: ".") }
+    let generic: Set<Substring> = ["co", "com", "org", "net", "ac", "gov", "edu"]
+    let keep = labels.last?.count == 2 && generic.contains(labels[labels.count - 2]) ? 3 : 2
+    return labels.suffix(keep).joined(separator: ".")
   }
 
   // MARK: 5. Scope
@@ -195,8 +258,7 @@ struct CatalogueInstallCheck: Sendable {
   ) async -> (token: String, release: AppDownloadRelease)? {
     guard bundle.version.comparisonForUpdate(to: catalogueVersion) == .older,
       await ownership(bundle.fileURL, false) == .notOwned,
-      let token = try? CatalogueInstall.token(
-        for: bundle.bundleIdentifier, candidates: candidateTokens),
+      let token = try? CatalogueInstall.token(for: bundle, candidates: candidateTokens),
       // The version shown came from name matching; a different cask would install something
       // else than what the row says.
       token == matchedToken,

@@ -8,10 +8,12 @@ final class AppDownloadUpdateTest: XCTestCase {
   /// The fixed six-cask table is gone (Round 5b); Discord stays on its native updater.
   func testCatalogueInstallsLeaveDiscordToItsNativeUpdater() {
     for identifier in ["com.hnc.Discord", "com.hnc.DiscordPTB", "com.hnc.DiscordCanary"] {
-      XCTAssertThrowsError(try CatalogueInstall.token(for: identifier, candidates: ["discord"]))
+      XCTAssertThrowsError(
+        try CatalogueInstall.token(for: catalogueBundle(identifier), candidates: ["discord"]))
     }
     XCTAssertEqual(
-      try? CatalogueInstall.token(for: "com.1password.1password", candidates: ["1password"]),
+      try? CatalogueInstall.token(
+        for: catalogueBundle("com.1password.1password"), candidates: ["1password"]),
       "1password")
   }
 

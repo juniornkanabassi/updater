@@ -103,8 +103,9 @@ final class AppDownloadUpdateOperation: DownloadUpdateOperation, @unchecked Send
     try manager.createDirectory(at: work, withIntermediateDirectories: true)
     defer { try? manager.removeItem(at: work) }
     let archive = try await download(from: release.url, into: work)
-    guard let expected = release.sha256 else { throw AppDownloadError.checksumMismatch }
-    try Self.verifyChecksum(of: archive, expected: expected)
+    // No published checksum is allowed only on the vendor's own domain (checked with the
+    // cask); the Trust checks below are what accept such a download.
+    if let expected = release.sha256 { try Self.verifyChecksum(of: archive, expected: expected) }
     guard let kind = CatalogueInstall.payloadKind(of: archive) else {
       throw CatalogueInstall.Refusal.payload(
         "The download is not a zip, disk image or tar archive.")

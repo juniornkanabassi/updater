@@ -395,13 +395,13 @@ final class CatalogueInstallTest: XCTestCase {
       [UpdateRepository.Entry].self, from: Data(catalogue.utf8))
     let index = UpdateRepository.caskTokensByIdentifier(entries)
     func token(_ id: String) -> String? {
-      try? CatalogueInstall.token(for: id, candidates: Array(index[id] ?? []))
+      try? CatalogueInstall.token(for: catalogueBundle(id), candidates: Array(index[id] ?? []))
     }
     XCTAssertEqual(token("com.example.fixture"), "fixture")
     XCTAssertNil(token("com.example.renamed"), "a name match without identifier evidence")
     XCTAssertNil(token("com.example.twin"), "duplicate identifier")
     XCTAssertThrowsError(
-      try CatalogueInstall.token(for: "com.hnc.Discord", candidates: ["discord"]))
+      try CatalogueInstall.token(for: catalogueBundle("com.hnc.Discord"), candidates: ["discord"]))
     let discord = App.Bundle(
       version: Version(versionNumber: "1", buildNumber: nil), name: "Discord",
       bundleIdentifier: "com.hnc.Discord", fileURL: URL(fileURLWithPath: "/tmp/Discord.app"),
@@ -510,7 +510,75 @@ final class CatalogueInstallTest: XCTestCase {
     XCTAssertEqual(cached.identityIndex, fresh.identityIndex)
     XCTAssertThrowsError(
       try CatalogueInstall.token(
-        for: identifier, candidates: Array(cached.identityIndex[identifier] ?? [])))
+        for: catalogueBundle(identifier), candidates: Array(cached.identityIndex[identifier] ?? []))
+    )
+  }
+
+  // MARK: Plan additions (2 Nov 2026)
+
+  /// A. Channel variants are told apart only by positive evidence of the installed channel.
+  func testChannelRuleNeedsPositiveEvidenceAndMatchesExactly() throws {
+    let t3 = ["t3-code", "t3-code@nightly", "t3-code@beta"]
+    let nightly = catalogueBundle(
+      "com.t3tools.t3code", name: "T3 Code (Nightly)", version: "0.1.7-nightly.20261031.3991")
+    XCTAssertEqual(try CatalogueInstall.token(for: nightly, candidates: t3), "t3-code@nightly")
+    XCTAssertThrowsError(
+      try CatalogueInstall.token(for: nightly, candidates: ["t3-code", "t3-code@beta"]),
+      "a nightly never takes @beta")
+    let beta = catalogueBundle("app.freeshow", name: "FreeShow Beta", version: "1.6.7")
+    XCTAssertEqual(
+      try CatalogueInstall.token(for: beta, candidates: ["freeshow", "freeshow@beta"]),
+      "freeshow@beta",
+      "a channel word in the name, numbers-only version")
+    let release = catalogueBundle("app.freeshow", name: "FreeShow", version: "1.6.7")
+    XCTAssertEqual(
+      try CatalogueInstall.token(for: release, candidates: ["freeshow", "freeshow@beta"]),
+      "freeshow")
+    let prerelease = catalogueBundle("app.freeshow", name: "FreeShow", version: "1.7.0-rc1")
+    XCTAssertThrowsError(
+      try CatalogueInstall.token(for: prerelease, candidates: ["freeshow", "freeshow@beta"]),
+      "no channel evidence and a prerelease version keep the current route")
+    let conflicting = catalogueBundle("app.freeshow", name: "FreeShow Beta Nightly", version: "1.7")
+    XCTAssertThrowsError(
+      try CatalogueInstall.token(
+        for: conflicting, candidates: ["freeshow", "freeshow@beta", "freeshow@nightly"]))
+    XCTAssertThrowsError(
+      try CatalogueInstall.token(
+        for: catalogueBundle("com.microsoft.VSCode", name: "Code", version: "1.144.0"),
+        candidates: ["visual-studio-code", "tidgi"]),
+      "two different products are not channels")
+    XCTAssertEqual(
+      CatalogueInstall.channelEvidence(of: catalogueBundle("dev.zed.Zed", name: "Zed")), [],
+      "a dev top-level domain is not a channel")
+  }
+
+  /// B. `sha256 :no_check` installs only from the vendor's own domain, and only when every
+  /// Trust check passes (here: the same signing identity, then a required Team ID that an
+  /// ad-hoc candidate cannot match).
+  func testNoCheckDownloadsNeedTheVendorDomainAndEveryTrustCheck() async throws {
+    let scene = try scene()
+    let server = try await LocalFileServer.start(serving: scene.payloads)
+    defer { server.stop() }
+    let (name, _) = try payload(in: scene, kind: .zip)
+    let url = server.baseURL.appendingPathComponent(name).absoluteString
+    let ours = try cask(url: url, sha256: "no_check", extra: ["homepage": "http://127.0.0.1/"])
+    XCTAssertNil(
+      try CatalogueInstall.release(fromCask: ours, bundleIdentifier: identifier).sha256)
+    XCTAssertThrowsError(
+      try CatalogueInstall.release(
+        fromCask: try cask(
+          url: url, sha256: "no_check", extra: ["homepage": "https://vendor.example/"]),
+        bundleIdentifier: identifier),
+      "not on the vendor's own domain")
+    XCTAssertEqual(CatalogueInstall.registrableDomain("cdn.rogueamoeba.com"), "rogueamoeba.com")
+    XCTAssertEqual(CatalogueInstall.registrableDomain("dl.vendor.co.uk"), "vendor.co.uk")
+
+    let before = try FixtureApp.digest(scene.installed)
+    let refused = try await install(scene, cask: ours, requiresTeam: true)
+    guard case .failed = refused.outcome else { return XCTFail("without a matching Team ID") }
+    XCTAssertEqual(try FixtureApp.digest(scene.installed), before)
+    let allowed = try await install(scene, cask: ours)
+    XCTAssertEqual(allowed.outcome, .updated(from: "1.0", to: "1.1"), "matching identity")
   }
 
   /// Opt-in, read-only: which apps on this Mac the catalogue rules would install today. It reads
@@ -532,7 +600,7 @@ final class CatalogueInstallTest: XCTestCase {
         let tokens = await repository.caskTokens(withBundleIdentifier: bundle.bundleIdentifier)
         var verdict = "install"
         do {
-          let token = try CatalogueInstall.token(for: bundle.bundleIdentifier, candidates: tokens)
+          let token = try CatalogueInstall.token(for: bundle, candidates: tokens)
           guard token == entry.token else {
             throw CatalogueInstall.Refusal.identity(
               "index names \(token), row shows \(entry.token)")
@@ -555,4 +623,14 @@ final class CatalogueInstallTest: XCTestCase {
       "CATALOGUE-REPORT-BEGIN\n" + lines.sorted().joined(separator: "\n") + "\nCATALOGUE-REPORT-END"
     )
   }
+}
+
+/// A plain-release bundle for identity checks: only the ID, name and version matter.
+func catalogueBundle(
+  _ identifier: String, name: String = "App", version: String = "1.0"
+) -> App.Bundle {
+  App.Bundle(
+    version: Version(versionNumber: version, buildNumber: nil), name: name,
+    bundleIdentifier: identifier, fileURL: URL(fileURLWithPath: "/tmp/\(name).app"),
+    source: .homebrew, modificationDate: .distantPast)
 }
