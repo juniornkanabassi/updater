@@ -162,13 +162,15 @@ final class AppDataStore: AppProviding, Sendable {
     scheduleFilterUpdate()
   }
 
-  @MainActor func finishUpdateCheck(generation: Int) {
+  /// Returns the finished generation's inventory, or nil if another generation owns the store.
+  @MainActor @discardableResult func finishUpdateCheck(generation: Int) -> [App]? {
     let update = state.withLock { state -> AppListUpdate? in
       guard state.pendingCheckGeneration == generation else { return nil }
       state.pendingCheckGeneration = nil
       return AppListUpdate(apps: Array(state.appsByIdentifier.values), checkingGeneration: nil)
     }
     if let update { updateStreams.yield(update) }
+    return update?.apps
   }
 
   @MainActor func updates() -> AsyncStream<AppListUpdate> {

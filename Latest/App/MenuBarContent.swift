@@ -17,7 +17,8 @@ final class MenuBarViewModel: ObservableObject {
   private let updateAllCandidates: () -> [App]
   private var apps = [App]()
   private var observations = [Task<Void, Never>]()
-  private var queueObserver: NSObjectProtocol?
+  private var observers = [NSObjectProtocol]()
+  private var manualAppStoreUpdates: Bool?
 
   init(
     appProvider: any AppProviding,
@@ -51,16 +52,32 @@ final class MenuBarViewModel: ObservableObject {
         }
       },
     ]
-    queueObserver = NotificationCenter.default.addObserver(
-      forName: .latestUpdateQueueDidChange, object: nil, queue: .main
-    ) { [weak self] _ in MainActor.assumeIsolated { self?.refresh() } }
+    let center = NotificationCenter.default
+    observers = [
+      center.addObserver(forName: .latestUpdateQueueDidChange, object: nil, queue: .main) {
+        [weak self] _ in MainActor.assumeIsolated { self?.refresh() }
+      },
+      // "Always open App Store" (the helper sheet's toggle, reset when the helper is enabled)
+      // decides whether App Store apps join Update All; it is a plain defaults key.
+      center.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) {
+        [weak self] _ in MainActor.assumeIsolated { self?.refreshIfManualPreferenceChanged() }
+      },
+    ]
+    manualAppStoreUpdates = AppStoreUpdateSettings.alwaysPerformManualUpdates.active
   }
 
   func stopObserving() {
     observations.forEach { $0.cancel() }
     observations.removeAll()
-    if let queueObserver { NotificationCenter.default.removeObserver(queueObserver) }
-    queueObserver = nil
+    observers.forEach(NotificationCenter.default.removeObserver)
+    observers.removeAll()
+  }
+
+  private func refreshIfManualPreferenceChanged() {
+    let current = AppStoreUpdateSettings.alwaysPerformManualUpdates.active
+    guard current != manualAppStoreUpdates else { return }
+    manualAppStoreUpdates = current
+    refresh()
   }
 
   func refresh(with apps: [App]? = nil) {
@@ -91,19 +108,26 @@ struct MainWindowOpenerCapture: ViewModifier {
   }
 }
 
+/// A status item draws only plain images and text, so the label stays one image or one
+/// image-and-title Label, with no stacks or modifiers that could leave it empty.
 struct MenuBarLabel: View {
   @ObservedObject var model: MenuBarViewModel
 
   var body: some View {
-    HStack(spacing: 2) {
-      Image("MenuBarIcon")
-      if !model.updates.isEmpty { Text("\(model.updates.count)") }
+    let count = model.updates.count
+    if count == 0 {
+      Image("MenuBarIcon", label: Text("Updater"))
+    } else {
+      Label {
+        Text("\(count)")
+      } icon: {
+        Image(
+          "MenuBarIcon",
+          label: Text(
+            count == 1 ? "Updater, 1 update available" : "Updater, \(count) updates available"))
+      }
+      .labelStyle(.titleAndIcon)
     }
-    .modifier(MainWindowOpenerCapture())
-    .accessibilityElement(children: .ignore)
-    .accessibilityLabel("Updater")
-    .accessibilityValue(
-      model.updates.count == 1 ? "1 update available" : "\(model.updates.count) updates available")
   }
 }
 

@@ -1876,7 +1876,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 9;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DWARF_DSYM_FILE_NAME = "UpdaterApp.app.dSYM"; /* Sparkle ships its own Updater.app.dSYM */
@@ -1896,7 +1896,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.5.0;
+				MARKETING_VERSION = 0.5.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.juniornkanabassi.Updater";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Updater";
@@ -1919,7 +1919,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 8;
+				CURRENT_PROJECT_VERSION = 9;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DWARF_DSYM_FILE_NAME = "UpdaterApp.app.dSYM"; /* Sparkle ships its own Updater.app.dSYM */
@@ -1940,7 +1940,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.5.0;
+				MARKETING_VERSION = 0.5.1;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.juniornkanabassi.Updater";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Updater";

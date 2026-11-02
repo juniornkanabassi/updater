@@ -141,6 +141,50 @@ final class BackgroundTest: XCTestCase {
     XCTAssertEqual(completions.last?.apps.map(\.fileURL), [bundle.fileURL])
   }
 
+  /// Sol R4-005: a check superseded by a new discovery reports nothing, and the one that
+  /// finishes carries its own inventory, never the other generation's.
+  func testSupersededCheckReportsNothingAndCompletionsCarryTheirOwnApps() async throws {
+    let root = try disposableDirectory()
+    let first = try XCTUnwrap(
+      BundleCollector.collectBundle(at: FixtureApp.make(in: root, version: "1.0", signed: false)))
+    let second = try XCTUnwrap(
+      BundleCollector.collectBundle(
+        at: FixtureApp.make(
+          in: root, name: "Other", identifier: "com.example.other", version: "1.0", signed: false)))
+    let gate = AsyncStream<Void>.makeStream()
+    let firstURL = first.fileURL
+    let coordinator = UpdateCheckCoordinator(
+      check: { bundle, _ in
+        // The first discovery's check is still running when the second discovery begins.
+        if bundle.fileURL == firstURL { for await _ in gate.stream {} }
+        throw LatestError.updateInfoUnavailable
+      }, repositoryProvider: { nil })
+    var completions = [UpdateCheckCompletion]()
+    coordinator.checkCompletion = { completions.append($0) }
+
+    coordinator.updateDiscoveredBundles([first], origin: .background)
+    try await Task.sleep(for: .milliseconds(100))
+    coordinator.updateDiscoveredBundles([second])
+    try await waitUntil { completions.count == 1 }
+    gate.continuation.finish()
+    try await Task.sleep(for: .milliseconds(300))
+    XCTAssertEqual(completions.count, 1, "the superseded check stays silent")
+    XCTAssertEqual(completions.first?.origin, .filesystem)
+    XCTAssertEqual(completions.first?.apps.map(\.fileURL), [second.fileURL])
+  }
+
+  func testStoreFinishReturnsOnlyItsOwnGenerationsInventory() {
+    let store = AppDataStore(userDefaults: UserDefaults(suiteName: "BackgroundTest.\(UUID())")!)
+    let first = makeTestApp(name: "First", version: "1").bundle
+    let second = makeTestApp(name: "Second", version: "1").bundle
+    store.beginUpdateCheck(generation: 1)
+    store.set(appBundles: [first])
+    store.beginUpdateCheck(generation: 2)
+    store.set(appBundles: [second])
+    XCTAssertNil(store.finishUpdateCheck(generation: 1), "superseded")
+    XCTAssertEqual(store.finishUpdateCheck(generation: 2)?.map(\.fileURL), [second.fileURL])
+  }
+
   // MARK: - Menu bar
 
   private final class StreamingProvider: AppProviding {
@@ -197,6 +241,35 @@ final class BackgroundTest: XCTestCase {
     queue.addOperation(job)
     try await waitUntil { !menu.canUpdateAll }
     job.decline()
+    try await waitUntil { menu.canUpdateAll }
+  }
+
+  /// Sol R4-006: the helper sheet's "Always open App Store" toggle and the reset when the
+  /// helper is enabled both write a plain defaults key; the menu follows it.
+  func testMenuFollowsTheManualAppStorePreference() async throws {
+    let key = AppStoreUpdateSettings.alwaysPerformManualUpdates.rawValue
+    let stored = UserDefaults.standard.object(forKey: key)
+    defer { UserDefaults.standard.set(stored, forKey: key) }
+    AppStoreUpdateSettings.alwaysPerformManualUpdates.active = false
+    let native = makeTestApp(name: "Native", version: "1", remoteVersion: "2")
+    let menu = MenuBarViewModel(
+      appProvider: StreamingProvider(apps: [native]),
+      settings: try isolatedAppListSettings(for: self),
+      updateAllCandidates: {
+        UpdateCheckingService.updateAllCandidates(
+          from: [native], isUpdating: { _ in false },
+          alwaysUsesManualAppStoreUpdates: AppStoreUpdateSettings.alwaysPerformManualUpdates
+            .active)
+      })
+    menu.startObserving()
+    defer { menu.stopObserving() }
+    try await waitUntil { menu.canUpdateAll }
+
+    // What the sheet's @AppStorage toggle writes.
+    UserDefaults.standard.set(true, forKey: key)
+    try await waitUntil { !menu.canUpdateAll }
+    // What LiveInstallHelperService.register() writes before registering the helper.
+    AppStoreUpdateSettings.alwaysPerformManualUpdates.active = false
     try await waitUntil { menu.canUpdateAll }
   }
 

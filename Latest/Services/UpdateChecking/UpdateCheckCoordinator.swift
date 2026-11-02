@@ -306,12 +306,14 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
     )
     await MainActor.run {
       guard self.updateCheckGeneration.isCurrent(generation), !Task.isCancelled else { return }
-      if publishesSnapshot {
-        _ = self.updateCheckGeneration.withCurrent(generation) {
-          self.dataStore.finishUpdateCheck(generation: generation)
-        }
+      // The snapshot is taken with the generation still current, so a discovery that begins
+      // meanwhile cannot lend its inventory; a superseded check reports nothing.
+      if publishesSnapshot,
+        let apps = self.updateCheckGeneration.withCurrent(
+          generation, perform: { self.dataStore.finishUpdateCheck(generation: generation) }) ?? nil
+      {
         self.checkCompletion?(
-          UpdateCheckCompletion(generation: generation, origin: origin, apps: self.dataStore.apps))
+          UpdateCheckCompletion(generation: generation, origin: origin, apps: apps))
       }
       self.progressDelegate?.updateCheckerDidFinishCheckingForUpdates(self, generation: generation)
     }
