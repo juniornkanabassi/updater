@@ -93,9 +93,10 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
 
       guard let self, let operation else { return }
       self.removeIndexedOperation(operation)
-      // finish() published the job's own state while it was still indexed; once it leaves,
-      // the row falls back to history, so a declined retry shows the earlier failure again.
-      self.publishState(for: operation.appIdentifier)
+      // A clean finish (a declined quit records nothing) published .none while the job was
+      // still indexed; republish so the row falls back to history and an earlier failure
+      // shows again. A terminal error stays as published.
+      if operation.error == nil { self.publishState(for: operation.appIdentifier) }
     }
 
     operation.progressHandler = { [weak self] identifier in
