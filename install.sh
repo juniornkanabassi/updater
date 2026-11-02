@@ -31,7 +31,16 @@ fi
 LOCK="$INSTALL_ROOT/.updater-install.lock"
 # A lock folder comes from install.sh before 0.8.2 and has no owner to check: never remove it automatically.
 [[ -d "$LOCK" ]] && { print -u2 "Found an old-style install lock folder at $LOCK. If no Updater install is running, remove it (rmdir) and run again."; exit 1; }
-/usr/bin/shlock -f "$LOCK" -p $$ || { print -u2 "Another Updater install is running (pid $(<"$LOCK" 2>/dev/null))."; exit 1; }
+if ! /usr/bin/shlock -f "$LOCK" -p $$; then
+  OWNER=$(<"$LOCK" 2>/dev/null)
+  # shortcut: macOS shlock detects a dead owner but still refuses to take over; a human clears it (only a hard crash leaves one).
+  if [[ -n "$OWNER" ]] && ! kill -0 "$OWNER" 2>/dev/null; then
+    print -u2 "An interrupted install left a lock (pid $OWNER is not running). If no Updater install is running, run: rm \"$LOCK\" and try again."
+  else
+    print -u2 "Another Updater install is running (pid $OWNER)."
+  fi
+  exit 1
+fi
 for old in "$INSTALL_ROOT"/.updater-install.*(N/); do print -u2 "Left from an earlier run (not removed): $old"; done
 WORK=$(mktemp -d "$INSTALL_ROOT/.updater-install.XXXXXX")
 STAGE="$WORK/Updater.app"; BACKUP="$WORK/previous/Updater.app"; mkdir "$WORK/previous"
