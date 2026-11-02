@@ -36,9 +36,21 @@ WORK=$(mktemp -d "$INSTALL_ROOT/.updater-install.XXXXXX")
 STAGE="$WORK/Updater.app"; BACKUP="$WORK/previous/Updater.app"; mkdir "$WORK/previous"
 # One install at a time for this destination.
 LOCK="$INSTALL_ROOT/.updater-install.lock"
-/bin/mkdir "$LOCK" 2>/dev/null || { print -u2 "Another Updater install is running ($LOCK)."; /bin/rm -rf "$WORK"; exit 1; }
+take_lock() { /bin/mkdir "$LOCK" 2>/dev/null && print $$ > "$LOCK/pid"; }
+if ! take_lock; then
+  # A lock whose owner is gone was left by an interrupted run: reclaim it, but keep any old work folders for inspection.
+  OWNER=$(<"$LOCK/pid" 2>/dev/null)
+  if [[ -n "$OWNER" ]] && kill -0 "$OWNER" 2>/dev/null; then
+    print -u2 "Another Updater install is running (pid $OWNER)."; /bin/rm -rf "$WORK"; exit 1
+  fi
+  print -u2 "Removing a stale install lock from an interrupted run."
+  for old in "$INSTALL_ROOT"/.updater-install.*(N/); do [[ "$old" == "$WORK" || "$old" == "$LOCK" ]] || print -u2 "Left from an earlier run (not removed): $old"; done
+  /bin/rm -rf "$LOCK"
+  take_lock || { print -u2 "Could not take the install lock ($LOCK)."; /bin/rm -rf "$WORK"; exit 1; }
+fi
 KEEP_WORK=0
-trap '/bin/rmdir "$LOCK"; (( KEEP_WORK )) || /bin/rm -rf "$WORK"' EXIT
+trap '/bin/rm -rf "$LOCK"; (( KEEP_WORK )) || /bin/rm -rf "$WORK"' EXIT
+trap 'exit 130' INT TERM HUP PIPE  # signals still run the EXIT cleanup
 /usr/bin/ditto "$SOURCE_APP" "$STAGE"
 verify_signed "$STAGE"
 if [[ -e "$DEST" ]]; then /bin/mv "$DEST" "$BACKUP"; fi
