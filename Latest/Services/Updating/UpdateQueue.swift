@@ -47,15 +47,13 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
   /// a recovery record that cannot be read (kept until relaunch): by target, tool, or all.
   /// Held jobs wait on a barrier that only runs when the hold is released (no slot used).
   private struct Hold {
-    let barrier = BlockOperation {}
+    let barrier = HoldBarrier()
     var reason: String
     let releasable: Bool
     /// The targets whose pending journals share this hold (a tool lock can serve several).
     var owners: Set<String> = []
   }
   private var holds = [String: Hold]()
-  /// Jobs waiting on a hold. Recovery, which releases the hold, must not wait on them.
-  private var heldOperations = Set<ObjectIdentifier>()
 
   /// Unfinished jobs by id, kept until their record replaces them in one step, so a job id
   /// never stops resolving between `isFinished` and the completion block.
@@ -97,14 +95,37 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
         if let owner { hold.owners.insert(owner) }
         holds[key] = hold
       }
+      // Jobs already waiting are admitted by the same rule as new ones.
+      jobsByID.values.forEach(applyHolds)
     }
+  }
+
+  /// The one admission rule, applied to every job that has not started (called with the index
+  /// lock held): a hold on everything, its tool or its target makes it wait for the release.
+  /// Recovery settles holds, so it never waits on one.
+  private func applyHolds(to operation: UpdateOperation) {
+    guard !(operation is RecoveryOperation), !operation.isExecuting, !operation.isFinished else {
+      return
+    }
+    for key in [
+      "all", "lock:" + operation.lockKey,
+      "target:" + operation.appIdentifier.standardizedFileURL.path,
+    ] {
+      guard let hold = holds[key], !operation.dependencies.contains(hold.barrier) else { continue }
+      operation.addDependency(hold.barrier)
+    }
+  }
+
+  /// Waiting on a hold that has not been released yet.
+  private static func isHeld(_ operation: Operation) -> Bool {
+    operation.dependencies.contains { $0 is HoldBarrier && !$0.isFinished }
   }
 
   /// Ends the releasable holds a settled target had; a tool lock stays held while another
   /// pending entry shares it.
   private func releaseHolds(of target: String) {
-    let barriers = operationIndexLock.withLock { () -> [BlockOperation] in
-      var released = [BlockOperation]()
+    let barriers = operationIndexLock.withLock { () -> [HoldBarrier] in
+      var released = [HoldBarrier]()
       for (key, var hold) in holds where hold.releasable && hold.owners.contains(target) {
         hold.owners.remove(target)
         if hold.owners.isEmpty {
@@ -119,9 +140,10 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
     barriers.forEach { $0.start() }
   }
 
-  /// After every job: a journal entry left for its target (an incomplete or refused restore,
-  /// an unresolved recovery) holds the target and tool at once; none left releases them.
-  private func reconcileHolds(after operation: UpdateOperation) {
+  /// Run while a job is finishing, before it counts as finished: a journal entry it left (an
+  /// incomplete or refused restore, an unresolved recovery) holds its target and tool, so the
+  /// jobs queued behind it (which wait on it) are held before they can start.
+  private func holdIfUnsettled(after operation: UpdateOperation) {
     let target = operation.appIdentifier.standardizedFileURL.path
     if let pending = journal.scan().records.first(where: {
       URL(fileURLWithPath: $0.target).standardizedFileURL.path == target
@@ -131,9 +153,18 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
         reason:
           "An interrupted update of \(pending.target) is not settled yet; its original is kept at \(pending.backup).",
         releasable: true)
-    } else {
-      releaseHolds(of: target)
     }
+  }
+
+  /// Run once a job has finished: with nothing left to settle for its target, its holds go.
+  private func releaseIfSettled(after operation: UpdateOperation) {
+    let target = operation.appIdentifier.standardizedFileURL.path
+    guard
+      !journal.scan().records.contains(where: {
+        URL(fileURLWithPath: $0.target).standardizedFileURL.path == target
+      })
+    else { return }
+    releaseHolds(of: target)
   }
 
   /// Why jobs are held, for status reports.
@@ -191,7 +222,9 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
     let before = readBundle(operation.appIdentifier)
 
     operation.resolveOutcome = { [weak self] operation in
-      self?.resolveOutcome(of: operation, before: before)
+      let outcome = self?.resolveOutcome(of: operation, before: before)
+      self?.holdIfUnsettled(after: operation)
+      return outcome
     }
     let previousCompletionBlock = operation.completionBlock
     operation.completionBlock = { [weak self, weak operation] in
@@ -199,7 +232,7 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
 
       guard let self, let operation else { return }
       self.removeIndexedOperation(operation)
-      self.reconcileHolds(after: operation)
+      self.releaseIfSettled(after: operation)
       // A clean finish (a declined quit records nothing) published .none while the job was
       // still indexed; republish so the row falls back to history and an earlier failure
       // shows again. A terminal error stays as published.
@@ -401,30 +434,20 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
       {
         // Recovery goes ahead of a job that is only waiting on its hold; anything running
         // or another recovery keeps the target.
-        guard isRecovery, heldOperations.contains(ObjectIdentifier(existingOperation)) else {
+        guard isRecovery, Self.isHeld(existingOperation) else {
           return existingOperation
         }
       }
 
       operationsByIdentifier[operation.appIdentifier] = operation
       jobsByID[operation.jobID] = operation
-      // Recovery is what settles a hold, so it never waits on one, nor on jobs held by one.
-      if !isRecovery {
-        for key in [
-          "all", "lock:" + operation.lockKey,
-          "target:" + operation.appIdentifier.standardizedFileURL.path,
-        ] {
-          if let hold = holds[key] {
-            operation.addDependency(hold.barrier)
-            heldOperations.insert(ObjectIdentifier(operation))
-          }
-        }
-      }
-      let holders = (operationsByLock[operation.lockKey] ?? []).filter {
-        !$0.isFinished && !(isRecovery && heldOperations.contains(ObjectIdentifier($0)))
-      }
-      holders.forEach(operation.addDependency)
-      operationsByLock[operation.lockKey] = holders + [operation]
+      applyHolds(to: operation)
+      // Per-lock FIFO: every unfinished job stays in line. Recovery alone skips waiting on
+      // jobs that are held (they wait for it), but they keep their place for later jobs.
+      let line = (operationsByLock[operation.lockKey] ?? []).filter { !$0.isFinished }
+      line.filter { !(isRecovery && Self.isHeld($0)) }
+        .forEach(operation.addDependency)
+      operationsByLock[operation.lockKey] = line + [operation]
       return nil
     }
   }
@@ -439,7 +462,6 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
   /// The terminal record replaces the live entry under one lock.
   private func removeIndexedOperation(_ operation: UpdateOperation) {
     operationIndexLock.withLock {
-      heldOperations.remove(ObjectIdentifier(operation))
       finishedJobs[operation.jobID] = Self.record(of: operation)
       finishedOrder.append(operation.jobID)
       if finishedOrder.count > 200 { finishedJobs[finishedOrder.removeFirst()] = nil }
@@ -480,3 +502,6 @@ struct UpdateJob: Sendable {
   let state: UpdateProgressState?
   let record: UpdateJobRecord?
 }
+
+/// What held jobs wait on; it runs (and so finishes) only when its hold is released.
+final class HoldBarrier: BlockOperation, @unchecked Sendable {}

@@ -359,6 +359,101 @@ final class TransactionJournalTest: XCTestCase {
     XCTAssertTrue(queue.heldBecause.isEmpty)
   }
 
+  // MARK: Sol's inspection of 0.7.2 (REV-001, REV-002)
+
+  private func incompleteRestore(_ scene: Scene, on queue: UpdateQueue) throws
+    -> IncompleteRestoreOperation
+  {
+    let companion = scene.root.deletingLastPathComponent().appendingPathComponent(
+      "Caskroom-\(UUID())")
+    try FileManager.default.createDirectory(
+      at: companion.appendingPathComponent("1.0"), withIntermediateDirectories: true)
+    let job = IncompleteRestoreOperation(
+      target: scene.target, companion: companion, journal: scene.journal)
+    queue.addOperation(job)
+    return job
+  }
+
+  private func settle(_ scene: Scene, on queue: UpdateQueue) throws -> RecoveryOperation {
+    try XCTUnwrap(
+      RecoveryOperation.enqueuePending(from: scene.journal, into: queue, helperIsIdle: { true }) {
+        $0.requiresTeam = false
+        $0.pollInterval = .milliseconds(50)
+        $0.lifecycle = FakeTarget(running: false).lifecycle()
+      }.first)
+  }
+
+  private func waitFor(_ condition: () -> Bool) async throws {
+    for _ in 0..<500 where !condition() { try await Task.sleep(for: .milliseconds(10)) }
+  }
+
+  /// REV-001: a job queued on the same tool before the restore went wrong is held too: the
+  /// hold is in place before the restoring job counts as finished.
+  func testJobQueuedBeforeAnIncompleteRestoreIsHeld() async throws {
+    let scene = try scene()
+    let queue = UpdateQueue(journal: scene.journal)
+    let job = try incompleteRestore(scene, on: queue)
+    let queuedBehind = BlockedProbe(
+      url: URL(fileURLWithPath: "/tmp/Behind-\(UUID()).app"), lock: "homebrew")
+    queue.addOperation(queuedBehind)
+    try await waitFor { job.isFinished }
+    try await Task.sleep(for: .milliseconds(300))
+    XCTAssertFalse(queuedBehind.ran.withLock { $0 }, "it was already waiting, and stays held")
+    let recovery = try settle(scene, on: queue)
+    try await waitFor { queuedBehind.ran.withLock { $0 } }
+    XCTAssertEqual(recovery.result, .restored)
+    XCTAssertTrue(queuedBehind.ran.withLock { $0 })
+  }
+
+  /// REV-001: a job queued behind a recovery that ends unresolved stays held.
+  func testJobQueuedBeforeAnUnresolvedRecoveryIsHeld() async throws {
+    let scene = try scene()
+    let queue = UpdateQueue(journal: scene.journal)
+    var entry = try record(scene, expected: nil, lockKey: "homebrew")
+    try replaceTarget(scene, version: "0.9")  // neither the original nor newer: unresolved
+    let writer = try spawn(["/bin/sleep", "30"])
+    entry.writer = TransactionJournal.writer(pid: writer)
+    try scene.journal.write(entry)
+    let recovery = try settle(scene, on: queue)
+    let queuedBehind = BlockedProbe(
+      url: URL(fileURLWithPath: "/tmp/Behind-\(UUID()).app"), lock: "homebrew")
+    queue.addOperation(queuedBehind)
+    kill(writer, SIGKILL)
+    var status: Int32 = 0
+    waitpid(writer, &status, 0)
+    try await waitFor { recovery.isFinished }
+    try await Task.sleep(for: .milliseconds(300))
+    guard case .unresolved = recovery.result else { return XCTFail("expected unresolved") }
+    XCTAssertFalse(queuedBehind.ran.withLock { $0 }, "held while the entry is unresolved")
+    XCTAssertFalse(queue.heldBecause.isEmpty)
+  }
+
+  /// REV-002: a held job keeps its place in its tool's line when recovery goes ahead of it, so
+  /// a job submitted later waits for it.
+  func testReleasedWaiterKeepsItsPlaceInTheToolLine() async throws {
+    let scene = try scene()
+    let queue = UpdateQueue(journal: scene.journal)
+    let job = try incompleteRestore(scene, on: queue)
+    try await waitFor { job.isFinished }
+    let gate = AsyncStream<Void>.makeStream()
+    let held = GatedProbe(
+      url: URL(fileURLWithPath: "/tmp/Held-\(UUID()).app"), lock: "homebrew", gate: gate.stream)
+    queue.addOperation(held)
+    let recovery = try settle(scene, on: queue)
+    try await waitFor { held.started.withLock { $0 != nil } }
+    XCTAssertEqual(recovery.result, .restored)
+    let later = GatedProbe(
+      url: URL(fileURLWithPath: "/tmp/Later-\(UUID()).app"), lock: "homebrew", gate: nil)
+    queue.addOperation(later)
+    try await Task.sleep(for: .milliseconds(300))
+    XCTAssertNil(later.started.withLock { $0 }, "it waits for the released job")
+    gate.continuation.finish()
+    try await waitFor { later.started.withLock { $0 != nil } }
+    let heldEnd = try XCTUnwrap(held.ended.withLock { $0 })
+    let laterStart = try XCTUnwrap(later.started.withLock { $0 })
+    XCTAssertLessThanOrEqual(heldEnd, laterStart, "never overlapping on one tool")
+  }
+
   // MARK: Sol's inspection (REV-002 to REV-006)
 
   private func record(
@@ -590,6 +685,29 @@ private final class IncompleteRestoreOperation: UpdateOperation, @unchecked Send
         requiresTeam: false,
         lifecycle: FakeTarget(running: false).lifecycle(), restoreOnInstallerFailure: true)
       if let result { finish(with: result) } else { finish() }
+    }
+  }
+}
+
+/// Records when it ran; with a gate it stays running until the gate closes.
+private final class GatedProbe: UpdateOperation, @unchecked Sendable {
+  let started = Mutex<ContinuousClock.Instant?>(nil)
+  let ended = Mutex<ContinuousClock.Instant?>(nil)
+  private let lock: String
+  private let gate: AsyncStream<Void>?
+  override var lockKey: String { lock }
+  init(url: URL, lock: String, gate: AsyncStream<Void>?) {
+    self.lock = lock
+    self.gate = gate
+    super.init(bundleIdentifier: "test.gated", appIdentifier: url)
+  }
+  override func execute() {
+    super.execute()
+    started.withLock { $0 = .now }
+    Task.detached { [self] in
+      if let gate { for await _ in gate {} }
+      ended.withLock { $0 = .now }
+      finish()
     }
   }
 }

@@ -130,7 +130,9 @@ final class ControlTest: XCTestCase {
   private func waitForJob(_ harness: Harness, _ id: String) async throws -> [String: JSONValue] {
     for _ in 0..<200 {
       let job = try await request(harness, "status", ["job": id]).data?["job"]?.objectValue ?? [:]
-      if let state = job["state"]?.stringValue, !["waiting", "running", "idle"].contains(state) {
+      if let state = job["state"]?.stringValue,
+        !["waiting", "running", "idle", "cancelling"].contains(state)
+      {
         return job
       }
       try await Task.sleep(for: .milliseconds(25))
