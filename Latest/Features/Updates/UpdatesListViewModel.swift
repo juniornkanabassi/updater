@@ -70,6 +70,8 @@ final class UpdatesListViewModel: ObservableObject {
 
   private var observedPreferences: ListPreferences
   private var observationTasks = [Task<Void, Never>]()
+  /// Groups follow capability, which the manual App Store preference changes (Ready ↔ Needs You).
+  private var manualPreference: ManualAppStorePreferenceObserver?
   private let settings: any AppListSettingsProviding
   private let appProvider: any AppProviding
   private let workspace: any ApplicationWorkspace
@@ -127,11 +129,13 @@ final class UpdatesListViewModel: ObservableObject {
         }
       },
     ]
+    manualPreference = ManualAppStorePreferenceObserver { [weak self] in self?.refreshSnapshot() }
   }
 
   func stopObserving() {
     observationTasks.forEach { $0.cancel() }
     observationTasks.removeAll()
+    manualPreference = nil
   }
 
   func setSearchQuery(_ query: String) {

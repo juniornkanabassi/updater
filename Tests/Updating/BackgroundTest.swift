@@ -273,6 +273,35 @@ final class BackgroundTest: XCTestCase {
     try await waitUntil { menu.canUpdateAll }
   }
 
+  /// UPD-R6-003: the window's groups follow "Always open App Store" too: enabling it moves an
+  /// App Store install to Needs You, and the reset when the helper is enabled moves it back.
+  func testWindowGroupsFollowTheManualAppStorePreference() async throws {
+    let key = AppStoreUpdateSettings.alwaysPerformManualUpdates.rawValue
+    let stored = UserDefaults.standard.object(forKey: key)
+    defer { UserDefaults.standard.set(stored, forKey: key) }
+    AppStoreUpdateSettings.alwaysPerformManualUpdates.active = false
+    let store = makeTestApp(
+      name: "Store", version: "1", remoteVersion: "2",
+      updateAction: .conditional(
+        label: "App Store", installs: { !AppStoreUpdateSettings.alwaysPerformManualUpdates.active }
+      ) { _ in })
+    let settings = try isolatedAppListSettings(for: self)
+    let model = UpdatesListViewModel(
+      settings: settings, appProvider: StreamingProvider(apps: [store]),
+      updating: AppUpdateService(queue: UpdateQueue()))
+    model.startObserving()
+    defer { model.stopObserving() }
+    func titles() -> [String] { model.snapshot.sections.map(\.section.title) }
+    try await waitUntil { titles() == ["Ready to Update"] }
+
+    // What the sheet's @AppStorage toggle writes.
+    UserDefaults.standard.set(true, forKey: key)
+    try await waitUntil { titles() == ["Needs You"] }
+    // What LiveInstallHelperService.register() writes before registering the helper.
+    AppStoreUpdateSettings.alwaysPerformManualUpdates.active = false
+    try await waitUntil { titles() == ["Ready to Update"] }
+  }
+
   private func waitUntil(_ condition: () -> Bool) async throws {
     for _ in 0..<200 where !condition() { try await Task.sleep(for: .milliseconds(10)) }
     XCTAssertTrue(condition(), "timed out")

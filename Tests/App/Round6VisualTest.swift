@@ -11,7 +11,7 @@ import XCTest
 /// integration lane stays side-effect free.
 @MainActor
 final class Round6VisualTest: XCTestCase {
-  static let outputDirectory = URL(fileURLWithPath: "/private/tmp/updater-build/r6-shots")
+  static let outputDirectory = URL(fileURLWithPath: "/private/tmp/updater-build/r81-shots")
 
   func testRendersMainWindowDetailStatesSettingsAndMenu() async throws {
     let settings = try isolatedAppListSettings(for: self)
@@ -49,7 +49,7 @@ final class Round6VisualTest: XCTestCase {
         before: goodnotes.bundle, after: goodnotes.bundle,
         outcome: .updated(from: "7.1.30", to: "7.1.32")))
     for name in [
-      "Goodnotes", "Adobe Premiere Pro 2026", "Discord", "OBS", "Google Chrome",
+      "Shottr", "Goodnotes", "Adobe Premiere Pro 2026", "Discord", "OBS", "Google Chrome",
       "Final Cut Pro", "Updater", "Raycast", "Audio Hijack",
     ] {
       let app = try XCTUnwrap(store.apps.first { $0.name == name })
@@ -70,6 +70,7 @@ final class Round6VisualTest: XCTestCase {
         "overview-partial"
       ),
       (.checking, "overview-checking"), (.offline, "overview-offline"),
+      (.noMatches("Photoshop"), "overview-no-matches"),
       (.lookingForApps, "overview-first-run"),
     ] {
       try await render(
@@ -131,7 +132,16 @@ final class Round6VisualTest: XCTestCase {
     XCTAssertFalse(partial.isAllCurrent)
     XCTAssertEqual(
       partial.text, "1 up to date · 1 couldn't be checked · 1 check in Creative Cloud")
+    // Pending automatic updates are never "all current" (UPD-R6-002).
+    let ready = makeTestApp(name: "Ready", version: "1", remoteVersion: "2")
+    XCTAssertFalse(UpdateStatusSummary(apps: [current, ready]).isAllCurrent)
     let settings = try isolatedAppListSettings(for: self)
+    // A search with no matches says so, never "Everything Is Up to Date" (UPD-R6-002).
+    XCTAssertEqual(
+      DetailOverview(
+        snapshot: AppListSnapshot(
+          withApps: [ready, current], filterQuery: "zzz", settings: settings)
+      ), .noMatches("zzz"))
     XCTAssertEqual(
       DetailOverview(
         snapshot: AppListSnapshot(
@@ -256,7 +266,8 @@ private struct Round6Fixture {
     func add(
       _ name: String, path: String, version: String, remote: String?, source: Latest.App.Source,
       bundleID: String? = nil, action: Latest.App.Update.Action = .builtIn { _ in },
-      unknown: Bool = false, state: UpdateProgressState? = nil, days: Double = 0
+      unknown: Bool = false, state: UpdateProgressState? = nil, days: Double = 0,
+      minimumOS: Int? = nil
     ) {
       let bundle = Latest.App.Bundle(
         version: Version(versionNumber: version, buildNumber: nil), name: name,
@@ -270,7 +281,9 @@ private struct Round6Fixture {
           .success(
             Latest.App.Update(
               app: bundle, remoteVersion: Version(versionNumber: remote, buildNumber: nil),
-              minimumOSVersion: nil, source: source,
+              minimumOSVersion: minimumOS.map {
+                OperatingSystemVersion(majorVersion: $0, minorVersion: 4, patchVersion: 0)
+              }, source: source,
               date: Date(timeIntervalSince1970: 1_790_000_000 - days * 86_400), releaseNotes: nil,
               updateAction: action, availabilityUnknown: unknown)), for: bundle)
       } else {
@@ -321,6 +334,9 @@ private struct Round6Fixture {
     add(
       "Rectangle", path: "/Applications/Rectangle.app", version: "0.91", remote: "0.91",
       source: .sparkle, days: 10)
+    add(
+      "Shottr", path: "/Applications/Shottr.app", version: "1.8.1", remote: "2.0.0",
+      source: .sparkle, days: 10.5, minimumOS: 99)
     add(
       "Updater", path: "/Applications/JuniorOS Apps/Updater.app", version: "0.8.0",
       remote: nil, source: .none, bundleID: Foundation.Bundle.main.bundleIdentifier, days: 11)

@@ -281,6 +281,46 @@ final class AppListSnapshotTest: XCTestCase {
     }
   }
 
+  /// UPD-R6-001: a newer release this Mac can't run, and versions that can't be compared, are
+  /// never "Up to Date"; one classification drives the groups.
+  func testUnavailableOrIncomparableReleasesAreNotUpToDate() throws {
+    let settings = try isolatedAppListSettings(for: self)
+    func app(_ name: String, installed: Version, remote: Version, minimumOS: Int? = nil) -> App {
+      let bundle = App.Bundle(
+        version: installed, name: name, bundleIdentifier: "com.example.\(name)",
+        fileURL: URL(fileURLWithPath: "/Applications/\(name).app"), source: .sparkle,
+        modificationDate: .distantPast)
+      return App(
+        bundle: bundle,
+        update: .success(
+          App.Update(
+            app: bundle, remoteVersion: remote,
+            minimumOSVersion: minimumOS.map {
+              OperatingSystemVersion(majorVersion: $0, minorVersion: 4, patchVersion: 0)
+            }, source: .sparkle, date: nil, releaseNotes: nil, updateAction: .builtIn { _ in })),
+        isIgnored: false)
+    }
+    let needsMacOS = app(
+      "NeedsMacOS", installed: Version(versionNumber: "1.0", buildNumber: nil),
+      remote: Version(versionNumber: "2.0", buildNumber: nil), minimumOS: 99)
+    let incomparable = app(
+      "Incomparable", installed: Version(versionNumber: nil, buildNumber: "12"),
+      remote: Version(versionNumber: "2.0", buildNumber: nil))
+    let current = app(
+      "Current", installed: Version(versionNumber: "2.0", buildNumber: nil),
+      remote: Version(versionNumber: "2.0", buildNumber: nil))
+    XCTAssertFalse(needsMacOS.updateAvailable)
+    XCTAssertEqual(needsMacOS.updateStatus, .needsNewerMacOS("99.4"))
+    XCTAssertEqual(incomparable.updateStatus, .unknown)
+    XCTAssertEqual(current.updateStatus, .current)
+    let snapshot = AppListSnapshot(
+      withApps: [needsMacOS, incomparable, current], filterQuery: nil, settings: settings)
+    XCTAssertEqual(snapshot.sections.map(\.section.title), ["Up to Date", "Other Apps"])
+    XCTAssertEqual(snapshot.sections[0].apps.map(\.name), ["Current"])
+    XCTAssertEqual(
+      Set(snapshot.sections[1].apps.map(\.name)), ["NeedsMacOS", "Incomparable"])
+  }
+
   private func section(at index: Int, in snapshot: AppListSnapshot) -> AppListSnapshot.Section? {
     guard case .section(let section) = snapshot.entries[index] else { return nil }
     return section

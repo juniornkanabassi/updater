@@ -159,6 +159,43 @@ extension App {
 
 }
 
+/// What an update result means for this app, decided once and shared by the list's groups,
+/// the summaries and the detail pane. Comparing versions is kept apart from being installable.
+enum UpdateStatus: Equatable, Sendable {
+  case checking
+  /// Updater installs it itself: exactly what Update All runs.
+  case ready
+  /// An update another app or page performs.
+  case elsewhere
+  /// Only the vendor's app knows whether one exists (Adobe).
+  case checkInVendor
+  /// A newer version exists but needs a newer macOS than this Mac runs ("26.4").
+  case needsNewerMacOS(String)
+  case current
+  /// No source, a failed check, or versions that cannot be compared.
+  case unknown
+}
+
+extension App {
+  var updateStatus: UpdateStatus {
+    if isSourcePending { return .checking }
+    if availabilityUnknown { return .checkInVendor }
+    if updateAvailable { return capability.isAutomatic ? .ready : .elsewhere }
+    guard error == nil, let update else { return .unknown }
+    switch version.comparisonForUpdate(to: update.remoteVersion) {
+    case .samePrecedence, .newer:
+      return .current
+    case .older:
+      // Newer but not available means the release needs a newer macOS (Update.updateAvailable).
+      guard let required = update.minimumOSVersion else { return .unknown }
+      let patch = required.patchVersion > 0 ? ".\(required.patchVersion)" : ""
+      return .needsNewerMacOS("\(required.majorVersion).\(required.minorVersion)\(patch)")
+    case .unavailable:
+      return .unknown
+    }
+  }
+}
+
 extension App: Hashable {
 
   static func == (lhs: App, rhs: App) -> Bool {

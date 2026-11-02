@@ -19,3 +19,28 @@ enum AppStoreUpdateSettings: String {
     nonmutating set { UserDefaults.standard.set(newValue, forKey: rawValue) }
   }
 }
+
+/// Calls `onChange` when "Always open App Store" changes: the helper sheet's toggle and the
+/// reset when the helper is enabled both write this plain defaults key. It turns App Store
+/// installs into hand-offs, so the menu's Update All and the window's groups both follow it.
+@MainActor
+final class ManualAppStorePreferenceObserver {
+  private nonisolated(unsafe) var token: NSObjectProtocol?
+  private var last = AppStoreUpdateSettings.alwaysPerformManualUpdates.active
+
+  init(onChange: @escaping @MainActor () -> Void) {
+    token = NotificationCenter.default.addObserver(
+      forName: UserDefaults.didChangeNotification, object: nil, queue: .main
+    ) { [weak self] _ in
+      MainActor.assumeIsolated {
+        guard let self else { return }
+        let current = AppStoreUpdateSettings.alwaysPerformManualUpdates.active
+        guard current != self.last else { return }
+        self.last = current
+        onChange()
+      }
+    }
+  }
+
+  deinit { token.map(NotificationCenter.default.removeObserver) }
+}

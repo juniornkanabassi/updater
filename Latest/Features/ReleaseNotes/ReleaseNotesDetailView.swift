@@ -60,12 +60,17 @@ enum DetailOverview: Equatable {
   case offline
   /// Nothing to install; "Everything is up to date" only when the summary says all are current.
   case noUpdates(UpdateStatusSummary)
+  /// A search matched nothing; the whole inventory's state is not implied.
+  case noMatches(String)
   case chooseApp
 
   init(snapshot: AppListSnapshot) {
     let apps = snapshot.apps
     if apps.isEmpty {
       self = .lookingForApps
+    } else if let query = snapshot.filterQuery, !query.isEmpty {
+      // While searching, the overview speaks only about the search, never the whole inventory.
+      self = snapshot.sections.isEmpty ? .noMatches(query) : .chooseApp
     } else if snapshot.checkingGeneration != nil {
       self = .checking
     } else if snapshot.sections.contains(where: { $0.apps.contains(where: \.isActionable) }) {
@@ -290,7 +295,7 @@ private struct UpdateSummaryView: View {
       if app.isActionable {
         return app.capability.isAutomatic ? "arrow.down.circle.fill" : "arrow.up.forward.app"
       }
-      return app.remoteVersion != nil && !app.isUpdaterItself
+      return app.updateStatus == .current && !app.isUpdaterItself
         ? "checkmark.circle.fill" : "info.circle"
     }
   }
@@ -299,7 +304,7 @@ private struct UpdateSummaryView: View {
     switch presentation {
     case .failed: return Color(nsColor: .systemOrange)
     case .update, .open:
-      if !app.isActionable, app.remoteVersion != nil, !app.isUpdaterItself {
+      if app.updateStatus == .current, !app.isUpdaterItself {
         return Color(nsColor: .systemGreen)
       }
       return app.isActionable ? .accentColor : .secondary
@@ -321,6 +326,10 @@ private struct AppInfoPanel: View {
           row("Available", "Unknown, only \(app.externalUpdaterName ?? "the vendor") knows")
         } else if app.updateAvailable, let new = app.localizedVersionInformation?.rawNew {
           row("Available", new)
+        } else if case .needsNewerMacOS(let macOS) = app.updateStatus,
+          let new = app.localizedVersionInformation?.rawNew
+        {
+          row("Available", "\(new), needs macOS \(macOS)")
         }
         row("Updates via", app.isUpdaterItself ? "Not yet available" : app.sourceName)
         row(
@@ -413,6 +422,8 @@ private struct DetailOverviewView: View {
         ContentUnavailableView(
           "Nothing for Updater to Install", systemImage: "info.circle",
           description: Text(summary.text))
+      case .noMatches(let query):
+        ContentUnavailableView.search(text: query)
       case .chooseApp:
         ContentUnavailableView(
           "No App Selected", systemImage: "square.stack",

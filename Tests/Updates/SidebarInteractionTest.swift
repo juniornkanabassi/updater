@@ -257,8 +257,15 @@ final class SidebarInteractionTest: XCTestCase {
     settings.showInstalledUpdates = true
     let store = AppDataStore(userDefaults: defaults)
     _ = store.set(appBundle: app.bundle)
+    // Seed the successful current-version result too, or the row is unverified (Other Apps).
+    _ = store.set(
+      .success(
+        App.Update(
+          app: app.bundle, remoteVersion: app.bundle.version, minimumOSVersion: nil,
+          source: .appStore, date: nil, releaseNotes: nil, updateAction: .builtIn { _ in })),
+      for: app.bundle)
     let model = UpdatesListViewModel(
-      snapshot: AppListSnapshot(withApps: [app], filterQuery: nil, settings: settings),
+      snapshot: AppListSnapshot(withApps: store.apps, filterQuery: nil, settings: settings),
       settings: settings, appProvider: store)
     model.startObserving()
     defer { model.stopObserving() }
@@ -266,6 +273,7 @@ final class SidebarInteractionTest: XCTestCase {
     let window = try await makeLatestTestWindow(environment: environment, testCase: self)
     defer { window.close() }
     let fixture = try SidebarInputFixture(window: window, model: model)
+    XCTAssertEqual(store.apps.first?.updateStatus, .current)
     for visible in [true, false, true] {
       settings.includeAppsWithLimitedSupport = visible
       settings.includeUnsupportedApps = visible

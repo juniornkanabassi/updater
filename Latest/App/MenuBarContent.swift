@@ -22,7 +22,7 @@ final class MenuBarViewModel: ObservableObject {
   private var apps = [App]()
   private var observations = [Task<Void, Never>]()
   private var observers = [NSObjectProtocol]()
-  private var manualAppStoreUpdates: Bool?
+  private var manualPreference: ManualAppStorePreferenceObserver?
 
   init(
     appProvider: any AppProviding,
@@ -60,14 +60,9 @@ final class MenuBarViewModel: ObservableObject {
     observers = [
       center.addObserver(forName: .latestUpdateQueueDidChange, object: nil, queue: .main) {
         [weak self] _ in MainActor.assumeIsolated { self?.refresh() }
-      },
-      // "Always open App Store" (the helper sheet's toggle, reset when the helper is enabled)
-      // decides whether App Store apps join Update All; it is a plain defaults key.
-      center.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) {
-        [weak self] _ in MainActor.assumeIsolated { self?.refreshIfManualPreferenceChanged() }
-      },
+      }
     ]
-    manualAppStoreUpdates = AppStoreUpdateSettings.alwaysPerformManualUpdates.active
+    manualPreference = ManualAppStorePreferenceObserver { [weak self] in self?.refresh() }
   }
 
   func stopObserving() {
@@ -75,13 +70,7 @@ final class MenuBarViewModel: ObservableObject {
     observations.removeAll()
     observers.forEach(NotificationCenter.default.removeObserver)
     observers.removeAll()
-  }
-
-  private func refreshIfManualPreferenceChanged() {
-    let current = AppStoreUpdateSettings.alwaysPerformManualUpdates.active
-    guard current != manualAppStoreUpdates else { return }
-    manualAppStoreUpdates = current
-    refresh()
+    manualPreference = nil
   }
 
   func refresh(with apps: [App]? = nil) {

@@ -23,7 +23,8 @@ struct AppListSnapshot {
     /// apps whose availability only the vendor's app knows (Adobe).
     var checkElsewhere: [App] = []
     let installedUpdates: [App]
-    /// Settled apps without a compared version: no source, a failed check, or Updater itself.
+    /// Settled apps not verified current: no source, a failed check, versions that can't be
+    /// compared, a newer version that needs a newer macOS, or Updater itself.
     var otherApps: [App] = []
     let ignoredUpdates: [App]
   }
@@ -157,14 +158,13 @@ struct AppListSnapshot {
         installedUpdates.append(app)
       } else if app.isIgnored {
         ignoredUpdates.append(app)
-      } else if app.updateAvailable && app.capability.isAutomatic {
-        availableUpdates.append(app)
-      } else if app.isActionable {
-        checkElsewhere.append(app)
-      } else if app.remoteVersion == nil || app.isUpdaterItself {
-        otherApps.append(app)
       } else {
-        installedUpdates.append(app)
+        switch app.updateStatus {
+        case .ready: availableUpdates.append(app)
+        case .elsewhere, .checkInVendor: checkElsewhere.append(app)
+        case .current where !app.isUpdaterItself: installedUpdates.append(app)
+        case .current, .checking, .needsNewerMacOS, .unknown: otherApps.append(app)
+        }
       }
     }
 

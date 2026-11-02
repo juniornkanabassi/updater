@@ -123,9 +123,14 @@ extension App {
       if externalUpdaterName == name { return "Updates from inside the app" }
       return "Opens \(externalUpdaterName ?? "another app")"
     }
+    switch updateStatus {
+    case .current: return "Up to date"
+    case .needsNewerMacOS(let macOS): return "Newer version needs macOS \(macOS)"
+    case .ready, .elsewhere, .checkInVendor, .checking, .unknown: break
+    }
     if error != nil { return "Couldn't check" }
     if remoteVersion == nil { return "No update source found" }
-    return "Up to date"
+    return "Versions can't be compared"
   }
 
   /// One sentence above the release notes saying exactly what clicking the button does.
@@ -162,11 +167,20 @@ extension App {
       return
         "Updater can't install this one itself. Open \(externalUpdaterName ?? "the updater") and finish the update there."
     }
+    switch updateStatus {
+    case .current: return "You have the latest version."
+    case .needsNewerMacOS(let macOS):
+      let new = remoteVersion?.versionNumber.map { "Version \($0)" } ?? "A newer version"
+      return
+        "\(new) is available but needs macOS \(macOS) or later, so Updater won't offer it on this Mac."
+    case .ready, .elsewhere, .checkInVendor, .checking, .unknown: break
+    }
     if let error { return "Updater couldn't check this app: \(error.localizedDescription)" }
     if remoteVersion == nil {
       return "Updater can't find an update source for this app. Check the app or its website."
     }
-    return "You have the latest version."
+    return
+      "Updater can't compare the installed version with the latest one, so it doesn't know whether this app is up to date."
   }
 
   /// Who provides the version information, for "Updates via".
@@ -187,20 +201,29 @@ extension App {
 /// date" is said only when every checked app was verified current (window and menu bar).
 struct UpdateStatusSummary: Equatable {
   var current = 0
-  /// No source, or a check that failed.
+  /// Updates Updater installs itself (Ready to Update).
+  var ready = 0
+  /// No source, a failed check, or versions that can't be compared.
   var couldNotCheck = 0
+  /// Newer versions that need a newer macOS than this Mac runs.
+  var needsNewerMacOS = 0
   /// Updates Updater would open elsewhere (shown or hidden in the list).
   var elsewhere = 0
   /// Availability only the vendor's app knows (Adobe).
   var checkInVendor = 0
   var vendor: String?
 
-  var isAllCurrent: Bool { couldNotCheck == 0 && elsewhere == 0 && checkInVendor == 0 }
+  var isAllCurrent: Bool {
+    ready == 0 && couldNotCheck == 0 && needsNewerMacOS == 0 && elsewhere == 0
+      && checkInVendor == 0
+  }
 
   /// "12 up to date · 2 couldn't be checked · 3 check in Creative Cloud".
   var text: String {
     [
+      ready > 0 ? "\(ready) ready to update" : nil,
       "\(current) up to date",
+      needsNewerMacOS > 0 ? "\(needsNewerMacOS) need a newer macOS" : nil,
       couldNotCheck > 0 ? "\(couldNotCheck) couldn't be checked" : nil,
       elsewhere > 0 ? "\(elsewhere) to update elsewhere" : nil,
       checkInVendor > 0 ? "\(checkInVendor) check in \(vendor ?? "the vendor's app")" : nil,
@@ -211,16 +234,17 @@ struct UpdateStatusSummary: Equatable {
 extension UpdateStatusSummary {
   @MainActor
   init(apps: [App]) {
-    for app in apps where !app.isIgnored && !app.isUpdaterItself && !app.isSourcePending {
-      if app.availabilityUnknown {
+    for app in apps where !app.isIgnored && !app.isUpdaterItself {
+      switch app.updateStatus {
+      case .checking: break
+      case .ready: ready += 1
+      case .elsewhere: elsewhere += 1
+      case .checkInVendor:
         checkInVendor += 1
         vendor = vendor ?? app.externalUpdaterName
-      } else if app.updateAvailable {
-        if !app.capability.isAutomatic { elsewhere += 1 }
-      } else if app.error != nil || app.remoteVersion == nil {
-        couldNotCheck += 1
-      } else {
-        current += 1
+      case .needsNewerMacOS: needsNewerMacOS += 1
+      case .current: current += 1
+      case .unknown: couldNotCheck += 1
       }
     }
   }
