@@ -75,8 +75,16 @@ final class ExternalInstallGuard: Sendable {
 
   /// Records who now may change the target (the brew process that started, say). A failed
   /// write throws: the caller must not start that writer.
-  func noteWriter(_ writer: TransactionRecord.Writer) throws {
-    try update { $0.writer = writer }
+  func noteWriter(_ writer: TransactionRecord.Writer, started: Bool = true) throws {
+    try update {
+      $0.writer = writer
+      $0.writerStarted = started
+    }
+  }
+
+  /// The registered tool was resumed and may now change the target.
+  func noteWriterStarted() {
+    try? update { $0.writerStarted = true }
   }
 
   /// Records the version the installer promised once it is known (Sparkle's item), before
@@ -172,6 +180,8 @@ final class ExternalInstallGuard: Sendable {
           try ReplacementTransaction.restore(
             target, backupDirectory: saved.directory, originalIdentity: saved.original)
           appRestored = true
+          // Each step is journaled, so a later recovery resumes instead of starting over.
+          try? update { $0.recovery = .init(appRestored: true) }
         } catch {}
         var incomplete = [String]()
         // Records are only put back with their app: if the app stays as the installer left
@@ -183,6 +193,7 @@ final class ExternalInstallGuard: Sendable {
               try companionMove(companion.live, aside)
             }
             try companionMove(companion.saved, companion.live)
+            try? update { $0.recovery?.companionsRestored.append(index) }
           } catch {
             incomplete.append(
               "\(companion.live.path) (previous record kept at \(companion.saved.path))")
@@ -206,7 +217,10 @@ final class ExternalInstallGuard: Sendable {
     }
     reopenIfQuit(lifecycle)
     // A failed restore keeps the record: the next launch tries again or keeps both copies.
-    if case ReplacementError.restoreFailed? = result as? ReplacementError {
+    // Not settled while anything is still to put back (UPD-002).
+    if case .restoreFailed? = result as? ReplacementError {
+      record.withLock { $0 = nil }
+    } else if case .incompleteRestore? = result as? ReplacementError {
       record.withLock { $0 = nil }
     } else {
       settled()

@@ -647,6 +647,7 @@ final class HomebrewTest: XCTestCase {
 
   /// Sol R2-106: the app and the Caskroom record are restored separately; a failed record
   /// move is reported with the surviving paths, and the app is reopened only afterwards.
+  /// UPD-002: the journal stays with the app's step recorded, and a fresh recovery finishes it.
   @MainActor
   func testCompanionRestoreFailuresReportWhatSurvived() async throws {
     for failingMove in [1, 2] {
@@ -657,7 +658,8 @@ final class HomebrewTest: XCTestCase {
         at: record.appendingPathComponent("1.0"), withIntermediateDirectories: true)
       let appBefore = try FixtureApp.digest(app)
       let moves = Mutex(0)
-      let guardian = ExternalInstallGuard(target: app) { from, to in
+      let journal = TransactionJournal(root: root.appendingPathComponent("Journal"))
+      let guardian = ExternalInstallGuard(target: app, journal: journal) { from, to in
         let move = moves.withLock {
           $0 += 1
           return $0
@@ -665,7 +667,7 @@ final class HomebrewTest: XCTestCase {
         if move == failingMove { throw CocoaError(.fileWriteNoPermission) }
         try FileManager.default.moveItem(at: from, to: to)
       }
-      try guardian.takeClone(companions: [record])
+      try guardian.takeClone(companions: [record], writer: .process(pid: 999_999, started: 1))
       let target = FakeTarget(running: false)
       guardian.noteQuit(wasRunning: true)
       // What brew did: new app version and a new Caskroom record.
@@ -686,6 +688,22 @@ final class HomebrewTest: XCTestCase {
       XCTAssertTrue(records.contains("previous record kept at"), records)
       XCTAssertEqual(try FixtureApp.digest(app), appBefore, "the app itself was restored")
       XCTAssertEqual(target.reopens.withLock { $0 }, 1, "reopened after settlement")
+
+      let kept = try XCTUnwrap(journal.pending().first, "not settled, so the record stays")
+      XCTAssertEqual(kept.recovery?.appRestored, true)
+      XCTAssertEqual(kept.recovery?.companionsRestored, [])
+      let recovery = try XCTUnwrap(
+        RecoveryOperation.enqueuePending(from: journal, into: UpdateQueue(), helperIsIdle: { true })
+        {
+          $0.requiresTeam = false
+          $0.lifecycle = FakeTarget(running: false).lifecycle()
+        }.first)
+      for _ in 0..<300 where !recovery.isFinished { try await Task.sleep(for: .milliseconds(10)) }
+      XCTAssertEqual(recovery.result, .restored, "move \(failingMove)")
+      XCTAssertTrue(
+        FileManager.default.fileExists(atPath: record.appendingPathComponent("1.0").path),
+        "the Caskroom record agrees with the app again")
+      XCTAssertTrue(journal.pending().isEmpty)
     }
   }
 

@@ -21,7 +21,8 @@ enum ToolProcess {
   /// throws the child is killed before it executed a single instruction of the tool.
   static func run(
     _ executable: URL, _ arguments: [String], log: URL, environment: [String: String] = [:],
-    beforeStart: @escaping @Sendable (Int32) throws -> Void = { _ in }
+    beforeStart: @escaping @Sendable (Int32) throws -> Void = { _ in },
+    afterStart: @escaping @Sendable (Int32) -> Void = { _ in }
   ) async throws -> Int32 {
     guard geteuid() != 0 else { throw RootRefused() }
     FileManager.default.createFile(atPath: log.path, contents: nil)
@@ -55,6 +56,7 @@ enum ToolProcess {
       throw error
     }
     kill(pid, SIGCONT)
+    afterStart(pid)
     // Never killed part way: wait for it, off the cooperative pool.
     return await withCheckedContinuation { continuation in
       DispatchQueue.global(qos: .utility).async { continuation.resume(returning: reap(pid)) }

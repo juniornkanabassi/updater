@@ -52,12 +52,17 @@ struct TransactionRecord: Codable, Equatable, Sendable {
   var writer: Writer
   /// The scheduler lock of the job, so recovery holds back jobs on the same tool.
   let lockKey: String
+  /// False while a tool is registered but not yet resumed (it starts suspended); nil or true
+  /// once it may run. A registered, still-stopped tool never ran (UPD-003).
+  var writerStarted: Bool? = nil
   /// Recovery's own progress, so a crash during recovery resumes where it stopped.
   var recovery: RecoveryProgress? = nil
 
+  /// Completed steps only. What to do is decided from the disk on every attempt (UPD-001).
   struct RecoveryProgress: Codable, Equatable, Sendable {
     enum Decision: String, Codable, Sendable { case restore, keepNew, unchanged }
-    var decision: Decision
+    /// Written by 0.7.0; read but never trusted.
+    var decision: Decision? = nil
     var appRestored = false
     var companionsRestored: [Int] = []
   }
@@ -185,6 +190,21 @@ final class TransactionJournal: Sendable {
 
   static func writer(pid: Int32 = getpid()) -> TransactionRecord.Writer {
     .process(pid: pid, started: startTime(of: pid) ?? 0)
+  }
+
+  /// A tool registered but never resumed (Updater stopped between journaling it and letting
+  /// it run) is still stopped: it never ran, so it is killed and recovery goes on.
+  static func stopUnstartedWriter(_ record: TransactionRecord) {
+    guard record.writerStarted == false, case .process(let pid, let started) = record.writer else {
+      return
+    }
+    var info = proc_bsdinfo()
+    let size = Int32(MemoryLayout<proc_bsdinfo>.size)
+    guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size,
+      Int64(info.pbi_start_tvsec) == started, info.pbi_status == UInt32(SSTOP)
+    else { return }
+    kill(pid, SIGKILL)
+    for _ in 0..<100 where startTime(of: pid) != nil { usleep(10_000) }
   }
 
   static func startTime(of pid: Int32) -> Int64? {
@@ -347,6 +367,7 @@ final class RecoveryOperation: UpdateOperation, @unchecked Sendable {
     super.execute()
     Task { @MainActor [self] in
       progressState = .waitingForVendor("Recovering an interrupted update")
+      TransactionJournal.stopUnstartedWriter(record)
       while await TransactionJournal.mayBeRunning(record.writer, helperIsIdle: helperIsIdle) {
         try? await Task.sleep(for: pollInterval)
       }
@@ -376,34 +397,40 @@ final class RecoveryOperation: UpdateOperation, @unchecked Sendable {
     let unresolved = TransactionRecovery.Outcome.unresolved(
       "Updater was interrupted while updating this app and cannot settle it yet. Both copies are kept: \(record.target) and the original at \(record.backup)."
     )
-    if record.recovery == nil {
-      guard let decision = TransactionRecovery.decide(record, requiresTeam: requiresTeam) else {
-        return unresolved
-      }
-      record.recovery = .init(decision: decision)
-      do { try journal.write(record) } catch { return unresolved }
+    var done = record.recovery ?? .init()
+    // Decided from the disk on every attempt. Once a step is done the app must be the
+    // original (restored or untouched), checked again here.
+    let decision: TransactionRecord.RecoveryProgress.Decision
+    let fresh = TransactionRecovery.decide(record, requiresTeam: requiresTeam)
+    if done.appRestored || !done.companionsRestored.isEmpty {
+      guard fresh == .unchanged else { return unresolved }
+      decision = done.appRestored ? .restore : .unchanged
+    } else {
+      guard let fresh else { return unresolved }
+      decision = fresh
     }
-    guard let progress = record.recovery else { return unresolved }
     let target = URL(fileURLWithPath: record.target)
     let aside = URL(fileURLWithPath: record.backup).deletingLastPathComponent()
     var wasRunning = false
     do {
-      if progress.decision == .restore, !progress.appRestored {
+      if decision == .restore, !done.appRestored {
         do {
           wasRunning = try await lifecycle.quit(
             at: target, name: target.deletingPathExtension().lastPathComponent)
         } catch { return .needsQuit }
         try TransactionRecovery.restoreApp(record)
-        record.recovery?.appRestored = true
+        done.appRestored = true
+        record.recovery = done
         try journal.write(record)
       }
       // The app's records follow the app: back with a restored or untouched app, kept with
       // a verified new one.
-      if progress.decision != .keepNew {
+      if decision != .keepNew {
         for (index, companion) in record.companions.enumerated()
-        where !(record.recovery?.companionsRestored.contains(index) ?? false) {
+        where !done.companionsRestored.contains(index) {
           try TransactionRecovery.restoreCompanion(companion, aside: aside)
-          record.recovery?.companionsRestored.append(index)
+          done.companionsRestored.append(index)
+          record.recovery = done
           try journal.write(record)
         }
       }
@@ -411,9 +438,12 @@ final class RecoveryOperation: UpdateOperation, @unchecked Sendable {
       return unresolved
     }
     if wasRunning { lifecycle.reopen(target) }
+    // Immediately before deleting anything: the disk must still say what was decided.
+    let final = TransactionRecovery.decide(record, requiresTeam: requiresTeam)
+    guard decision == .keepNew ? final == .keepNew : final == .unchanged else { return unresolved }
     try? FileManager.default.removeItem(at: aside)
     journal.remove(record.id)
-    switch progress.decision {
+    switch decision {
     case .restore: return .restored
     case .unchanged: return .unchanged
     case .keepNew: return .keptNewVersion(TransactionRecovery.installedVersion(record))
@@ -459,6 +489,7 @@ final class RecoveryOperation: UpdateOperation, @unchecked Sendable {
       let candidate = URL(fileURLWithPath: arguments[2])
       let stop = arguments[3]
       let journal = TransactionJournal(root: root)
+      if stop == "toolRegistered" { toolRegistered(journal: journal, target: target, root: root) }
       do {
         let backupDirectory = try journal.backupDirectory(for: target, id: UUID().uuidString)
         let original = try BundleIdentity.read(at: target, validate: false)
@@ -493,6 +524,25 @@ final class RecoveryOperation: UpdateOperation, @unchecked Sendable {
         exit(1)
       }
       exit(0)
+    }
+
+    /// Clones the target as Homebrew does, then starts a tool that stays suspended: the probe
+    /// stops for good right after journaling it, before it would resume it.
+    private static func toolRegistered(journal: TransactionJournal, target: URL, root: URL) -> Never
+    {
+      let guarded = ExternalInstallGuard(target: target, journal: journal)
+      do { try guarded.takeClone(mechanism: "homebrew", lockKey: "homebrew") } catch { exit(1) }
+      Task.detached {
+        _ = try? await ToolProcess.run(
+          URL(fileURLWithPath: "/bin/sleep"), ["60"], log: root.appendingPathComponent("tool.log"),
+          beforeStart: { pid in
+            try guarded.noteWriter(TransactionJournal.writer(pid: pid), started: false)
+            FileManager.default.createFile(
+              atPath: root.appendingPathComponent("reached").path, contents: nil)
+            while true { pause() }
+          })
+      }
+      dispatchMain()
     }
   }
 #endif

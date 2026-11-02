@@ -234,6 +234,51 @@ final class TransactionJournalTest: XCTestCase {
     XCTAssertTrue(FileManager.default.fileExists(atPath: marker.path), "then it ran")
   }
 
+  // MARK: Sol's inspection of 0.7.0 (UPD-001, UPD-003)
+
+  /// UPD-001: saved progress is completed steps only; what to do is decided from the disk on
+  /// every attempt, so an old "keep new" never deletes a backup the app now needs, and an old
+  /// "restore" never overwrites an app that is now a verified new version.
+  func testSavedDecisionsAreNeverTrustedOverTheDisk() async throws {
+    let needed = try scene()
+    var stale = try record(needed, expected: "1.1")
+    stale.recovery = .init(decision: .keepNew)
+    try needed.journal.write(stale)
+    try FileManager.default.removeItem(at: needed.target)
+    let restored = try await recover(needed).result
+    XCTAssertEqual(restored, .restored, "the backup was needed, and used")
+    XCTAssertEqual(version(needed.target), "1.0")
+
+    let repaired = try scene()
+    var old = try record(repaired, expected: "1.1")
+    old.recovery = .init(decision: .restore)
+    try repaired.journal.write(old)
+    try replaceTarget(repaired, version: "1.1")
+    let kept = try await recover(repaired).result
+    XCTAssertEqual(kept, .keptNewVersion("1.1"), "the verified new app is not overwritten")
+    XCTAssertEqual(version(repaired.target), "1.1")
+  }
+
+  /// UPD-003: Updater stopped between journaling a tool and resuming it. The tool, still
+  /// suspended, never ran: recovery kills it and goes on instead of waiting for ever.
+  func testSuspendedToolLeftByACrashIsStoppedAndRecoveryGoesOn() async throws {
+    let scene = try scene()
+    let original = try FixtureApp.digest(scene.target)
+    try await killDuring("toolRegistered", scene)
+    let record = try XCTUnwrap(scene.journal.pending().first)
+    XCTAssertEqual(record.writerStarted, false)
+    guard case .process(let pid, _) = record.writer else { return XCTFail("tool PID journaled") }
+    var info = proc_bsdinfo()
+    let size = Int32(MemoryLayout<proc_bsdinfo>.size)
+    XCTAssertEqual(proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size), size, "the orphan is there")
+    XCTAssertEqual(info.pbi_status, UInt32(SSTOP), "and still suspended")
+    let recovery = try await recover(scene)
+    XCTAssertEqual(recovery.result, .unchanged)
+    XCTAssertNil(TransactionJournal.startTime(of: pid), "the never-started tool is gone")
+    XCTAssertEqual(try FixtureApp.digest(scene.target), original)
+    XCTAssertTrue(scene.journal.pending().isEmpty)
+  }
+
   // MARK: Sol's inspection (REV-002 to REV-006)
 
   private func record(
