@@ -66,6 +66,10 @@ final class HomebrewUpgradeOperation: UpdateOperation, @unchecked Sendable {
       // Download first, with the app untouched and still usable; only then quit, so it
       // cannot be reopened during a long download before brew replaces it.
       do { try await self.homebrew.fetch(self.token) } catch { return self.finish(with: error) }
+      // What was actually downloaded decides what brew will need to unpack it.
+      guard let download = try? await self.homebrew.cachedDownload(of: self.token),
+        HomebrewPayload.unpacksWithBuiltInTools(download)
+      else { return self.handOffBeforeChanges() }
       // A download can take long: definitions, targets and other copies are checked again
       // right before anything changes.
       guard await self.stillInScope() else { return self.handOffBeforeChanges() }

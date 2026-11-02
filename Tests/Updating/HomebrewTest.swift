@@ -46,6 +46,7 @@ private struct BrewStub {
           fi
         done
         printf ']}\n' ;;
+      "--cache --cask") cat "$dir/$3.download" ;;
       "fetch --cask")
         [ -f "$dir/fetchdelay" ] && sleep "$(cat "$dir/fetchdelay")"
         touch "$dir/fetched"
@@ -124,8 +125,20 @@ private struct BrewStub {
   func stage(_ token: String, payload: URL, target: URL) throws {
     try FileManager.default.copyItem(
       at: payload, to: directory.appendingPathComponent("\(token).payload"))
+    try download(
+      token, bytes: Data([0x50, 0x4B, 0x03, 0x04]) + Data(count: 64), named: "Fixture.zip")
     try target.path.write(
       to: directory.appendingPathComponent("\(token).target"), atomically: true, encoding: .utf8)
+  }
+
+  /// What `brew --cache --cask` points at after the fetch.
+  func download(_ token: String, bytes: Data, named name: String) throws {
+    let file = directory.appendingPathComponent("downloads/\(name)")
+    try FileManager.default.createDirectory(
+      at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try bytes.write(to: file)
+    try file.path.write(
+      to: directory.appendingPathComponent("\(token).download"), atomically: true, encoding: .utf8)
   }
 
   func flag(_ name: String, _ contents: String = "") throws {
@@ -823,5 +836,81 @@ final class HomebrewTest: XCTestCase {
         .components(separatedBy: " (").first)
     XCTAssertTrue(FileManager.default.fileExists(atPath: saved), "previous record kept at \(saved)")
     XCTAssertTrue(paths.contains(ReplacementTransaction.backupName))
+  }
+
+  /// Sol R2-301: a RAR (or other non-built-in) download would make brew install an unpacking
+  /// tool, even with no declared dependency. It hands off before any upgrade.
+  func testOnlyPayloadsBrewUnpacksWithBuiltInToolsAreInstalled() async throws {
+    let root = try disposableDirectory()
+    func file(_ name: String, _ bytes: Data) throws -> URL {
+      let url = root.appendingPathComponent(name)
+      try bytes.write(to: url)
+      return url
+    }
+    var tar = Data(count: 512)
+    tar.replaceSubrange(257..<262, with: Data("ustar".utf8))
+    var dmg = Data(count: 2_048)
+    dmg.replaceSubrange(1_536..<1_540, with: Data("koly".utf8))
+    let allowed = [
+      try file("a.zip", Data([0x50, 0x4B, 0x03, 0x04, 0])),
+      try file("a.tgz", Data([0x1F, 0x8B, 8, 0])),
+      try file("a.tbz", Data("BZh91AY".utf8)),
+      try file("a.txz", Data([0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00, 1])),
+      try file("a.tar", tar),
+      try file("a.dmg", dmg),
+    ]
+    for url in allowed {
+      XCTAssertTrue(HomebrewPayload.unpacksWithBuiltInTools(url), url.lastPathComponent)
+    }
+    let app = root.appendingPathComponent("Plain.app")
+    try FileManager.default.createDirectory(at: app, withIntermediateDirectories: true)
+    XCTAssertTrue(HomebrewPayload.unpacksWithBuiltInTools(app))
+    for url in [
+      try file("a.rar", Data("Rar!\u{1A}\u{07}\u{00}".utf8)),
+      try file("a.7z", Data([0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C])),
+      try file("empty", Data()),
+      root.appendingPathComponent("missing.zip"),
+    ] {
+      XCTAssertFalse(HomebrewPayload.unpacksWithBuiltInTools(url), url.lastPathComponent)
+    }
+
+    // Through the job: a RAR download, no declared dependencies: hand-off, no upgrade.
+    let setup = try makeSetup()
+    let before = try FixtureApp.digest(setup.installed)
+    try setup.stub.download(
+      "fixture", bytes: Data("Rar!\u{1A}\u{07}\u{00}".utf8), named: "Fixture.rar")
+    let (operation, _) = try await upgrade(setup)
+    XCTAssertEqual(operation.outcomeOverride, .handedOff)
+    XCTAssertFalse(try setup.stub.calls().contains { $0.arguments.hasPrefix("upgrade") })
+    XCTAssertEqual(try FixtureApp.digest(setup.installed), before)
+  }
+
+  /// Sol R2-302: appdir precedence explicit → env → default, and a nested source installs
+  /// under its base name.
+  func testInstalledTargetFollowsHomebrewsAppdirPrecedenceAndSourceBaseName() throws {
+    let root = try disposableDirectory()
+    let room = root.appendingPathComponent("Caskroom/fixture")
+    let metadata = room.appendingPathComponent(".metadata")
+    try FileManager.default.createDirectory(at: metadata, withIntermediateDirectories: true)
+    func config(_ value: [String: Any]) throws {
+      try JSONSerialization.data(withJSONObject: value).write(
+        to: metadata.appendingPathComponent("config.json"))
+    }
+    let nested: [[String: Any]] = [["app": ["Payload/Fixture.app"]]]
+    try config([
+      "default": ["appdir": "/Applications"], "env": ["appdir": root.path], "explicit": [:],
+    ])
+    XCTAssertEqual(
+      Homebrew.installedTarget(of: nested, caskroom: room),
+      Homebrew.canonical(root.appendingPathComponent("Fixture.app")),
+      "env beats default; the nested source installs as Fixture.app")
+    let explicit = root.appendingPathComponent("Explicit")
+    try config([
+      "default": ["appdir": "/Applications"], "env": ["appdir": root.path],
+      "explicit": ["appdir": explicit.path],
+    ])
+    XCTAssertEqual(
+      Homebrew.installedTarget(of: nested, caskroom: room),
+      Homebrew.canonical(explicit.appendingPathComponent("Fixture.app")), "explicit beats env")
   }
 }

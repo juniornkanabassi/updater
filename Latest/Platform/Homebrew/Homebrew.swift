@@ -17,6 +17,31 @@ struct InstalledCask: Sendable, Equatable {
   var installedApp: String?
 }
 
+/// Formats Homebrew unpacks with macOS's own tools. Others (RAR, 7z, ...) make brew install
+/// an unpacking tool on the fly, outside Updater's protection, so they hand off.
+enum HomebrewPayload {
+  static func unpacksWithBuiltInTools(_ file: URL) -> Bool {
+    if (try? file.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
+      return file.pathExtension == "app"
+    }
+    guard let handle = try? FileHandle(forReadingFrom: file) else { return false }
+    defer { try? handle.close() }
+    let head = (try? handle.read(upToCount: 512)) ?? Data()
+    func starts(_ bytes: [UInt8], at offset: Int = 0) -> Bool {
+      head.count >= offset + bytes.count && Array(head[offset..<offset + bytes.count]) == bytes
+    }
+    if starts([0x50, 0x4B, 0x03, 0x04]) || starts([0x1F, 0x8B]) || starts(Array("BZh".utf8))
+      || starts([0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00]) || starts(Array("ustar".utf8), at: 257)
+    {
+      return true  // zip, gzip, bzip2, xz, tar
+    }
+    // A disk image ends with a 512-byte "koly" trailer.
+    guard let end = try? handle.seekToEnd(), end >= 512 else { return false }
+    try? handle.seek(toOffset: end - 512)
+    return (try? handle.read(upToCount: 4)) == Data("koly".utf8)
+  }
+}
+
 /// What brew may do during an upgrade without Updater handing off: one `app` artifact, an
 /// optional `zap` (only runs with --zap), and an optional `uninstall` whose only directive is
 /// `quit:`. Any other artifact or directive (pkg, installer, script, launchctl, signal,
@@ -157,20 +182,21 @@ actor Homebrew {
     return result
   }
 
-  /// The installed app's path: its `target:` if given, else the appdir brew used (from the
-  /// Caskroom's config.json, an explicit setting winning over the default) plus its name.
+  /// The installed app's path: its `target:` if given, else the appdir brew used plus the
+  /// source's base name (a source can be nested, like `Payload/Foo.app`). The appdir follows
+  /// Homebrew's precedence in config.json: explicit, then environment, then default.
   static func installedTarget(of artifacts: [[String: Any]], caskroom: URL) -> String? {
     let specs = artifacts.compactMap { $0["app"] as? [Any] }
     guard specs.count == 1, let spec = specs.first, let name = spec.first as? String,
       let data = try? Data(contentsOf: caskroom.appendingPathComponent(".metadata/config.json")),
       let config = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
     else { return nil }
-    let appdir =
-      (config["explicit"] as? [String: Any])?["appdir"] as? String
-      ?? (config["default"] as? [String: Any])?["appdir"] as? String
+    let appdir = ["explicit", "env", "default"].lazy
+      .compactMap { (config[$0] as? [String: Any])?["appdir"] as? String }.first
     guard let appdir else { return nil }
     let target =
-      spec.dropFirst().compactMap { ($0 as? [String: Any])?["target"] as? String }.first ?? name
+      spec.dropFirst().compactMap { ($0 as? [String: Any])?["target"] as? String }.first
+      ?? (name as NSString).lastPathComponent
     let expanded = (target as NSString).expandingTildeInPath
     let path =
       expanded.hasPrefix("/") ? expanded : (appdir as NSString).appendingPathComponent(expanded)
@@ -265,6 +291,17 @@ actor Homebrew {
     // brew prints warnings before the JSON on stderr; take the JSON object.
     guard let start = data.firstIndex(of: UInt8(ascii: "{")) else { return data }
     return data[start...]
+  }
+
+  /// Where `brew fetch` left the cask's download.
+  func cachedDownload(of token: String) async throws -> URL {
+    let data = try await output(["--cache", "--cask", token])
+    guard
+      let path = String(data: data, encoding: .utf8)?
+        .split(separator: "\n").last.map({ $0.trimmingCharacters(in: .whitespaces) }),
+      path.hasPrefix("/")
+    else { throw HomebrewError.unavailable }
+    return URL(fileURLWithPath: path)
   }
 
   /// Downloads the update into brew's cache without touching the installed app, so the
