@@ -120,6 +120,50 @@ final class UpdateSchedulerTest: XCTestCase {
     }
   }
 
+  /// Sol R3-201: a declined quit records nothing, and the row goes back to the previous
+  /// persisted failure instead of a blank state.
+  @MainActor
+  func testDeclinedRetryRestoresThePreviousFailure() async throws {
+    let directory = try disposableDirectory()
+    let history = UpdateHistoryStore(fileURL: directory.appendingPathComponent("history.jsonl"))
+    let url = directory.appendingPathComponent("Fixture.app")
+    let bundle = App.Bundle(
+      version: Version(versionNumber: "1.0", buildNumber: nil), name: "Fixture",
+      bundleIdentifier: FixtureApp.identifier, fileURL: url, source: .sparkle,
+      modificationDate: .distantPast)
+    history.record(
+      UpdateHistoryEntry(before: bundle, after: bundle, outcome: .failed(reason: "x", logPath: nil))
+    )
+    let queue = UpdateQueue(history: history) { _ in bundle }
+    let feed = queue.stateChanges(for: url)
+    guard case .error = feed.current else { return XCTFail("the failure starts on the row") }
+    let done = expectation(description: "done")
+    // A declined quit: the installer cancels itself and finishes without an error.
+    let job = DeclinedQuitOperation(url: url)
+    job.completionBlock = { done.fulfill() }
+    let states = Task { () -> [UpdateProgressState] in
+      var seen = [UpdateProgressState]()
+      for await state in feed.changes {
+        seen.append(state)
+        if case .error = state { break }  // changes never replay the starting state
+      }
+      return seen
+    }
+    queue.addOperation(job)
+    await fulfillment(of: [done], timeout: 2)
+    let timeout = Task {
+      try await Task.sleep(for: .seconds(2))
+      states.cancel()
+    }
+    let seen = await states.value
+    timeout.cancel()
+    guard case .error = seen.last else {
+      return XCTFail("the previous failure must come back, saw \(seen)")
+    }
+    let lines = try String(contentsOf: history.fileURL, encoding: .utf8).split(separator: "\n")
+    XCTAssertEqual(lines.count, 1, "a declined quit writes no history")
+  }
+
   /// Sol R4 (third pass): failed attempts reconcile the row with the disk too, and a bundle
   /// that is gone afterwards loses its row while its failure stays in history.
   func testFailedAttemptsReconcileTheRowAndAVanishedAppLosesIt() async throws {
@@ -315,6 +359,15 @@ private final class ScriptedOperation: UpdateOperation, @unchecked Sendable {
       try body()
       finish()
     } catch { finish(with: error) }
+  }
+}
+
+private final class DeclinedQuitOperation: UpdateOperation, @unchecked Sendable {
+  init(url: URL) { super.init(bundleIdentifier: FixtureApp.identifier, appIdentifier: url) }
+  override func execute() {
+    super.execute()
+    cancel()
+    finish()
   }
 }
 
