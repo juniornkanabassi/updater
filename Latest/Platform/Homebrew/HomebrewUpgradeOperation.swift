@@ -15,7 +15,11 @@ struct HomebrewScope: Sendable {
 
   func installs(_ cask: InstalledCask, at app: URL) -> Bool {
     let selected = Homebrew.canonical(app)
-    guard cask.allowListed, cask.apps == [selected] else { return false }
+    // The upgrade removes the installed target and installs the current one: both must be
+    // this bundle, so a moved target or an unresolvable one hands off.
+    guard cask.allowListed, cask.apps == [selected], cask.installedApp == selected else {
+      return false
+    }
     guard !cask.quits.isEmpty else { return true }
     guard
       let data = try? Data(contentsOf: app.appendingPathComponent("Contents/Info.plist")),
@@ -57,18 +61,14 @@ final class HomebrewUpgradeOperation: UpdateOperation, @unchecked Sendable {
     super.execute()
     Task { @MainActor in
       guard !self.isCancelled else { return self.finish() }
-      // Recheck ownership with a fresh brew scan: brew must still own exactly this URL and
-      // nothing else, and must not need sudo.
-      let cask = try? await self.homebrew.owningCask(of: self.appIdentifier, fresh: true)
-      guard let cask, cask.token == self.token, self.scope.installs(cask, at: self.appIdentifier)
-      else {
-        self.outcomeOverride = .handedOff
-        return self.finish()
-      }
+      guard await self.stillInScope() else { return self.handOffBeforeChanges() }
       guard !self.isCancelled else { return self.finish() }
       // Download first, with the app untouched and still usable; only then quit, so it
       // cannot be reopened during a long download before brew replaces it.
       do { try await self.homebrew.fetch(self.token) } catch { return self.finish(with: error) }
+      // A download can take long: definitions, targets and other copies are checked again
+      // right before anything changes.
+      guard await self.stillInScope() else { return self.handOffBeforeChanges() }
       guard !self.isCancelled else { return self.finish() }
       do {
         // The cask's own quit stanza may also run; Updater's bounded quit comes first.
@@ -99,11 +99,24 @@ final class HomebrewUpgradeOperation: UpdateOperation, @unchecked Sendable {
     }
   }
 
+  /// A fresh brew scan: brew still owns exactly this URL and the upgrade stays in scope.
+  @MainActor private func stillInScope() async -> Bool {
+    guard let cask = try? await homebrew.owningCask(of: appIdentifier, fresh: true) else {
+      return false
+    }
+    return cask.token == token && scope.installs(cask, at: appIdentifier)
+  }
+
+  @MainActor private func handOffBeforeChanges() {
+    outcomeOverride = .handedOff
+    finish()
+  }
+
   @MainActor func finalize(_ error: Error?) async {
     // A failed brew run is undone whatever it left behind.
     let result = await protection.settle(
       error: error, expected: expectedVersion, requiresTeam: requiresTeam, lifecycle: lifecycle,
-      restoreOnInstallerFailure: true)
+      restoreOnInstallerFailure: true, acceptUnchanged: false)
     guard !published else { return }
     published = true
     if let result { finish(with: result) } else { finish() }

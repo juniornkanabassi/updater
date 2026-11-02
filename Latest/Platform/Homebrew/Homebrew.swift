@@ -12,6 +12,9 @@ struct InstalledCask: Sendable, Equatable {
   let allowListed: Bool
   /// Bundle IDs either definition's `uninstall quit:` names; brew quits them by ID.
   var quits: [String] = []
+  /// Where the installed definition says its app is (what the upgrade removes); nil if it
+  /// cannot be resolved.
+  var installedApp: String?
 }
 
 /// What brew may do during an upgrade without Updater handing off: one `app` artifact, an
@@ -154,8 +157,30 @@ actor Homebrew {
     return result
   }
 
+  /// The installed app's path: its `target:` if given, else the appdir brew used (from the
+  /// Caskroom's config.json, an explicit setting winning over the default) plus its name.
+  static func installedTarget(of artifacts: [[String: Any]], caskroom: URL) -> String? {
+    let specs = artifacts.compactMap { $0["app"] as? [Any] }
+    guard specs.count == 1, let spec = specs.first, let name = spec.first as? String,
+      let data = try? Data(contentsOf: caskroom.appendingPathComponent(".metadata/config.json")),
+      let config = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    else { return nil }
+    let appdir =
+      (config["explicit"] as? [String: Any])?["appdir"] as? String
+      ?? (config["default"] as? [String: Any])?["appdir"] as? String
+    guard let appdir else { return nil }
+    let target =
+      spec.dropFirst().compactMap { ($0 as? [String: Any])?["target"] as? String }.first ?? name
+    let expanded = (target as NSString).expandingTildeInPath
+    let path =
+      expanded.hasPrefix("/") ? expanded : (appdir as NSString).appendingPathComponent(expanded)
+    return canonical(URL(fileURLWithPath: path))
+  }
+
   /// `brew info --installed` gives the current definition (its `version` is the current
-  /// one); the installed definition comes from each cask's Caskroom metadata.
+  /// one); the installed definition comes from each cask's Caskroom metadata. Dependencies
+  /// (casks, formulae, extraction tools) and nested containers would be installed outside
+  /// Updater's protection, so only macOS and architecture constraints are allowed.
   static func parseInstalled(_ data: Data, caskroom: (String) -> URL?) throws -> [InstalledCask] {
     guard
       let casks = (try JSONSerialization.jsonObject(with: data) as? [String: Any])?["casks"]
@@ -168,14 +193,23 @@ actor Homebrew {
         guard artifact["app"] != nil, let target = artifact["target"] as? String else { return nil }
         return canonical(URL(fileURLWithPath: target))
       }
-      let installed = caskroom(token).flatMap(HomebrewAllowList.installedArtifacts)
+      let room = caskroom(token)
+      let installed = room.flatMap(HomebrewAllowList.installedArtifacts)
       let current = HomebrewAllowList.quits(in: artifacts)
       let previous = installed.flatMap(HomebrewAllowList.quits)
       let latest =
         cask["version"] as? String == "latest" || cask["installed"] as? String == "latest"
+      let dependencies = Set((cask["depends_on"] as? [String: Any] ?? [:]).keys)
+      let selfContained =
+        dependencies.isSubset(of: ["macos", "arch"])
+        && (cask["container"] == nil || cask["container"] is NSNull)
       return InstalledCask(
-        token: token, apps: apps, allowListed: current != nil && previous != nil && !latest,
-        quits: (current ?? []) + (previous ?? []))
+        token: token, apps: apps,
+        allowListed: current != nil && previous != nil && !latest && selfContained,
+        quits: (current ?? []) + (previous ?? []),
+        installedApp: installed.flatMap { artifacts in
+          room.flatMap { installedTarget(of: artifacts, caskroom: $0) }
+        })
     }
   }
 
@@ -203,7 +237,8 @@ actor Homebrew {
   /// and the log path on failure; a sudo prompt fails at once because stdin is closed.
   func upgrade(_ token: String) async throws -> URL {
     let log = try newLog(named: "brew-upgrade-\(token)")
-    let status = try await run(["upgrade", "--cask", token], log: log)
+    // --no-quit: Updater has already quit the exact app; brew must not quit others by ID.
+    let status = try await run(["upgrade", "--cask", "--no-quit", token], log: log)
     detection = nil
     guard status == 0 else {
       let output = (try? String(contentsOf: log, encoding: .utf8)) ?? ""

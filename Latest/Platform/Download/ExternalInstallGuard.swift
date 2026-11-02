@@ -81,14 +81,14 @@ final class ExternalInstallGuard: Sendable {
   @MainActor
   func settle(
     error: Error?, expected: Version?, requiresTeam: Bool, lifecycle: AppLifecycle,
-    restoreOnInstallerFailure: Bool = false
+    restoreOnInstallerFailure: Bool = false, acceptUnchanged: Bool = true
   ) async -> Error? {
     let task = settlement.withLock { current -> Task<Error?, Never> in
       if let current { return current }
       let task = Task { @MainActor in
         await self.performSettle(
           error: error, expected: expected, requiresTeam: requiresTeam, lifecycle: lifecycle,
-          restoreOnInstallerFailure: restoreOnInstallerFailure)
+          restoreOnInstallerFailure: restoreOnInstallerFailure, acceptUnchanged: acceptUnchanged)
       }
       current = task
       return task
@@ -99,14 +99,15 @@ final class ExternalInstallGuard: Sendable {
   @MainActor
   private func performSettle(
     error: Error?, expected: Version?, requiresTeam: Bool, lifecycle: AppLifecycle,
-    restoreOnInstallerFailure: Bool
+    restoreOnInstallerFailure: Bool, acceptUnchanged: Bool
   ) async -> Error? {
     var result = error
     if let saved = takeSaved() {
       do {
         if restoreOnInstallerFailure, let error { throw error }
         try ReplacementTransaction.verifyExternalInstall(
-          at: target, original: saved.original, expected: expected, requiresTeam: requiresTeam)
+          at: target, original: saved.original, expected: expected, requiresTeam: requiresTeam,
+          acceptUnchanged: acceptUnchanged)
         try? FileManager.default.removeItem(at: saved.directory)
       } catch let failure {
         // The app and each companion record are restored separately, so a failure reports
@@ -120,7 +121,9 @@ final class ExternalInstallGuard: Sendable {
           appRestored = true
         } catch {}
         var incomplete = [String]()
-        for (index, companion) in saved.companions.enumerated() {
+        // Records are only put back with their app: if the app stays as the installer left
+        // it, its records stay live too, and both saved copies are reported.
+        for (index, companion) in saved.companions.enumerated() where appRestored {
           let aside = saved.directory.appendingPathComponent("failed-companion-\(index)")
           do {
             if FileManager.default.fileExists(atPath: companion.live.path) {
@@ -134,7 +137,9 @@ final class ExternalInstallGuard: Sendable {
         }
         if !appRestored {
           result = ReplacementError.restoreFailed(
-            saved.directory.appendingPathComponent(ReplacementTransaction.backupName).path)
+            ([saved.directory.appendingPathComponent(ReplacementTransaction.backupName).path]
+              + saved.companions.map { "\($0.saved.path) (Homebrew's previous record)" })
+              .joined(separator: "; "))
         } else if !incomplete.isEmpty {
           result = ReplacementError.incompleteRestore(incomplete.joined(separator: "; "))
         } else {

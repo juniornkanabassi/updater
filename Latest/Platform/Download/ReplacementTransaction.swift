@@ -120,9 +120,18 @@ enum ReplacementTransaction {
   /// because its metadata looks unchanged. An untouched target then passes; a changed one
   /// must be the same product, newer than before and at least `expected`.
   static func verifyExternalInstall(
-    at target: URL, original: BundleIdentity, expected: Version?, requiresTeam: Bool = true
+    at target: URL, original: BundleIdentity, expected: Version?, requiresTeam: Bool = true,
+    acceptUnchanged: Bool = true
   ) throws {
-    if try BundleIdentity.read(at: target, validate: true) == original { return }
+    if try BundleIdentity.read(at: target, validate: true) == original {
+      // After an installer reported success (brew), an unchanged app is not an update.
+      guard acceptUnchanged else {
+        throw ReplacementError.verificationFailed(
+          "The installer reported success, but the app is still version \(original.shortVersion ?? "?")."
+        )
+      }
+      return
+    }
     let installed = try original.verifyReplacement(at: target, requiresTeam: requiresTeam)
     try verifyVersion(
       installed: Version(

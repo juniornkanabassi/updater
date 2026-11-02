@@ -48,15 +48,17 @@ private struct BrewStub {
         printf ']}\n' ;;
       "fetch --cask")
         [ -f "$dir/fetchdelay" ] && sleep "$(cat "$dir/fetchdelay")"
+        touch "$dir/fetched"
         echo "==> Downloading $3" ;;
       "upgrade --cask")
-        token="$3"
+        token="${@: -1}"
         [ -f "$dir/delay" ] && sleep "$(cat "$dir/delay")"
         if [ -f "$dir/$token.sudo" ]; then
           echo "sudo: a terminal is required to read the password"; status=1
         else
           target="$(cat "$dir/$token.target")"
-          rm -rf "$target" && /usr/bin/ditto "$dir/$token.payload" "$target"
+          # .noop: brew reports success and advances its record but leaves the app alone.
+          [ -f "$dir/$token.noop" ] || { rm -rf "$target" && /usr/bin/ditto "$dir/$token.payload" "$target"; }
           rm -rf "$caskroom/$token"/* && mkdir -p "$caskroom/$token/$(cat "$dir/$token.current")"
           echo "==> Upgrading $token"
           if [ -f "$dir/$token.fail" ]; then echo "Error: postflight failed"; status=1; fi
@@ -76,7 +78,8 @@ private struct BrewStub {
   func describe(
     _ casks: [String: URL], outdated: [String: String],
     current: [String: [[String: Any]]] = [:], installed: [String: [[String: Any]]] = [:],
-    version: [String: String] = [:], flightBlocks: Set<String> = []
+    version: [String: String] = [:], flightBlocks: Set<String> = [],
+    dependsOn: [String: [String: Any]] = [:], installedAppdir: [String: String] = [:]
   ) throws {
     let zap: [String: Any] = ["zap": [["trash": ["~/Library/Caches/fixture"]]]]
     let info: [String: Any] = [
@@ -84,6 +87,7 @@ private struct BrewStub {
       "casks": casks.map { token, app in
         [
           "token": token, "version": version[token] ?? "1.1", "installed": "1.0",
+          "depends_on": dependsOn[token] ?? [:],
           "artifacts": [["app": [app.lastPathComponent], "target": app.path], zap]
             + (current[token] ?? []),
         ] as [String: Any]
@@ -103,6 +107,13 @@ private struct BrewStub {
       ]
       try JSONSerialization.data(withJSONObject: receipt).write(
         to: metadata.appendingPathComponent("INSTALL_RECEIPT.json"))
+      // The appdir brew installed into: the app's folder unless a test moves it.
+      let config: [String: Any] = [
+        "default": ["appdir": installedAppdir[token] ?? app.deletingLastPathComponent().path],
+        "explicit": [:],
+      ]
+      try JSONSerialization.data(withJSONObject: config).write(
+        to: metadata.appendingPathComponent("config.json"))
     }
     for (token, version) in outdated {
       try version.write(
@@ -345,7 +356,8 @@ final class HomebrewTest: XCTestCase {
     let second = try FixtureApp.make(in: root.appendingPathComponent("B"), version: "1.0")
     let path = Homebrew.canonical(selected)
     let quitting = InstalledCask(
-      token: "fixture", apps: [path], allowListed: true, quits: [FixtureApp.identifier])
+      token: "fixture", apps: [path], allowListed: true, quits: [FixtureApp.identifier],
+      installedApp: path)
     func scope(copies: Set<String>, running: [String]) -> HomebrewScope {
       HomebrewScope(copies: { _ in copies }, runningPaths: { _ in running })
     }
@@ -361,7 +373,8 @@ final class HomebrewTest: XCTestCase {
         copies: { _ in throw CocoaError(.fileReadNoPermission) }, runningPaths: { _ in [] }
       ).installs(quitting, at: selected), "an unreadable walk fails closed")
     let otherID = InstalledCask(
-      token: "fixture", apps: [path], allowListed: true, quits: ["com.example.someone-else"])
+      token: "fixture", apps: [path], allowListed: true, quits: ["com.example.someone-else"],
+      installedApp: path)
     XCTAssertFalse(scope(copies: [], running: []).installs(otherID, at: selected))
     let refused = InstalledCask(token: "fixture", apps: [path], allowListed: false)
     XCTAssertFalse(scope(copies: [], running: []).installs(refused, at: selected))
@@ -661,5 +674,154 @@ final class HomebrewTest: XCTestCase {
       XCTAssertEqual(try FixtureApp.digest(app), appBefore, "the app itself was restored")
       XCTAssertEqual(target.reopens.withLock { $0 }, 1, "reopened after settlement")
     }
+  }
+
+  private func capability(_ setup: Setup) async throws -> UpdateCapability {
+    await setup.homebrew.invalidate()
+    let bundle = try XCTUnwrap(BundleCollector.collectBundle(at: setup.installed))
+    let update = try await HomebrewCheckerOperation(
+      with: bundle, repository: nil, homebrew: setup.homebrew
+    ).check()
+    return App(bundle: bundle, update: .success(update), isIgnored: false).capability
+  }
+
+  /// Sol R2-201: the installed target (from the receipt and the Caskroom's appdir) and the
+  /// current target must both be the selected bundle; a migrating target hands off.
+  func testInstalledAndCurrentTargetsMustBothBeTheSelectedApp() async throws {
+    let setup = try makeSetup()
+    let capabilityBefore = try await capability(setup)
+    XCTAssertEqual(capabilityBefore, .install, "both targets agree")
+    try setup.stub.describe(
+      ["fixture": setup.installed], outdated: ["fixture": "1.1"],
+      installedAppdir: ["fixture": setup.root.appendingPathComponent("Elsewhere").path])
+    let moved = try await capability(setup)
+    XCTAssertEqual(moved, .handOff, "the installed app was somewhere else")
+    let room = setup.stub.caskroom.appendingPathComponent("fixture")
+    let receipt: [[String: Any]] = [["app": ["Old.app", ["target": setup.installed.path]]]]
+    XCTAssertEqual(
+      Homebrew.installedTarget(of: receipt, caskroom: room), Homebrew.canonical(setup.installed),
+      "an explicit target wins over the appdir")
+    try FileManager.default.removeItem(at: room.appendingPathComponent(".metadata/config.json"))
+    XCTAssertNil(Homebrew.installedTarget(of: receipt, caskroom: room), "unresolvable")
+  }
+
+  /// Sol R2-202: dependencies would be installed outside Updater's protection: hand off,
+  /// and no mutating brew command runs.
+  func testCasksWithDependenciesHandOffWithoutChangingAnything() async throws {
+    for dependency in [["cask": ["other-cask"]], ["formula": ["unar"]]] as [[String: Any]] {
+      let setup = try makeSetup()
+      try setup.stub.describe(
+        ["fixture": setup.installed], outdated: ["fixture": "1.1"],
+        dependsOn: ["fixture": dependency.merging(["macos": [">=": ["14"]]]) { a, _ in a }])
+      let routed = try await capability(setup)
+      XCTAssertEqual(routed, .handOff, "\(dependency)")
+      let (operation, _) = try await upgrade(setup)
+      XCTAssertEqual(operation.outcomeOverride, .handedOff)
+      let mutating = try setup.stub.calls().filter {
+        $0.arguments.hasPrefix("fetch") || $0.arguments.hasPrefix("upgrade")
+      }
+      XCTAssertTrue(mutating.isEmpty, "\(mutating)")
+    }
+    let macOnly = try makeSetup()
+    try macOnly.stub.describe(
+      ["fixture": macOnly.installed], outdated: ["fixture": "1.1"],
+      dependsOn: ["fixture": ["macos": [">=": ["14"]], "arch": ["arm64"]]])
+    let allowed = try await capability(macOnly)
+    XCTAssertEqual(allowed, .install, "macOS and architecture constraints are fine")
+  }
+
+  /// Sol R2-203: brew exits 0 and advances its record but the bundle is still 1.0: not an
+  /// update. The app and the Caskroom record are restored.
+  func testSuccessfulBrewThatLeftTheAppUnchangedIsRolledBack() async throws {
+    let setup = try makeSetup()
+    try setup.stub.flag("fixture.noop")
+    let record = setup.stub.caskroom.appendingPathComponent("fixture")
+    let recordBefore = try FixtureApp.digest(record)
+    let (_, outcome) = try await upgrade(setup)
+    guard case .failed(let reason, _)? = outcome else {
+      return XCTFail("Expected failed, got \(String(describing: outcome))")
+    }
+    XCTAssertTrue(reason.contains("still version 1.0"), reason)
+    XCTAssertEqual(try FixtureApp.digest(record), recordBefore, "the Caskroom record went back")
+    XCTAssertEqual(BundleCollector.collectBundle(at: setup.installed)?.version.versionNumber, "1.0")
+  }
+
+  /// Sol R2-204: scope is checked again after the download; a copy that appears or starts
+  /// meanwhile means no upgrade. The upgrade itself runs with --no-quit.
+  func testScopeIsRecheckedAfterFetchAndUpgradeRunsWithNoQuit() async throws {
+    for change in ["appears", "starts"] {
+      let setup = try makeSetup()
+      try setup.stub.describe(
+        ["fixture": setup.installed], outdated: ["fixture": "1.1"],
+        current: ["fixture": [["uninstall": [["quit": FixtureApp.identifier]]]]],
+        installed: ["fixture": [["uninstall": [["quit": FixtureApp.identifier]]]]])
+      try setup.stub.flag("fetchdelay", "0.4")
+      let selected = Homebrew.canonical(setup.installed)
+      let fetched = setup.stub.directory.appendingPathComponent("fetched")
+      let other = Homebrew.canonical(setup.otherCopy)
+      let scope = HomebrewScope(
+        copies: { _ in
+          change == "appears" && FileManager.default.fileExists(atPath: fetched.path)
+            ? [selected, other] : [selected]
+        },
+        runningPaths: { _ in
+          change == "starts" && FileManager.default.fileExists(atPath: fetched.path) ? [other] : []
+        })
+      let queue = UpdateQueue(history: setup.history)
+      let bundle = try XCTUnwrap(BundleCollector.collectBundle(at: setup.installed))
+      let operation = HomebrewUpgradeOperation(
+        app: bundle, token: "fixture",
+        expectedVersion: Version(versionNumber: "1.1", buildNumber: nil))
+      operation.homebrew = setup.homebrew
+      operation.scope = scope
+      operation.lifecycle = .notRunning
+      operation.requiresTeam = false
+      let done = expectation(description: "finished")
+      operation.completionBlock = { done.fulfill() }
+      queue.submit(operation)
+      await fulfillment(of: [done], timeout: 30)
+      XCTAssertEqual(operation.outcomeOverride, .handedOff, change)
+      let calls = try setup.stub.calls()
+      XCTAssertTrue(calls.contains { $0.arguments.hasPrefix("fetch") }, change)
+      XCTAssertFalse(calls.contains { $0.arguments.hasPrefix("upgrade") }, "\(change): no upgrade")
+    }
+    let normal = try makeSetup()
+    _ = try await upgrade(normal)
+    XCTAssertTrue(
+      try normal.stub.calls().contains { $0.arguments == "upgrade --cask --no-quit fixture" })
+  }
+
+  /// Sol R2-205: if the app cannot be restored (it would not quit), its Caskroom record is
+  /// left live with it, and both saved copies are reported.
+  @MainActor
+  func testCompanionsStayLiveWhenTheAppCannotBeRestored() async throws {
+    let root = try disposableDirectory()
+    let app = try FixtureApp.make(in: root.appendingPathComponent("App"), version: "1.0")
+    let record = root.appendingPathComponent("Caskroom/fixture")
+    try FileManager.default.createDirectory(
+      at: record.appendingPathComponent("1.0"), withIntermediateDirectories: true)
+    let guardian = ExternalInstallGuard(target: app)
+    try guardian.takeClone(companions: [record])
+    try FileManager.default.removeItem(at: record.appendingPathComponent("1.0"))
+    try FileManager.default.createDirectory(
+      at: record.appendingPathComponent("1.1"), withIntermediateDirectories: true)
+    let refusing = AppLifecycle(
+      runningApps: { _ in [.init(terminate: {}, isTerminated: { false })] },
+      confirmQuit: { _ in true }, reopen: { _ in XCTFail("an unrestored app is not reopened") },
+      timeout: .milliseconds(100))
+    let result = await guardian.settle(
+      error: HomebrewError.failed(reason: "x", logPath: "/tmp/x"), expected: nil,
+      requiresTeam: false, lifecycle: refusing, restoreOnInstallerFailure: true)
+    guard case ReplacementError.restoreFailed(let paths)? = result else {
+      return XCTFail("Expected restore failure, got \(String(describing: result))")
+    }
+    XCTAssertEqual(
+      try FileManager.default.contentsOfDirectory(atPath: record.path), ["1.1"],
+      "the live record matches the app that is still there")
+    let saved = try XCTUnwrap(
+      paths.components(separatedBy: "; ").first { $0.contains("Homebrew's previous record") }?
+        .components(separatedBy: " (").first)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: saved), "previous record kept at \(saved)")
+    XCTAssertTrue(paths.contains(ReplacementTransaction.backupName))
   }
 }
