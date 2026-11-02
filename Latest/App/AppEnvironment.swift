@@ -8,6 +8,7 @@
 //  Fork contributions © 2026 ertyoii. First committed in this fork 2026-06-04.
 //  Licensed under GPL-3.0; see LICENSE.md.
 
+import AppKit
 import Combine
 import Foundation
 
@@ -18,7 +19,12 @@ final class AppEnvironment: ObservableObject {
   let updatesListViewModel: UpdatesListViewModel
   let settingsViewModel: SettingsViewModel
   let commands: AppCommands
+  let menuBar: MenuBarViewModel
   private var startupTask: Task<Void, Never>?
+  private var backgroundChecks: BackgroundCheckScheduler?
+  private var notifications: UpdateNotificationController?
+  /// Set when the scheduler (not the user) started the running check.
+  private var announcesNextResult = false
 
   init(
     searchFocusController: SearchFocusController = SearchFocusController(),
@@ -68,23 +74,51 @@ final class AppEnvironment: ObservableObject {
       searchFocusController: searchFocusController,
       settings: settings
     )
+    self.menuBar = MenuBarViewModel(
+      appProvider: coordinator.appProvider, settings: settings,
+      updateAllCandidates: { [updateCheckingService] in updateCheckingService.updateAllCandidates })
   }
 
+  private var launchObserver: NSObjectProtocol?
+
+  /// Background checks and the menu bar run whether or not the window opens or stays open.
   static func live() -> AppEnvironment {
-    AppEnvironment()
+    let environment = AppEnvironment()
+    environment.launchObserver = NotificationCenter.default.addObserver(
+      forName: NSApplication.didFinishLaunchingNotification, object: nil, queue: .main
+    ) { [weak environment] _ in MainActor.assumeIsolated { environment?.start() } }
+    return environment
   }
 
+  /// Runs once at launch; closing the window leaves it running for the menu bar.
   func start() {
+    guard backgroundChecks == nil else { return }
     MigrationTelemetry.shared.applicationStarted()
     updateCheckingService.startReportingProgress()
     updatesListViewModel.startObserving()
+    let checks = BackgroundCheckScheduler(
+      isChecking: { [updateCheckingService] in updateCheckingService.isRunning },
+      check: { [weak self] _ in
+        self?.announcesNextResult = true
+        self?.updateCheckingService.checkForUpdates(hardRefresh: false)
+      })
+    backgroundChecks = checks
+    let notifications = UpdateNotificationController(
+      notifier: LiveUpdateNotifier(open: { MainWindow.show() }))
+    self.notifications = notifications
+    menuBar.checkFinished = { [weak self] waiting in
+      guard let self else { return }
+      let announce = self.announcesNextResult
+      self.announcesNextResult = false
+      Task { await notifications.checkFinished(waiting: waiting, announce: announce) }
+    }
+    menuBar.startObserving()
+    checks.start()
     startupTask?.cancel()
-    startupTask = Task { [weak self] in
+    startupTask = Task {
       await AppStartupSequence.run(
         refreshCatalog: { await ReleaseNotesSourceCatalog.refresh() },
-        checkForUpdates: { [weak self] in
-          self?.updateCheckingService.checkForUpdates(hardRefresh: false)
-        }
+        checkForUpdates: { checks.fire(.launch) }
       )
     }
   }
@@ -92,6 +126,9 @@ final class AppEnvironment: ObservableObject {
   func stop() {
     startupTask?.cancel()
     startupTask = nil
+    backgroundChecks?.stop()
+    backgroundChecks = nil
+    menuBar.stopObserving()
     updatesListViewModel.stopObserving()
     updateCheckingService.stopReportingProgress()
   }

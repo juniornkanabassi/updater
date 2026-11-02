@@ -17,6 +17,8 @@ final class UpdateActionViewModel: ObservableObject {
   struct PresentedError: Identifiable {
     let id = UUID()
     let description: String
+    /// The permission whose Settings pane fixes this failure, if any.
+    var permission: PermissionKind? = nil
   }
 
   let app: App
@@ -65,7 +67,7 @@ final class UpdateActionViewModel: ObservableObject {
     case .retryTermination:
       updating.retryTermination(app)
     case .failed(let description):
-      presentedError = PresentedError(description: description)
+      presentedError = PresentedError(description: description, permission: missingPermission)
     case .waiting:
       break
     }
@@ -73,6 +75,18 @@ final class UpdateActionViewModel: ObservableObject {
 
   func retry() {
     updating.update(app)
+  }
+
+  /// A failure recorded as `needsPermission` that a System Settings pane can fix.
+  var missingPermission: PermissionKind? {
+    guard case .error(let error) = updating.state(for: app.identifier),
+      case .needsPermission(let kind)? = (error as? UpdateOutcomeError)?.outcome
+    else { return nil }
+    return PermissionKind(outcomeKind: kind)
+  }
+
+  func openSettings(for permission: PermissionKind) {
+    workspace.open(permission.settingsURL)
   }
 }
 
@@ -105,9 +119,12 @@ struct UpdateActionView: View {
             viewModel.app.name
           )),
         message: Text(error.description),
-        primaryButton: .default(Text(NSLocalizedString("RetryAction", comment: "Retry update"))) {
-          viewModel.retry()
-        },
+        primaryButton: error.permission.map { permission in
+          .default(Text("Fix in Settings")) { viewModel.openSettings(for: permission) }
+        }
+          ?? .default(Text(NSLocalizedString("RetryAction", comment: "Retry update"))) {
+            viewModel.retry()
+          },
         secondaryButton: .cancel()
       )
     }

@@ -27,7 +27,7 @@ struct SettingsRootView: View {
       .labelsHidden()
       .pickerStyle(.segmented)
       .controlSize(.large)
-      .frame(width: 240)
+      .frame(width: 330)
       .padding(.top, 12)
       .padding(.bottom, 4)
 
@@ -36,6 +36,8 @@ struct SettingsRootView: View {
         GeneralSettingsView(viewModel: viewModel)
       case .locations:
         LocationsSettingsView(viewModel: viewModel)
+      case .permissions:
+        PermissionsSettingsView()
       }
     }
     .frame(width: 460)

@@ -220,6 +220,11 @@
 		3F0344C4DCF4409DA4BE873B /* SystemUpdate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4BA40CDAE2B4855A548758A /* SystemUpdate.swift */; };
 		E7565CF8350A492BA66D98B1 /* VendorAdapters.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DB5D0B8294442CDA3864662 /* VendorAdapters.swift */; };
 		6DD7F180E6984BE6AEF9DAE3 /* VendorAdaptersTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 769E0528AD994F0B97193220 /* VendorAdaptersTest.swift */; };
+		3D38866E04584978AE3E6FF6 /* BackgroundChecks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CD2D7AC2E87434C8B0F1F70 /* BackgroundChecks.swift */; };
+		E35BDC8927964D79BA07EA94 /* MenuBarContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75A3DBA96D934940A119EDF2 /* MenuBarContent.swift */; };
+		08F347536FF444A88C78F66C /* PermissionsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83D44866DFF542349F338E1C /* PermissionsSettingsView.swift */; };
+		3A4C1BA1DFCA4FF1B3A82C85 /* BackgroundTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BE7413728DB4FD2858736F1 /* BackgroundTest.swift */; };
+		DCD02534A0BF4D0AA3D935F8 /* AppDirectoryWatcherTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BC7F8D6916D4A4EA5857CF4 /* AppDirectoryWatcherTest.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -559,6 +564,11 @@
 		A4BA40CDAE2B4855A548758A /* SystemUpdate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemUpdate.swift; sourceTree = "<group>"; };
 		2DB5D0B8294442CDA3864662 /* VendorAdapters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VendorAdapters.swift; sourceTree = "<group>"; };
 		769E0528AD994F0B97193220 /* VendorAdaptersTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VendorAdaptersTest.swift; sourceTree = "<group>"; };
+		1CD2D7AC2E87434C8B0F1F70 /* BackgroundChecks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundChecks.swift; sourceTree = "<group>"; };
+		75A3DBA96D934940A119EDF2 /* MenuBarContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarContent.swift; sourceTree = "<group>"; };
+		83D44866DFF542349F338E1C /* PermissionsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionsSettingsView.swift; sourceTree = "<group>"; };
+		5BE7413728DB4FD2858736F1 /* BackgroundTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundTest.swift; sourceTree = "<group>"; };
+		6BC7F8D6916D4A4EA5857CF4 /* AppDirectoryWatcherTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDirectoryWatcherTest.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -740,6 +750,7 @@
 		52C000012FE0000000000001 /* App */ = {
 			isa = PBXGroup;
 			children = (
+				75A3DBA96D934940A119EDF2 /* MenuBarContent.swift */,
 				501AA0002FC4000000000001 /* main.swift */,
 				51A000032FC3000000000001 /* AppCommands.swift */,
 				51A000022FC3000000000001 /* AppEnvironment.swift */,
@@ -794,6 +805,7 @@
 		52C000052FE0000000000001 /* Settings */ = {
 			isa = PBXGroup;
 			children = (
+				83D44866DFF542349F338E1C /* PermissionsSettingsView.swift */,
 				51A020032FC4000000000001 /* GeneralSettingsView.swift */,
 				51A020042FC4000000000001 /* LocationsSettingsView.swift */,
 				51A020022FC4000000000001 /* SettingsRootView.swift */,
@@ -844,6 +856,7 @@
 		52C000092FE0000000000001 /* UpdateChecking */ = {
 			isa = PBXGroup;
 			children = (
+				1CD2D7AC2E87434C8B0F1F70 /* BackgroundChecks.swift */,
 				51A000042FC3000000000001 /* UpdateCheckingService.swift */,
 				509512251FF3631D003D2D7F /* UpdateCheckCoordinator.swift */,
 				50C9F0F4234637BD00FD1802 /* UpdateCheckerOperation.swift */,
@@ -994,6 +1007,7 @@
 		52D000012FE0000000000001 /* AppDiscovery */ = {
 			isa = PBXGroup;
 			children = (
+				6BC7F8D6916D4A4EA5857CF4 /* AppDirectoryWatcherTest.swift */,
 				508D4E692FBC000000000001 /* AppDataStoreTest.swift */,
 				52B000062FE0000000000001 /* BundleCollectorTest.swift */,
 			);
@@ -1030,6 +1044,7 @@
 		52D000042FE0000000000001 /* Updating */ = {
 			isa = PBXGroup;
 			children = (
+				5BE7413728DB4FD2858736F1 /* BackgroundTest.swift */,
 				14D3B936DA2F014392B22402 /* AppUpdatingBoundaryTest.swift */,
 				BC32934D27C9A1E207B84105 /* InstallHelperInteractionTest.swift */,
 				AF47380B4D5A5B6A192C0071 /* InstallHelperTest.swift */,
@@ -1371,6 +1386,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				08F347536FF444A88C78F66C /* PermissionsSettingsView.swift in Sources */,
+				E35BDC8927964D79BA07EA94 /* MenuBarContent.swift in Sources */,
+				3D38866E04584978AE3E6FF6 /* BackgroundChecks.swift in Sources */,
 				E7565CF8350A492BA66D98B1 /* VendorAdapters.swift in Sources */,
 				3F0344C4DCF4409DA4BE873B /* SystemUpdate.swift in Sources */,
 				44D32ACBCA9A40ACB3B9FDC5 /* AdobeCreativeCloud.swift in Sources */,
@@ -1507,6 +1525,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				DCD02534A0BF4D0AA3D935F8 /* AppDirectoryWatcherTest.swift in Sources */,
+				3A4C1BA1DFCA4FF1B3A82C85 /* BackgroundTest.swift in Sources */,
 				6DD7F180E6984BE6AEF9DAE3 /* VendorAdaptersTest.swift in Sources */,
 				464AFFB8B96B4802970AC8E1 /* HomebrewTest.swift in Sources */,
 				80439E73AB35414E8018AD8E /* FixtureUpdateEndToEndTest.swift in Sources */,
@@ -1856,7 +1876,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 8;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DWARF_DSYM_FILE_NAME = "UpdaterApp.app.dSYM"; /* Sparkle ships its own Updater.app.dSYM */
@@ -1876,7 +1896,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.4.1;
+				MARKETING_VERSION = 0.5.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.juniornkanabassi.Updater";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Updater";
@@ -1899,7 +1919,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 8;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DWARF_DSYM_FILE_NAME = "UpdaterApp.app.dSYM"; /* Sparkle ships its own Updater.app.dSYM */
@@ -1920,7 +1940,7 @@
 					"@executable_path/../Frameworks",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 0.4.1;
+				MARKETING_VERSION = 0.5.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.juniornkanabassi.Updater";
 				PRODUCT_MODULE_NAME = Latest;
 				PRODUCT_NAME = "Updater";

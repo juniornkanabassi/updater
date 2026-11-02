@@ -80,6 +80,13 @@ final class UpdateHistoryStore: Sendable {
     }
   }
 
+  func latestEntries() -> [UpdateHistoryEntry] {
+    latest.withLock { cache in
+      if cache == nil { cache = Self.load(from: fileURL) }
+      return cache.map { Array($0.values) } ?? []
+    }
+  }
+
   private static func load(from url: URL) -> [String: UpdateHistoryEntry] {
     guard let data = try? Data(contentsOf: url) else { return [:] }
     let decoder = JSONDecoder()

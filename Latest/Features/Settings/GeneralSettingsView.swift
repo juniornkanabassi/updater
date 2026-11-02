@@ -14,6 +14,9 @@ struct GeneralSettingsView: View {
   @ObservedObject var viewModel: SettingsViewModel
   @AppStorage(ApplicationAppearance.storageKey)
   private var appearanceRawValue = ApplicationAppearance.system.rawValue
+  @AppStorage(BackgroundCheckInterval.storageKey)
+  private var checkIntervalHours = BackgroundCheckInterval.defaultValue.rawValue
+  @AppStorage(MenuBarViewModel.showsItemKey) private var showsMenuBarItem = true
 
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
@@ -45,6 +48,38 @@ struct GeneralSettingsView: View {
           Text("Appearance")
           Spacer(minLength: 16)
           appearancePicker
+        }
+        .padding(10)
+      }
+
+      GroupBox("In the background") {
+        VStack(alignment: .leading, spacing: 14) {
+          HStack {
+            VStack(alignment: .leading, spacing: 4) {
+              Text("Check for updates")
+              Text("Also on launch and after sleep. Updater never installs on its own.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 16)
+            Picker("Check for updates", selection: $checkIntervalHours) {
+              ForEach(BackgroundCheckInterval.allCases) { Text($0.title).tag($0.rawValue) }
+            }
+            .labelsHidden()
+            .fixedSize()
+            .accessibilityLabel("Check for updates")
+            .accessibilityIdentifier("settings.checkInterval")
+          }
+
+          Divider()
+
+          preferenceOption(
+            title: "Show in menu bar",
+            description:
+              "Shows the waiting updates. Updater keeps running there when you close its window.",
+            isOn: $showsMenuBarItem
+          )
         }
         .padding(10)
       }

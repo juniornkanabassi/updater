@@ -63,18 +63,27 @@ final class UpdateCheckingService: NSObject, ObservableObject, UpdateCheckProgre
     coordinator.run(hardRefresh: hardRefresh)
   }
 
+  /// What Update All would start now; the window and the menu bar both ask this.
+  var updateAllCandidates: [App] {
+    Self.updateAllCandidates(
+      from: coordinator.appProvider.updatableApps, isUpdating: updating.isUpdating,
+      alwaysUsesManualAppStoreUpdates: appStoreUpdateService.alwaysUsesManualUpdates)
+  }
+
   /// Update All runs only apps Updater installs itself (`install`/`vendorTool`); hand-offs
   /// such as the App Store page stay per-app actions.
-  func updateAll() {
-    var apps = [App]()
-    for app in coordinator.appProvider.updatableApps
-    where app.capability.isAutomatic && !updating.isUpdating(app) {
+  static func updateAllCandidates(
+    from apps: [App], isUpdating: (App) -> Bool, alwaysUsesManualAppStoreUpdates: Bool
+  ) -> [App] {
+    apps.filter { app in
       // The manual-update preference turns App Store installs into a hand-off.
-      if app.bundle.source == .appStore, appStoreUpdateService.alwaysUsesManualUpdates {
-        continue
-      }
-      apps.append(app)
+      app.capability.isAutomatic && !isUpdating(app)
+        && !(app.bundle.source == .appStore && alwaysUsesManualAppStoreUpdates)
     }
+  }
+
+  func updateAll() {
+    let apps = updateAllCandidates
 
     if apps.contains(where: { $0.bundle.source == .appStore }) {
       do {

@@ -13,22 +13,22 @@ struct LatestApplication: SwiftUI.App {
   @AppStorage(ApplicationAppearance.storageKey)
   private var appearanceRawValue = ApplicationAppearance.system.rawValue
 
+  @AppStorage(MenuBarViewModel.showsItemKey) private var showsMenuBarItem = true
+  @NSApplicationDelegateAdaptor(UpdaterAppDelegate.self) private var appDelegate
   @StateObject private var environment: AppEnvironment
 
   init() {
-    _environment = StateObject(wrappedValue: .live())
+    // Built now, not lazily, so it is listening before launch finishes.
+    let environment = AppEnvironment.live()
+    _environment = StateObject(wrappedValue: environment)
   }
 
   var body: some Scene {
     LatestMainWindowScene(id: "main") {
       LatestRootView(environment: environment)
         .modifier(ApplicationAppearanceModifier(appearance: appearance))
-        .onAppear {
-          environment.start()
-        }
-        .onDisappear {
-          environment.stop()
-        }
+        .modifier(MainWindowOpenerCapture())
+        .onAppear { environment.start() }  // idempotent; launch normally started it already
     }
     .commands {
       LatestCommands(
@@ -36,6 +36,14 @@ struct LatestApplication: SwiftUI.App {
         updatesViewModel: environment.updatesListViewModel,
         updateCheckingService: environment.updateCheckingService
       )
+    }
+
+    MenuBarExtra(isInserted: $showsMenuBarItem) {
+      MenuBarContentView(
+        model: environment.menuBar, checking: environment.updateCheckingService,
+        select: { environment.updatesListViewModel.select($0) })
+    } label: {
+      MenuBarLabel(model: environment.menuBar)
     }
 
     Settings {

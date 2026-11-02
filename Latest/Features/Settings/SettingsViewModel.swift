@@ -18,6 +18,7 @@ final class SettingsViewModel: ObservableObject {
   enum Tab: CaseIterable, Hashable {
     case general
     case locations
+    case permissions
 
     var title: String {
       switch self {
@@ -25,6 +26,8 @@ final class SettingsViewModel: ObservableObject {
         return "General"
       case .locations:
         return "Locations"
+      case .permissions:
+        return "Permissions"
       }
     }
 

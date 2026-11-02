@@ -59,6 +59,42 @@ final class AppDependencyBoundaryTest: XCTestCase {
     XCTAssertEqual(updating.updatedNames, ["Native"])
   }
 
+  /// The menu bar lists every waiting update but enables Update All by the window's rule.
+  func testMenuBarUsesTheWindowsUpdateAllEligibility() throws {
+    let native = makeTestApp(name: "Native", version: "1", remoteVersion: "2")
+    let handOff = makeTestApp(
+      name: "Hand Off", version: "1", remoteVersion: "2",
+      updateAction: .external(label: "App Store") { _ in })
+    let current = makeTestApp(name: "Current", version: "2", remoteVersion: "2")
+    let apps = [native, handOff, current]
+    let store = StubAppStoreService()
+    let updating = BulkUpdating()
+    let environment = AppEnvironment(
+      settings: try isolatedAppListSettings(for: self),
+      coordinator: StubCheckCoordinator(apps: apps), updating: updating,
+      appStoreUpdateService: store)
+    let menu = environment.menuBar
+
+    menu.refresh(with: apps)
+    XCTAssertEqual(menu.updates.map(\.name), ["Hand Off", "Native"])
+    XCTAssertEqual(
+      environment.updateCheckingService.updateAllCandidates.map(\.name), ["Native"])
+    XCTAssertTrue(menu.canUpdateAll)
+
+    store.alwaysUsesManualUpdates = true
+    menu.refresh(with: apps)
+    XCTAssertFalse(menu.canUpdateAll, "manual App Store installs are hand-offs in both places")
+    store.alwaysUsesManualUpdates = false
+    updating.update(native, isBulkUpdate: true)
+    menu.refresh(with: apps)
+    XCTAssertFalse(menu.canUpdateAll, "an app already updating is not started again")
+    XCTAssertTrue(
+      UpdateCheckingService.updateAllCandidates(
+        from: apps.filter { $0.updateAvailable }, isUpdating: { _ in false },
+        alwaysUsesManualAppStoreUpdates: false
+      ).map(\.name) == ["Native"], "hand-offs never join Update All")
+  }
+
   private func bulkService(apps: [App]) -> (
     UpdateCheckingService, StubAppStoreService, StubApplicationWorkspace, BulkUpdating
   ) {
