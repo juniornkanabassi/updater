@@ -41,11 +41,35 @@ actor MicrosoftAutoUpdate {
 
   var isInstalled: Bool { FileManager.default.isExecutableFile(atPath: tool.path) }
 
-  /// The MAU app ID registered for exactly this bundle path; nil if MAU doesn't manage it.
-  /// Throws when MAU cannot be read, which is not the same as "no update".
-  func appID(for app: URL, fresh: Bool = false) async throws -> String? {
+  enum Registration: Equatable, Sendable {
+    /// The ID maps back to this path alone, so `--install --apps <ID>` targets this copy.
+    case unique(String)
+    /// Another registered path shares the ID; MAU's install has no path to choose with.
+    case ambiguous(String)
+
+    var identifier: String {
+      switch self {
+      case .unique(let identifier), .ambiguous(let identifier): identifier
+      }
+    }
+  }
+
+  /// How MAU registers exactly this bundle path; nil if it doesn't manage it. Throws when MAU
+  /// cannot be read, which is not the same as "no update".
+  func registration(for app: URL, fresh: Bool = false) async throws -> Registration? {
     guard isInstalled else { return nil }
-    return try await detect(fresh: fresh).registered[Homebrew.canonical(app)]
+    let registered = try await detect(fresh: fresh).registered
+    guard let identifier = registered[Homebrew.canonical(app)] else { return nil }
+    return registered.values.filter { $0 == identifier }.count == 1
+      ? .unique(identifier) : .ambiguous(identifier)
+  }
+
+  /// The app ID, only when it maps back to this path alone.
+  func appID(for app: URL, fresh: Bool = false) async throws -> String? {
+    if case .unique(let identifier)? = try await registration(for: app, fresh: fresh) {
+      return identifier
+    }
+    return nil
   }
 
   /// The version MAU would install for this app ID, or nil when it has none.

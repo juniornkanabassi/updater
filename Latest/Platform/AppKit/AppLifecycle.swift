@@ -16,6 +16,11 @@ struct AppLifecycle: Sendable {
   var confirmQuit: @MainActor @Sendable (_ appName: String) -> Bool
   var reopen: @MainActor @Sendable (URL) -> Void
   var timeout: Duration = .seconds(20)
+  /// Launches the app and returns once macOS has, or throws its error.
+  var launch: @MainActor @Sendable (URL) async throws -> Void = { url in
+    _ = try await NSWorkspace.shared.openApplication(
+      at: url, configuration: NSWorkspace.OpenConfiguration())
+  }
 
   static let live = AppLifecycle(
     runningApps: { url in

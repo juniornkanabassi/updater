@@ -185,7 +185,7 @@ final class VendorAdaptersTest: XCTestCase {
   func testMicrosoftRegisteredAppIsAVendorToolAndUnregisteredCopiesAreNot() async throws {
     let setup = try microsoftSetup()
     let bundle = try XCTUnwrap(BundleCollector.collectBundle(at: setup.app))
-    let vendors = VendorAdapters(microsoft: setup.microsoft)
+    let vendors = VendorAdapters(microsoft: setup.microsoft, copies: { _ in [] })
     let update = try await vendors.update(for: bundle)
     let app = App(bundle: bundle, update: update.map { .success($0) }, isIgnored: false)
     XCTAssertEqual(app.capability, .vendorTool)
@@ -282,7 +282,8 @@ final class VendorAdaptersTest: XCTestCase {
       identifier: "com.microsoft.teams2", version: "1.0")
     let teamsBundle = try XCTUnwrap(BundleCollector.collectBundle(at: teams))
     do {
-      _ = try await VendorAdapters(microsoft: setup.microsoft).update(for: teamsBundle)
+      _ = try await VendorAdapters(microsoft: setup.microsoft, copies: { _ in [] }).update(
+        for: teamsBundle)
       XCTFail("the row must show the check failure")
     } catch {}
     // Not cached: once MAU answers again, it is asked again.
@@ -339,6 +340,52 @@ final class VendorAdaptersTest: XCTestCase {
     XCTAssertEqual(setup.tool.calls().filter { $0.arguments.hasPrefix("--config") }.count, 2)
   }
 
+  /// IND-001: an app ID shared by two registered paths (or a second copy on disk) has no
+  /// path for `msupdate --install --apps`, so it hands off and no install runs.
+  func testAmbiguousMicrosoftRegistrationHandsOffWithoutInstalling() async throws {
+    let setup = try microsoftSetup()
+    let second = try FixtureApp.make(in: setup.root.appendingPathComponent("Copy"), version: "1.0")
+    try setup.tool.register(
+      [setup.app: "FIXTURE01", second: "FIXTURE01"], updates: ["FIXTURE01": "1.1"])
+    let bundle = try XCTUnwrap(BundleCollector.collectBundle(at: setup.app))
+    let ambiguous = try await setup.microsoft.registration(for: setup.app)
+    XCTAssertEqual(ambiguous, .ambiguous("FIXTURE01"))
+    let vendors = VendorAdapters(microsoft: setup.microsoft, copies: { _ in [] })
+    let update = try await vendors.update(for: bundle)
+    XCTAssertEqual(
+      App(bundle: bundle, update: update.map { .success($0) }, isIgnored: false).capability,
+      .handOff)
+    let microsoft = setup.microsoft
+    let operation = VendorToolOperation(
+      app: bundle, lock: "msupdate", expectedVersion: nil,
+      inScope: {
+        await VendorAdapters.microsoftScope(
+          microsoft, appID: "FIXTURE01", app: bundle.fileURL,
+          bundleIdentifier: bundle.bundleIdentifier, copies: { _ in [] })
+      },
+      install: { try await microsoft.install("FIXTURE01") })
+    operation.lifecycle = .notRunning
+    operation.requiresTeam = false
+    _ = try await run(operation, history: setup.history, app: setup.app)
+    XCTAssertEqual(operation.outcomeOverride, .handedOff)
+    XCTAssertFalse(setup.tool.calls().contains { $0.arguments.hasPrefix("--install") })
+
+    // A unique registration but another copy on disk: also a hand-off.
+    let unique = try microsoftSetup()
+    let other = Homebrew.canonical(unique.root.appendingPathComponent("Elsewhere/Fixture.app"))
+    let withCopy = try await VendorAdapters(microsoft: unique.microsoft, copies: { _ in [other] })
+      .update(for: try XCTUnwrap(BundleCollector.collectBundle(at: unique.app)))
+    XCTAssertEqual(
+      App(
+        bundle: try XCTUnwrap(BundleCollector.collectBundle(at: unique.app)),
+        update: withCopy.map { .success($0) }, isIgnored: false
+      ).capability, .handOff)
+    let scoped = await VendorAdapters.microsoftScope(
+      unique.microsoft, appID: "FIXTURE01", app: unique.app,
+      bundleIdentifier: FixtureApp.identifier, copies: { _ in [other] })
+    XCTAssertFalse(scoped, "rechecked right before the install")
+  }
+
   func testRefusedQuitRunsNoVendorTool() async throws {
     let setup = try microsoftSetup()
     let refusing = AppLifecycle(
@@ -381,14 +428,20 @@ final class VendorAdaptersTest: XCTestCase {
       "156.0.8078.80")
   }
 
-  /// Sol R3-001: Chrome is offered "Relaunch Chrome": quit with consent, reopen, then the
-  /// version is read from disk. Updater runs no Google tool and replaces nothing.
+  private func chromeFixture(_ root: URL, version: String = "1.0", in folder: String = "Apps")
+    throws -> URL
+  {
+    try FixtureApp.make(
+      in: root.appendingPathComponent(folder), name: "Google Chrome",
+      identifier: GoogleChrome.bundleIdentifier, version: version)
+  }
+
+  /// Sol R3-001 / IND-003: Chrome's action is a user-only hand-off that relaunches a running
+  /// Chrome (or opens a closed one), never part of Update All.
   @MainActor
-  func testChromeIsRelaunchedAndJudgedFromDisk() async throws {
+  func testChromeActionIsAUserOnlyHandOff() async throws {
     let root = try disposableDirectory()
-    let chrome = try FixtureApp.make(
-      in: root.appendingPathComponent("Apps"), name: "Google Chrome",
-      identifier: GoogleChrome.bundleIdentifier, version: "1.0")
+    let chrome = try chromeFixture(root)
     let google = GoogleChrome(releases: {
       Data(#"{"releases":[{"version":"1.1","fraction":1}]}"#.utf8)
     })
@@ -397,18 +450,42 @@ final class VendorAdaptersTest: XCTestCase {
     let app = App(bundle: bundle, update: update.map { .success($0) }, isIgnored: false)
     XCTAssertTrue(app.updateAvailable)
     XCTAssertTrue(app.relaunchesToUpdate)
-    XCTAssertEqual(SidebarUpdateActionTitle.text(for: app), "Relaunch Google Chrome")
+    XCTAssertEqual(app.capability, .handOff)
+    XCTAssertFalse(app.capability.isAutomatic, "not part of Update All")
+    XCTAssertEqual(SidebarUpdateActionTitle.text(for: app), "Open Google Chrome", "closed Chrome")
 
-    for applied in [false, true] {
-      let staged = try FixtureApp.make(
-        in: root.appendingPathComponent("staged-\(applied)"), name: "Google Chrome",
-        identifier: GoogleChrome.bundleIdentifier, version: "1.1")
+    // Update All never runs it; an individual click does.
+    let performed = Mutex(0)
+    let counted = App(
+      bundle: bundle,
+      update: .success(
+        App.Update(
+          app: bundle, remoteVersion: Version(versionNumber: "1.1", buildNumber: nil),
+          minimumOSVersion: nil, source: .vendor, date: nil, releaseNotes: nil,
+          updateAction: .relaunch { _ in performed.withLock { $0 += 1 } })),
+      isIgnored: false)
+    let service = AppUpdateService(queue: UpdateQueue())
+    service.update(counted, isBulkUpdate: true)
+    XCTAssertEqual(performed.withLock { $0 }, 0, "Update All leaves Chrome alone")
+    service.update(counted)
+    XCTAssertEqual(performed.withLock { $0 }, 1)
+  }
+
+  /// IND-002: the launch is awaited and a staged update applied shortly after launch is
+  /// caught; a closed Chrome is just opened; a launch failure is a failure, not "no change".
+  @MainActor
+  func testChromeRelaunchAwaitsLaunchAndWatchesTheVersion() async throws {
+    for scenario in ["running, applies late", "closed, nothing staged", "launch fails"] {
+      let root = try disposableDirectory()
+      let chrome = try chromeFixture(root)
+      let staged = try chromeFixture(root, version: "1.1", in: "staged")
+      let running = Mutex(scenario.hasPrefix("running"))
       let quits = Mutex(0)
-      let running = Mutex(true)
-      let reopened = Mutex(0)
+      let launches = Mutex(0)
       let operation = ChromeRelaunchOperation(
         app: try XCTUnwrap(BundleCollector.collectBundle(at: chrome)))
-      operation.lifecycle = AppLifecycle(
+      operation.settleTime = .seconds(3)
+      var lifecycle = AppLifecycle(
         runningApps: { _ in
           running.withLock { $0 }
             ? [
@@ -419,25 +496,36 @@ final class VendorAdaptersTest: XCTestCase {
                 }, isTerminated: { !running.withLock { $0 } })
             ] : []
         },
-        confirmQuit: { _ in true },
-        reopen: { url in
-          reopened.withLock { $0 += 1 }
-          // Chrome applies a staged update on launch, if its updater had one.
-          if applied {
+        confirmQuit: { _ in true }, reopen: { _ in XCTFail("the launch is awaited instead") })
+      lifecycle.launch = { url in
+        launches.withLock { $0 += 1 }
+        if scenario == "launch fails" { throw CocoaError(.fileReadNoPermission) }
+        if scenario.hasSuffix("applies late") {
+          // Chrome finishes applying its staged update a moment after it launched.
+          Task.detached {
+            try? await Task.sleep(for: .milliseconds(600))
             try? FileManager.default.removeItem(at: url)
             try? FileManager.default.copyItem(at: staged, to: url)
           }
-        })
-      let history = UpdateHistoryStore(
-        fileURL: root.appendingPathComponent("history-\(applied).jsonl"))
+        }
+      }
+      operation.lifecycle = lifecycle
+      let history = UpdateHistoryStore(fileURL: root.appendingPathComponent("history.jsonl"))
       let outcome = try await run(operation, history: history, app: chrome)
-      XCTAssertEqual(quits.withLock { $0 }, 1)
-      XCTAssertEqual(reopened.withLock { $0 }, 1)
-      XCTAssertEqual(
-        outcome,
-        applied
-          ? .updated(from: "1.0", to: "1.1")
-          : .noChange(reason: "Chrome hasn't downloaded the update yet."))
+      XCTAssertEqual(launches.withLock { $0 }, 1, scenario)
+      switch scenario {
+      case "running, applies late":
+        XCTAssertEqual(quits.withLock { $0 }, 1)
+        XCTAssertEqual(outcome, .updated(from: "1.0", to: "1.1"))
+      case "closed, nothing staged":
+        XCTAssertEqual(quits.withLock { $0 }, 0, "a closed Chrome is only opened")
+        XCTAssertEqual(outcome, .noChange(reason: "Chrome hasn't downloaded the update yet."))
+      default:
+        guard case .failed(let reason, _)? = outcome else {
+          return XCTFail("a launch failure is reported, got \(String(describing: outcome))")
+        }
+        XCTAssertFalse(reason.contains("hasn't downloaded"), reason)
+      }
     }
   }
 
@@ -569,7 +657,8 @@ final class VendorAdaptersTest: XCTestCase {
     let setup = try microsoftSetup()
     let bundle = try XCTUnwrap(BundleCollector.collectBundle(at: setup.app))
     let update = try await UpdateCheckCoordinator.check(
-      bundle, repository: nil, homebrew: nil, vendors: VendorAdapters(microsoft: setup.microsoft))
+      bundle, repository: nil, homebrew: nil,
+      vendors: VendorAdapters(microsoft: setup.microsoft, copies: { _ in [] }))
     XCTAssertEqual(
       App(bundle: bundle, update: .success(update), isIgnored: false).capability, .vendorTool)
   }

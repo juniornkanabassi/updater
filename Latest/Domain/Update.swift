@@ -161,15 +161,16 @@ extension App.Update {
     /// disk, with the same protection as its own installs.
     case vendorTool(block: UpdateAction)
 
-    /// Updater quits and reopens the app so it applies an update its own updater staged
-    /// (Chrome), then reads the version from disk. Nothing is replaced by Updater.
+    /// A user-initiated hand-off: Updater quits and reopens the app (or opens it if closed) so
+    /// it applies an update its own updater staged (Chrome), then reads the version from
+    /// disk. Nothing is replaced by Updater, and Update All never runs it.
     case relaunch(block: UpdateAction)
 
     /// Whether this action is currently performed within Updater.
     var installs: Bool {
       switch self {
-      case .builtIn, .vendorTool, .relaunch: true
-      case .external: false
+      case .builtIn, .vendorTool: true
+      case .external, .relaunch: false
       case .conditional(_, let installs, _): installs()
       }
     }
@@ -186,9 +187,9 @@ extension App.Update {
     /// Performs the update for the given bundle.
     func perform(with bundle: App.Bundle, isBulkUpdate: Bool) {
       switch self {
-      case .builtIn(let block), .vendorTool(let block), .relaunch(let block):
+      case .builtIn(let block), .vendorTool(let block):
         block(bundle)
-      case .external(_, let block), .conditional(_, _, let block):
+      case .external(_, let block), .conditional(_, _, let block), .relaunch(let block):
         if installs || !isBulkUpdate { block(bundle) }
       }
     }

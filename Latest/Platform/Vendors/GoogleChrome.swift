@@ -75,11 +75,14 @@ actor GoogleChrome {
   }
 }
 
-/// "Relaunch Chrome": a clean quit (with the usual consent), a reopen so Chrome applies what
-/// its updater staged, then the scheduler reads the version from disk. Updater replaces
-/// nothing, so no clone is needed; an unchanged version is no change, with the reason.
+/// "Relaunch Chrome", started only by the user: a clean quit if Chrome is running (with the
+/// usual consent), then a launch that is awaited, so Chrome applies what its updater staged.
+/// The version at the exact URL is watched briefly, then the scheduler reads it from disk.
+/// Updater replaces nothing, so no clone is needed.
 final class ChromeRelaunchOperation: UpdateOperation, @unchecked Sendable {
   var lifecycle = AppLifecycle.live
+  /// How long to watch for Chrome finishing a staged update after it launched.
+  var settleTime: Duration = .seconds(10)
 
   init(app: App.Bundle) {
     super.init(bundleIdentifier: app.bundleIdentifier, appIdentifier: app.identifier)
@@ -89,6 +92,7 @@ final class ChromeRelaunchOperation: UpdateOperation, @unchecked Sendable {
     super.execute()
     Task { @MainActor in
       guard !self.isCancelled else { return self.finish() }
+      let before = BundleCollector.collectBundle(at: self.appIdentifier)?.version
       do {
         _ = try await self.lifecycle.quit(
           at: self.appIdentifier, name: self.appIdentifier.deletingPathExtension().lastPathComponent
@@ -98,7 +102,15 @@ final class ChromeRelaunchOperation: UpdateOperation, @unchecked Sendable {
       } catch {
         return self.finish(with: error)
       }
-      self.lifecycle.reopen(self.appIdentifier)
+      do { try await self.lifecycle.launch(self.appIdentifier) } catch {
+        return self.finish(with: error)
+      }
+      let deadline = ContinuousClock.now + self.settleTime
+      while ContinuousClock.now < deadline,
+        BundleCollector.collectBundle(at: self.appIdentifier)?.version == before
+      {
+        try? await Task.sleep(for: .milliseconds(250))
+      }
       self.noChangeReason = "Chrome hasn't downloaded the update yet."
       self.finish()
     }

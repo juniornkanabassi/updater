@@ -137,7 +137,7 @@ struct UpdateActionSurface: View {
         appName: app.name,
         // Hand-offs read "Open" with "in <Vendor>" below; Updater installs only on "Update".
         isHandOff: app.capability == .handOff,
-        relaunches: app.relaunchesToUpdate,
+        relaunches: app.relaunchesToUpdate && SidebarUpdateActionTitle.isRunning(app),
         presentation: presentation,
         performAction: performAction
       )

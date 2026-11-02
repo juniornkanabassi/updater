@@ -8,6 +8,8 @@ struct VendorAdapters: Sendable {
   var microsoft: MicrosoftAutoUpdate?
   var google: GoogleChrome?
   var adobe: AdobeCreativeCloud?
+  /// The shared folder walk for other copies of a bundle ID.
+  var copies: @Sendable (String) throws -> Set<String> = { try AppStoreInstallGate.live.walk($0) }
   static let live = VendorAdapters(microsoft: .shared, google: .shared, adobe: .live)
   static let none = VendorAdapters()
 
@@ -15,24 +17,38 @@ struct VendorAdapters: Sendable {
   /// be read, so the row shows a check failure instead of pretending the app is current.
   func update(for bundle: App.Bundle) async throws -> App.Update? {
     if let microsoft, await microsoft.isInstalled {
-      let appID: String?
+      let registration: MicrosoftAutoUpdate.Registration?
       do {
-        appID = try await microsoft.appID(for: bundle.fileURL)
+        registration = try await microsoft.registration(for: bundle.fileURL)
       } catch {
         // Unreadable MAU: a Microsoft app outside the App Store reports it; others go on.
         if bundle.bundleIdentifier.hasPrefix("com.microsoft."), bundle.source != .appStore {
           throw error
         }
-        appID = nil
+        registration = nil
       }
-      if let appID {
-        let remote = try await microsoft.availableVersion(of: appID)
+      if let registration {
+        let remote = try await microsoft.availableVersion(of: registration.identifier)
+        guard case .unique(let appID) = registration,
+          Self.isOnlyCopy(bundle.fileURL, bundleIdentifier: bundle.bundleIdentifier, copies: copies)
+        else {
+          // `msupdate --install --apps <ID>` has no path: with two copies it could update either.
+          return Self.handOff(bundle, remote: remote, label: "Microsoft AutoUpdate") {
+            Task { @MainActor in
+              MacApplicationWorkspace.shared.openApplication(
+                at: microsoft.tool.deletingLastPathComponent().deletingLastPathComponent()
+                  .deletingLastPathComponent())
+            }
+          }
+        }
         return Self.vendorUpdate(
           bundle, remote: remote, lock: "msupdate",
           waitingStatus: "Waiting for Microsoft AutoUpdate to finish",
           vendorIsIdle: { await microsoft.assistantIsIdle() }
-        ) { app in
-          (try? await microsoft.appID(for: app, fresh: true)) == appID
+        ) { [copies] app in
+          await Self.microsoftScope(
+            microsoft, appID: appID, app: app, bundleIdentifier: bundle.bundleIdentifier,
+            copies: copies)
         } install: {
           try await microsoft.install(appID)
         }
@@ -43,6 +59,7 @@ struct VendorAdapters: Sendable {
       return App.Update(
         app: bundle, remoteVersion: Version(versionNumber: remote, buildNumber: nil),
         minimumOSVersion: nil, source: .vendor, date: nil, releaseNotes: nil,
+        // A user-initiated hand-off: never part of Update All.
         updateAction: .relaunch { app in
           UpdateQueue.shared.addOperation(ChromeRelaunchOperation(app: app))
         })
@@ -78,5 +95,33 @@ struct VendorAdapters: Sendable {
             app: app, lock: lock, expectedVersion: nil, inScope: { await inScope(app.fileURL) },
             install: install, vendorIsIdle: vendorIsIdle, waitingStatus: waitingStatus))
       })
+  }
+
+  /// Checked when the capability is decided and again right before the install.
+  static func microsoftScope(
+    _ microsoft: MicrosoftAutoUpdate, appID: String, app: URL, bundleIdentifier: String,
+    copies: @Sendable (String) throws -> Set<String>
+  ) async -> Bool {
+    (try? await microsoft.registration(for: app, fresh: true)) == .unique(appID)
+      && isOnlyCopy(app, bundleIdentifier: bundleIdentifier, copies: copies)
+  }
+
+  /// No other copy of the bundle ID on disk; an unreadable walk fails closed.
+  static func isOnlyCopy(
+    _ app: URL, bundleIdentifier: String, copies: (String) throws -> Set<String>
+  ) -> Bool {
+    guard let found = try? copies(bundleIdentifier) else { return false }
+    let selected = Homebrew.canonical(app)
+    return found.allSatisfy { Homebrew.canonical(URL(fileURLWithPath: $0)) == selected }
+  }
+
+  private static func handOff(
+    _ bundle: App.Bundle, remote: String?, label: String, open: @escaping @Sendable () -> Void
+  ) -> App.Update {
+    App.Update(
+      app: bundle,
+      remoteVersion: remote.map { Version(versionNumber: $0, buildNumber: nil) } ?? bundle.version,
+      minimumOSVersion: nil, source: .vendor, date: nil, releaseNotes: nil,
+      updateAction: .external(label: label) { _ in open() })
   }
 }
