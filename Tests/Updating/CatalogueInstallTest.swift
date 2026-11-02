@@ -442,4 +442,47 @@ final class CatalogueInstallTest: XCTestCase {
     let unverifiable = await plan(noCheck)
     XCTAssertNil(unverifiable)
   }
+
+  /// Opt-in, read-only: which apps on this Mac the catalogue rules would install today. It reads
+  /// the real catalogue, fresh per-cask entries (metadata only) and the folder walk; it never
+  /// downloads a payload or changes anything. Payload and trust rules are judged at install.
+  func testLiveCatalogueEligibilityReport() async throws {
+    guard ProcessInfo.processInfo.environment["UPDATER_LIVE_CATALOGUE_REPORT"] == "1" else {
+      throw XCTSkip("Set UPDATER_LIVE_CATALOGUE_REPORT=1 for the read-only catalogue report.")
+    }
+    let repository = UpdateRepository.newRepository()
+    let check = CatalogueInstallCheck.live
+    let folders = ["/Applications", NSHomeDirectory() + "/Applications"]
+    var lines = [String]()
+    for folder in folders {
+      for bundle in BundleCollector.collectBundles(at: URL(fileURLWithPath: folder)) {
+        guard let entry = await repository.entry(for: bundle),
+          bundle.version.comparisonForUpdate(to: entry.version) == .older
+        else { continue }
+        let tokens = await repository.caskTokens(withBundleIdentifier: bundle.bundleIdentifier)
+        var verdict = "install"
+        do {
+          let token = try CatalogueInstall.token(for: bundle.bundleIdentifier, candidates: tokens)
+          guard token == entry.token else {
+            throw CatalogueInstall.Refusal.identity(
+              "index names \(token), row shows \(entry.token)")
+          }
+          try CatalogueInstall.checkScope(
+            of: bundle, copies: try check.copies(bundle.bundleIdentifier),
+            writable: check.isWritable(bundle.fileURL.deletingLastPathComponent()))
+          let release = try CatalogueInstall.release(
+            fromCask: try await check.fetchCask(token), bundleIdentifier: bundle.bundleIdentifier)
+          verdict += " (\(release.version.versionNumber ?? "?") from \(release.url.host() ?? "?"))"
+        } catch {
+          verdict = "keeps its route: \(error.localizedDescription)"
+        }
+        lines.append(
+          "\(bundle.name) | \(bundle.bundleIdentifier) | cask \(entry.token) | evidence \(tokens) | \(verdict)"
+        )
+      }
+    }
+    print(
+      "CATALOGUE-REPORT-BEGIN\n" + lines.sorted().joined(separator: "\n") + "\nCATALOGUE-REPORT-END"
+    )
+  }
 }
