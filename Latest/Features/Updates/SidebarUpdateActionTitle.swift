@@ -5,6 +5,7 @@ import Foundation
 @MainActor
 enum SidebarUpdateActionTitle {
   static func text(for app: App) -> String {
+    if app.relaunchesToUpdate { return "Relaunch \(app.name)" }
     if let externalUpdater = app.externalUpdaterName {
       return String(
         format: NSLocalizedString(

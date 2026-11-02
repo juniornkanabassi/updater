@@ -23,6 +23,10 @@ final class VendorToolOperation: UpdateOperation, @unchecked Sendable {
   private let protection: ExternalInstallGuard
   private let inScope: @Sendable () async -> Bool
   private let install: @Sendable () async throws -> Void
+  /// Whether the vendor's own installer is idle; nothing is judged or restored before it is.
+  private let vendorIsIdle: @Sendable () async -> Bool
+  private let waitingStatus: String
+  var pollInterval: Duration = .seconds(10)
   var lifecycle = AppLifecycle.live
   /// False only for ad-hoc signed test fixtures.
   var requiresTeam = true
@@ -33,11 +37,15 @@ final class VendorToolOperation: UpdateOperation, @unchecked Sendable {
   init(
     app: App.Bundle, lock: String, expectedVersion: Version?,
     inScope: @escaping @Sendable () async -> Bool,
-    install: @escaping @Sendable () async throws -> Void
+    install: @escaping @Sendable () async throws -> Void,
+    vendorIsIdle: @escaping @Sendable () async -> Bool = { true },
+    waitingStatus: String = "Waiting for the vendor's updater to finish"
   ) {
     self.lock = lock
     self.inScope = inScope
     self.install = install
+    self.vendorIsIdle = vendorIsIdle
+    self.waitingStatus = waitingStatus
     protection = ExternalInstallGuard(target: app.fileURL)
     super.init(bundleIdentifier: app.bundleIdentifier, appIdentifier: app.identifier)
     self.expectedVersion = expectedVersion
@@ -70,14 +78,19 @@ final class VendorToolOperation: UpdateOperation, @unchecked Sendable {
       do {
         try await self.install()
         await self.finalize(nil)
-      } catch VendorToolError.stillWorking {
-        // Restoring now could race the vendor's installer: keep the original aside, change
-        // nothing, and do not reopen.
-        let kept = self.protection.abandon()
-        self.published = true
-        self.finish(with: ReplacementError.outcomeUnknown(kept?.path ?? self.appIdentifier.path))
       } catch {
-        await self.finalize(error)
+        // The vendor's installer may still be writing (it said so, or it exited non-zero).
+        // The job keeps its lock and its target and waits, without a time limit, until the
+        // vendor is idle; only then is the result verified or the original restored.
+        if error is VendorToolError {
+          self.progressState = .waitingForVendor(self.waitingStatus)
+          while !(await self.vendorIsIdle()) { try? await Task.sleep(for: self.pollInterval) }
+        }
+        if case VendorToolError.stillWorking = error {
+          await self.finalize(nil)
+        } else {
+          await self.finalize(error)
+        }
       }
     }
   }

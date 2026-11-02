@@ -35,7 +35,7 @@ final class AppUpdateService: AppUpdating {
   /// The single entry point for GUI rows and Update All. Built-in actions submit to the
   /// scheduler; hand-offs open another updater and are recorded as such.
   func update(_ app: App, isBulkUpdate: Bool) {
-    guard app.updateAvailable, !isUpdating(app) else { return }
+    guard app.isActionable, !isUpdating(app) else { return }
     guard !isBulkUpdate || app.capability.isAutomatic else { return }
     app.updateAction?.perform(with: app.bundle, isBulkUpdate: isBulkUpdate)
     if app.capability == .handOff { queue.recordHandOff(of: app) }

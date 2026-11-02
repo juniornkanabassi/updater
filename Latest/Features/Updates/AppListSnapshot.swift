@@ -18,6 +18,8 @@ import Foundation
 struct AppListSnapshot {
   private struct PreparedSections {
     let availableUpdates: [App]
+    /// Apps whose availability is only known to the vendor's app (Adobe): "Check in …".
+    var checkElsewhere: [App] = []
     let installedUpdates: [App]
     let ignoredUpdates: [App]
   }
@@ -118,12 +120,13 @@ struct AppListSnapshot {
     let sortOrder = settings.sortOrder
 
     var availableUpdates = [App]()
+    var checkElsewhere = [App]()
     var installedUpdates = [App]()
     var ignoredUpdates = [App]()
 
     for app in apps {
       // Filter installed updates
-      if !showInstalledUpdates && !(app.updateAvailable || app.isIgnored) {
+      if !showInstalledUpdates && !(app.isActionable || app.isIgnored) {
         continue
       }
 
@@ -140,7 +143,7 @@ struct AppListSnapshot {
       }
 
       // Filter apps not using the builtin updater
-      if !includeAppsWithLimitedSupport && app.updateAvailable && !app.usesBuiltInUpdater {
+      if !includeAppsWithLimitedSupport && app.isActionable && !app.usesBuiltInUpdater {
         continue
       }
 
@@ -150,6 +153,8 @@ struct AppListSnapshot {
         ignoredUpdates.append(app)
       } else if app.updateAvailable {
         availableUpdates.append(app)
+      } else if app.availabilityUnknown {
+        checkElsewhere.append(app)
       } else {
         installedUpdates.append(app)
       }
@@ -161,7 +166,8 @@ struct AppListSnapshot {
       let previousOrder =
         previous.map {
           $0.preparedSections.availableUpdates
-            + $0.preparedSections.installedUpdates + $0.preparedSections.ignoredUpdates
+            + $0.preparedSections.checkElsewhere + $0.preparedSections.installedUpdates
+            + $0.preparedSections.ignoredUpdates
         } ?? []
       Self.sort(&installedUpdates, by: sortOrder, previousOrder: previousOrder)
       return PreparedSections(
@@ -170,10 +176,11 @@ struct AppListSnapshot {
 
     // Settled installed apps retain the existing displayed-date order.
     Self.sort(&availableUpdates, by: sortOrder)
+    Self.sort(&checkElsewhere, by: sortOrder)
     Self.sort(&ignoredUpdates, by: sortOrder)
     Self.sort(&installedUpdates, by: .updateDate)
     return PreparedSections(
-      availableUpdates: availableUpdates,
+      availableUpdates: availableUpdates, checkElsewhere: checkElsewhere,
       installedUpdates: installedUpdates,
       ignoredUpdates: ignoredUpdates
     )
@@ -183,6 +190,7 @@ struct AppListSnapshot {
     from preparedSections: PreparedSections, filterQuery: String?
   ) -> [SectionContent] {
     let availableUpdates = Self.filtered(preparedSections.availableUpdates, with: filterQuery)
+    let checkElsewhere = Self.filtered(preparedSections.checkElsewhere, with: filterQuery)
     let installedUpdates = Self.filtered(preparedSections.installedUpdates, with: filterQuery)
     let ignoredUpdates = Self.filtered(preparedSections.ignoredUpdates, with: filterQuery)
 
@@ -190,6 +198,11 @@ struct AppListSnapshot {
       SectionContent(
         section: Self.updatableAppsSection(withCount: availableUpdates.count),
         apps: availableUpdates),
+      SectionContent(
+        section: Section(
+          title: "Check in \(checkElsewhere.first?.externalUpdaterName ?? "the vendor's app")",
+          numberOfApps: checkElsewhere.count),
+        apps: checkElsewhere),
       SectionContent(
         section: Self.updatedAppsSection(withCount: installedUpdates.count), apps: installedUpdates),
       SectionContent(

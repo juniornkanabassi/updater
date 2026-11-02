@@ -74,7 +74,7 @@ final class UpdateSchedulerTest: XCTestCase {
     }
     XCTAssertEqual(outcome("1.0", "1.2", expected: "1.2"), .updated(from: "1.0", to: "1.2"))
     XCTAssertEqual(outcome("1.0", "1.3", expected: "1.2"), .updated(from: "1.0", to: "1.3"))
-    XCTAssertEqual(outcome("1.0", "1.0", expected: "1.2"), .noChange)
+    XCTAssertEqual(outcome("1.0", "1.0", expected: "1.2"), .noChange(reason: nil))
     guard case .failed = outcome("1.0", "1.1", expected: "1.2") else {
       return XCTFail("Short of the expected version is a failure")
     }
@@ -214,7 +214,7 @@ final class UpdateSchedulerTest: XCTestCase {
     XCTAssertEqual(history.latestEntry(for: url)?.outcome, .updated(from: "1.0", to: "1.1"))
 
     await run {}  // the installer claims success but nothing changed on disk
-    XCTAssertEqual(history.latestEntry(for: url)?.outcome, .noChange)
+    XCTAssertEqual(history.latestEntry(for: url)?.outcome, .noChange(reason: nil))
 
     await run { throw AppDownloadError.applicationStillRunning }
     XCTAssertEqual(history.latestEntry(for: url)?.outcome, .needsQuit)

@@ -36,10 +36,15 @@ extension App {
     /// A handler performing the update action of the app.
     let updateAction: Action
 
+    /// No local source says whether an update exists (Adobe): the app is offered as a
+    /// hand-off to check, never as an available update.
+    let availabilityUnknown: Bool
+
     /// Initializes the update with the given parameters.
     init(
       app: App.Bundle, remoteVersion: Version, minimumOSVersion: OperatingSystemVersion?,
-      source: Source, date: Date?, releaseNotes: ReleaseNotes?, updateAction: Action
+      source: Source, date: Date?, releaseNotes: ReleaseNotes?, updateAction: Action,
+      availabilityUnknown: Bool = false
     ) {
       self.app = app
       self.remoteVersion = remoteVersion
@@ -48,6 +53,7 @@ extension App {
       self.date = date
       self.releaseNotes = releaseNotes
       self.updateAction = updateAction
+      self.availabilityUnknown = availabilityUnknown
     }
 
     /// Whether an update is available for the given app.
@@ -84,7 +90,8 @@ extension App {
 
       return Update(
         app: bundle, remoteVersion: version, minimumOSVersion: minimumOSVersion, source: source,
-        date: date, releaseNotes: releaseNotes, updateAction: updateAction)
+        date: date, releaseNotes: releaseNotes, updateAction: updateAction,
+        availabilityUnknown: availabilityUnknown)
     }
 
     // MARK: - Equatable
@@ -150,14 +157,18 @@ extension App.Update {
     /// manual-update preference). Evaluated at use, so the label follows the preference.
     case conditional(label: String, installs: @Sendable () -> Bool, block: UpdateAction)
 
-    /// Updater runs the vendor's own updater command (msupdate, GoogleUpdater) and verifies
-    /// the result on disk, with the same protection as its own installs.
+    /// Updater runs the vendor's own updater command (msupdate) and verifies the result on
+    /// disk, with the same protection as its own installs.
     case vendorTool(block: UpdateAction)
+
+    /// Updater quits and reopens the app so it applies an update its own updater staged
+    /// (Chrome), then reads the version from disk. Nothing is replaced by Updater.
+    case relaunch(block: UpdateAction)
 
     /// Whether this action is currently performed within Updater.
     var installs: Bool {
       switch self {
-      case .builtIn, .vendorTool: true
+      case .builtIn, .vendorTool, .relaunch: true
       case .external: false
       case .conditional(_, let installs, _): installs()
       }
@@ -166,7 +177,7 @@ extension App.Update {
     /// The external updater's name while the action is a hand-off.
     var handOffLabel: String? {
       switch self {
-      case .builtIn, .vendorTool: nil
+      case .builtIn, .vendorTool, .relaunch: nil
       case .external(let label, _): label
       case .conditional(let label, let installs, _): installs() ? nil : label
       }
@@ -175,7 +186,7 @@ extension App.Update {
     /// Performs the update for the given bundle.
     func perform(with bundle: App.Bundle, isBulkUpdate: Bool) {
       switch self {
-      case .builtIn(let block), .vendorTool(let block):
+      case .builtIn(let block), .vendorTool(let block), .relaunch(let block):
         block(bundle)
       case .external(_, let block), .conditional(_, _, let block):
         if installs || !isBulkUpdate { block(bundle) }

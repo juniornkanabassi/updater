@@ -14,7 +14,7 @@ enum UpdateActionPresentation: Equatable {
   static func make(for app: App, progressState: UpdateProgressState) -> Self {
     switch progressState {
     case .none:
-      return app.updateAvailable ? .update : .open
+      return app.isActionable ? .update : .open
     case .pending:
       return .waiting(
         NSLocalizedString(
@@ -65,6 +65,8 @@ enum UpdateActionPresentation: Equatable {
         ))
     case .waitingForQuit:
       return .retryTermination
+    case .waitingForVendor(let status):
+      return .waiting(status)
     case .error(let error):
       return .failed(error.localizedDescription)
     case .cancelling:

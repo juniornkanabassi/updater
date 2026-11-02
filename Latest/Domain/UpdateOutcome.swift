@@ -19,7 +19,8 @@ enum UpdateCapability: String, Codable, Sendable {
 /// The durable result of one update action, decided by re-reading the bundle on disk.
 enum UpdateOutcome: Codable, Equatable, Sendable {
   case updated(from: String, to: String)
-  case noChange
+  /// The version on disk is unchanged; `reason` says why when the action knows.
+  case noChange(reason: String?)
   case needsPermission(kind: String)
   case needsQuit
   case failed(reason: String, logPath: String?)

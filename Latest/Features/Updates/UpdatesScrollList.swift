@@ -304,7 +304,7 @@ private struct UpdatesRowMenu: View {
       viewModel.update(app)
     } label: {
       Label(SidebarUpdateActionTitle.text(for: app), systemImage: "square.and.arrow.down")
-    }.disabled(!app.updateAvailable || viewModel.updating.isUpdating(app))
+    }.disabled(!app.isActionable || viewModel.updating.isUpdating(app))
     Button {
       viewModel.setIgnored(!app.isIgnored, for: app)
     } label: {

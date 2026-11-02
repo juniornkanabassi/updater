@@ -25,6 +25,9 @@ enum UpdateProgressState: Sendable {
   /// Sparkle is ready to install but the target app has not finished quitting.
   case waitingForQuit
 
+  /// A vendor's own installer is still working; the job waits for it, holding its lock.
+  case waitingForVendor(String)
+
   /// An error occurred during updating.
   case error(Error)
 

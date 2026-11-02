@@ -22,17 +22,23 @@ private struct FakeVendorTool {
     start=$(now)
     status=0
     case "$1" in
-      --config) printf '\r\033[2K\rChecking configuration...\r\033[2K\r'; cat "$dir/config.plist" ;;
+      --config)
+        [ -f "$dir/slow" ] && sleep 5
+        printf '\r\033[2K\rChecking configuration...\r\033[2K\r'
+        if [ -f "$dir/garbage" ]; then echo "garbage"; else cat "$dir/config.plist"; fi ;;
       --list)
         printf '\r\033[2K\rChecking for updates...\r\033[2K\r'
-        if [ -f "$dir/list.plist" ]; then cat "$dir/list.plist"; else printf 'No updates available\r\n'; fi ;;
+        if [ "$2" != "--format" ]; then
+          printf 'Update Assistant: %s\r\n' "$(cat "$dir/assistant" 2>/dev/null || echo Idle)"
+        elif [ -f "$dir/list.plist" ]; then cat "$dir/list.plist"
+        else printf 'No updates available\r\nUpdate Assistant: Idle\r\n'; fi ;;
       --install|--wake)
         [ -f "$dir/delay" ] && sleep "$(cat "$dir/delay")"
         target="$(cat "$dir/target")"
         rm -rf "$target" && /usr/bin/ditto "$dir/payload" "$target"
         printf 'Update Assistant: Installing\r\n'
         if [ -f "$dir/fail" ]; then echo "Error: install failed"; status=1
-        elif [ -f "$dir/busy" ]; then :
+        elif [ -f "$dir/assistant" ]; then :
         else printf 'Update Assistant: Idle\r\n'; fi ;;
       *) echo "unexpected $*"; status=2 ;;
     esac
@@ -94,15 +100,29 @@ final class VendorAdaptersTest: XCTestCase {
   /// Office-family app (Word, Excel, PowerPoint and Outlook are App Store copies), and with
   /// nothing pending `--list` prints no plist.
   func testParsesRecordedMicrosoftAutoUpdateOutput() throws {
-    let registered = MicrosoftAutoUpdate.parseRegistered(
-      MicrosoftAutoUpdate.plistValue(in: try fixture("msupdate-config-recorded.txt")))
+    let registered = try XCTUnwrap(
+      MicrosoftAutoUpdate.parseRegistered(
+        MicrosoftAutoUpdate.plistValue(in: try fixture("msupdate-config-recorded.txt"))))
     XCTAssertEqual(
       registered[Homebrew.canonical(URL(fileURLWithPath: "/Applications/Microsoft Teams.app"))],
       "TEAMS21")
     XCTAssertNil(registered["/Applications/Microsoft Word.app"])
-    XCTAssertNil(MicrosoftAutoUpdate.plistValue(in: try fixture("msupdate-list-none-recorded.txt")))
+    // "No updates available" is an answer, not a failure (Sol R3-005).
+    XCTAssertEqual(
+      MicrosoftAutoUpdate.parseList(
+        String(decoding: try fixture("msupdate-list-none-recorded.txt"), as: UTF8.self)), [:])
+    XCTAssertEqual(
+      MicrosoftAutoUpdate.assistantState(
+        in: String(decoding: try fixture("msupdate-list-none-recorded.txt"), as: UTF8.self)), "Idle"
+    )
     let list: [[String: Any]] = [["Application ID": "TEAMS21", "Update Version": "26300.1.1.1"]]
-    XCTAssertEqual(MicrosoftAutoUpdate.parseUpdates(list), ["TEAMS21": "26300.1.1.1"])
+    let xml = String(
+      decoding: try PropertyListSerialization.data(
+        fromPropertyList: list, format: .xml, options: 0),
+      as: UTF8.self)
+    XCTAssertEqual(MicrosoftAutoUpdate.parseList("Checking...\r" + xml), ["TEAMS21": "26300.1.1.1"])
+    XCTAssertNil(MicrosoftAutoUpdate.parseList("garbage"), "unreadable is not 'no update'")
+    XCTAssertNil(MicrosoftAutoUpdate.parseRegistered(nil))
   }
 
   private struct MicrosoftSetup {
@@ -139,14 +159,17 @@ final class VendorAdaptersTest: XCTestCase {
     let microsoft = setup.microsoft
     let operation = VendorToolOperation(
       app: bundle, lock: "msupdate", expectedVersion: nil,
-      inScope: { await microsoft.appID(for: target, fresh: true) == appID },
-      install: { try await microsoft.install(appID) })
+      inScope: { (try? await microsoft.appID(for: target, fresh: true)) == appID },
+      install: { try await microsoft.install(appID) },
+      vendorIsIdle: { await microsoft.assistantIsIdle() },
+      waitingStatus: "Waiting for Microsoft AutoUpdate to finish")
+    operation.pollInterval = .milliseconds(50)
     operation.lifecycle = lifecycle
     operation.requiresTeam = false
     return operation
   }
 
-  private func run(_ operation: VendorToolOperation, history: UpdateHistoryStore, app: URL)
+  private func run(_ operation: UpdateOperation, history: UpdateHistoryStore, app: URL)
     async throws -> UpdateOutcome?
   {
     let done = expectation(description: "finished")
@@ -163,14 +186,14 @@ final class VendorAdaptersTest: XCTestCase {
     let setup = try microsoftSetup()
     let bundle = try XCTUnwrap(BundleCollector.collectBundle(at: setup.app))
     let vendors = VendorAdapters(microsoft: setup.microsoft)
-    let update = await vendors.update(for: bundle)
+    let update = try await vendors.update(for: bundle)
     let app = App(bundle: bundle, update: update.map { .success($0) }, isIgnored: false)
     XCTAssertEqual(app.capability, .vendorTool)
     XCTAssertTrue(app.updateAvailable)
     XCTAssertTrue(app.capability.isAutomatic, "included in Update All")
     // An App Store copy is not registered with MAU: no vendor route.
     let other = try FixtureApp.make(in: setup.root.appendingPathComponent("MAS"), version: "1.0")
-    let unregistered = await vendors.update(
+    let unregistered = try await vendors.update(
       for: try XCTUnwrap(BundleCollector.collectBundle(at: other)))
     XCTAssertNil(unregistered)
   }
@@ -202,20 +225,118 @@ final class VendorAdaptersTest: XCTestCase {
     XCTAssertEqual(try FixtureApp.digest(downgrade.app), downgradeBefore)
   }
 
-  /// MAU returning while its assistant is still busy: the outcome is unknown, nothing is
-  /// restored, and the original is kept aside.
-  func testMicrosoftStillWorkingKeepsTheOriginalAside() async throws {
-    let setup = try microsoftSetup()
-    try setup.tool.flag("busy")
-    let operation = try msupdateJob(setup)
-    _ = try await run(operation, history: setup.history, app: setup.app)
-    guard case ReplacementError.outcomeUnknown(let kept)? = operation.error else {
-      return XCTFail("Expected outcome-unknown, got \(String(describing: operation.error))")
+  /// Sol R3-002: while MAU is busy (exit 0 not idle, or a non-zero exit) the job stays
+  /// open, holds its lock and target, shows that it is waiting, and never restores; once
+  /// MAU is idle the normal verify or restore runs.
+  func testBusyMicrosoftAutoUpdateIsWaitedForBeforeAnyVerdict() async throws {
+    for nonZeroExit in [false, true] {
+      let setup = try microsoftSetup(payloadVersion: nonZeroExit ? "1.1" : "1.1")
+      let before = try FixtureApp.digest(setup.app)
+      try setup.tool.flag("assistant", "Installing")
+      if nonZeroExit { try setup.tool.flag("fail") }
+      let operation = try msupdateJob(setup)
+      let queue = UpdateQueue(history: setup.history)
+      let done = expectation(description: "finished")
+      operation.completionBlock = { done.fulfill() }
+      queue.submit(operation)
+      for _ in 0..<200 {
+        if case .waitingForVendor = operation.progressState { break }
+        try await Task.sleep(for: .milliseconds(10))
+      }
+      try await Task.sleep(for: .milliseconds(300))
+      guard case .waitingForVendor(let status) = operation.progressState else {
+        return XCTFail("the row shows the job is waiting for MAU")
+      }
+      XCTAssertEqual(status, "Waiting for Microsoft AutoUpdate to finish")
+      XCTAssertFalse(operation.isFinished)
+      XCTAssertTrue(queue.contains(setup.app), "the job keeps its lock and target")
+      XCTAssertEqual(
+        BundleCollector.collectBundle(at: setup.app)?.version.versionNumber, "1.1",
+        "nothing restored while MAU is busy")
+      try FileManager.default.removeItem(
+        at: setup.tool.directory.appendingPathComponent("assistant"))
+      await fulfillment(of: [done], timeout: 10)
+      if nonZeroExit {
+        XCTAssertEqual(try FixtureApp.digest(setup.app), before, "restored once MAU was idle")
+        XCTAssertNotNil(operation.error)
+      } else {
+        XCTAssertNil(operation.error)
+        XCTAssertEqual(BundleCollector.collectBundle(at: setup.app)?.version.versionNumber, "1.1")
+      }
     }
-    XCTAssertTrue(FileManager.default.fileExists(atPath: kept))
-    XCTAssertEqual(
-      BundleCollector.collectBundle(at: setup.app)?.version.versionNumber, "1.1", "not restored")
-    try? FileManager.default.removeItem(at: URL(fileURLWithPath: kept).deletingLastPathComponent())
+  }
+
+  /// Sol R3-005/R3-006: unreadable MAU output is a visible failure, not "current"; queries
+  /// have a deadline, are shared while in flight, and failures are not cached.
+  func testMicrosoftQueriesFailVisiblyAreBoundedAndShared() async throws {
+    let setup = try microsoftSetup()
+    try setup.tool.flag("garbage")
+    let bundle = try XCTUnwrap(BundleCollector.collectBundle(at: setup.app))
+    do {
+      _ = try await setup.microsoft.appID(for: setup.app)
+      XCTFail("unreadable MAU output must throw")
+    } catch {}
+    // A Microsoft app outside the App Store gets a check failure on its row.
+    let teams = try FixtureApp.make(
+      in: setup.root.appendingPathComponent("Teams"), name: "Teams",
+      identifier: "com.microsoft.teams2", version: "1.0")
+    let teamsBundle = try XCTUnwrap(BundleCollector.collectBundle(at: teams))
+    do {
+      _ = try await VendorAdapters(microsoft: setup.microsoft).update(for: teamsBundle)
+      XCTFail("the row must show the check failure")
+    } catch {}
+    // Not cached: once MAU answers again, it is asked again.
+    try FileManager.default.removeItem(at: setup.tool.directory.appendingPathComponent("garbage"))
+    let recovered = try await setup.microsoft.appID(for: bundle.fileURL)
+    XCTAssertEqual(recovered, "FIXTURE01")
+
+    // Deadline: a hung query fails within the limit instead of blocking the check.
+    let slow = try microsoftSetup()
+    try slow.tool.flag("slow")
+    let bounded = MicrosoftAutoUpdate(
+      tool: slow.tool.tool, logDirectory: slow.root, queryTimeout: .milliseconds(300))
+    let start = ContinuousClock.now
+    do {
+      _ = try await bounded.appID(for: slow.app)
+      XCTFail("expected the deadline to end the query")
+    } catch {}
+    XCTAssertLessThan(ContinuousClock.now - start, .seconds(4))
+
+    // Coalescing: concurrent checks share one query.
+    let shared = try microsoftSetup()
+    async let a = shared.microsoft.appID(for: shared.app)
+    async let b = shared.microsoft.appID(for: shared.app)
+    _ = try await (a, b)
+    XCTAssertEqual(shared.tool.calls().filter { $0.arguments.hasPrefix("--config") }.count, 1)
+  }
+
+  /// Sol R3-004: invalidation drops the cache, and a lookup that began before it cannot
+  /// refill the cache afterwards.
+  func testInvalidationBeatsAnOlderInFlightLookup() async throws {
+    let calls = Mutex(0)
+    let release = AsyncStream<Void>.makeStream()
+    let releaseBox = Mutex<AsyncStream<Void>?>(release.stream)
+    let google = GoogleChrome(releases: {
+      let call = calls.withLock {
+        $0 += 1
+        return $0
+      }
+      if call == 1, let stream = releaseBox.withLock({ $0 }) { for await _ in stream {} }
+      return Data(#"{"releases":[{"version":"\#(call).0","fraction":1}]}"#.utf8)
+    })
+    let older = Task { try await google.availableVersion() }
+    while calls.withLock({ $0 }) == 0 { try await Task.sleep(for: .milliseconds(5)) }
+    await google.invalidate()
+    release.continuation.finish()
+    _ = try? await older.value
+    let fresh = try await google.availableVersion()
+    XCTAssertEqual(fresh, "2.0", "the older lookup did not repopulate the cache")
+
+    let setup = try microsoftSetup()
+    _ = try await setup.microsoft.appID(for: setup.app)
+    await setup.microsoft.invalidate()
+    _ = try await setup.microsoft.appID(for: setup.app)
+    XCTAssertEqual(setup.tool.calls().filter { $0.arguments.hasPrefix("--config") }.count, 2)
   }
 
   func testRefusedQuitRunsNoVendorTool() async throws {
@@ -260,48 +381,80 @@ final class VendorAdaptersTest: XCTestCase {
       "156.0.8078.80")
   }
 
-  func testChromeUpdatesThroughGoogleUpdaterOnlyWhenTheUserOwnsIt() async throws {
+  /// Sol R3-001: Chrome is offered "Relaunch Chrome": quit with consent, reopen, then the
+  /// version is read from disk. Updater runs no Google tool and replaces nothing.
+  @MainActor
+  func testChromeIsRelaunchedAndJudgedFromDisk() async throws {
     let root = try disposableDirectory()
     let chrome = try FixtureApp.make(
       in: root.appendingPathComponent("Apps"), name: "Google Chrome",
       identifier: GoogleChrome.bundleIdentifier, version: "1.0")
-    let tool = try FakeVendorTool(in: root, named: "GoogleUpdater")
-    try tool.stage(
-      payload: try FixtureApp.make(
-        in: root.appendingPathComponent("payload"), name: "Google Chrome",
-        identifier: GoogleChrome.bundleIdentifier, version: "1.1"),
-      target: chrome)
-    let google = GoogleChrome(
-      updater: tool.tool,
-      releases: { Data(#"{"releases":[{"version":"1.1","fraction":1}]}"#.utf8) },
-      logDirectory: root.appendingPathComponent("logs"))
+    let google = GoogleChrome(releases: {
+      Data(#"{"releases":[{"version":"1.1","fraction":1}]}"#.utf8)
+    })
     let bundle = try XCTUnwrap(BundleCollector.collectBundle(at: chrome))
-    let update = await VendorAdapters(google: google).update(for: bundle)
+    let update = try await VendorAdapters(google: google).update(for: bundle)
     let app = App(bundle: bundle, update: update.map { .success($0) }, isIgnored: false)
-    XCTAssertEqual(app.capability, .vendorTool)
     XCTAssertTrue(app.updateAvailable)
+    XCTAssertTrue(app.relaunchesToUpdate)
+    XCTAssertEqual(SidebarUpdateActionTitle.text(for: app), "Relaunch Google Chrome")
 
-    // A Chrome owned by another account (here a root-owned system app) hands off.
-    let systemApp = URL(fileURLWithPath: "/System/Applications/Calculator.app")
-    let notOwned = await google.canUpdate(systemApp)
-    XCTAssertFalse(notOwned)
-
-    // The job: quit Chrome, run --wake, verify on disk, reopen Chrome after.
-    let target = FakeTarget(running: true)
-    let operation = VendorToolOperation(
-      app: bundle, lock: "googleUpdater", expectedVersion: nil,
-      inScope: { await google.canUpdate(chrome) }, install: { try await google.install() })
-    operation.lifecycle = target.lifecycle()
-    operation.requiresTeam = false
-    let history = UpdateHistoryStore(fileURL: root.appendingPathComponent("history.jsonl"))
-    let outcome = try await run(operation, history: history, app: chrome)
-    XCTAssertEqual(outcome, .updated(from: "1.0", to: "1.1"))
-    XCTAssertTrue(tool.calls().contains { $0.arguments == "--wake" })
-    XCTAssertEqual(target.quits.withLock { $0 }, 1)
-    for _ in 0..<100 where target.reopens.withLock({ $0 }) == 0 {
-      try await Task.sleep(for: .milliseconds(10))
+    for applied in [false, true] {
+      let staged = try FixtureApp.make(
+        in: root.appendingPathComponent("staged-\(applied)"), name: "Google Chrome",
+        identifier: GoogleChrome.bundleIdentifier, version: "1.1")
+      let quits = Mutex(0)
+      let running = Mutex(true)
+      let reopened = Mutex(0)
+      let operation = ChromeRelaunchOperation(
+        app: try XCTUnwrap(BundleCollector.collectBundle(at: chrome)))
+      operation.lifecycle = AppLifecycle(
+        runningApps: { _ in
+          running.withLock { $0 }
+            ? [
+              .init(
+                terminate: {
+                  quits.withLock { $0 += 1 }
+                  running.withLock { $0 = false }
+                }, isTerminated: { !running.withLock { $0 } })
+            ] : []
+        },
+        confirmQuit: { _ in true },
+        reopen: { url in
+          reopened.withLock { $0 += 1 }
+          // Chrome applies a staged update on launch, if its updater had one.
+          if applied {
+            try? FileManager.default.removeItem(at: url)
+            try? FileManager.default.copyItem(at: staged, to: url)
+          }
+        })
+      let history = UpdateHistoryStore(
+        fileURL: root.appendingPathComponent("history-\(applied).jsonl"))
+      let outcome = try await run(operation, history: history, app: chrome)
+      XCTAssertEqual(quits.withLock { $0 }, 1)
+      XCTAssertEqual(reopened.withLock { $0 }, 1)
+      XCTAssertEqual(
+        outcome,
+        applied
+          ? .updated(from: "1.0", to: "1.1")
+          : .noChange(reason: "Chrome hasn't downloaded the update yet."))
     }
-    XCTAssertEqual(target.reopens.withLock { $0 }, 1, "Chrome reopened after the verified update")
+  }
+
+  /// Sol R3-005: an unreadable version list is a check failure, and it is not cached.
+  func testChromeVersionFailureIsVisibleAndNotCached() async throws {
+    let fail = Mutex(true)
+    let google = GoogleChrome(releases: {
+      if fail.withLock({ $0 }) { throw URLError(.notConnectedToInternet) }
+      return Data(#"{"releases":[{"version":"1.1","fraction":1}]}"#.utf8)
+    })
+    do {
+      _ = try await google.availableVersion()
+      XCTFail("expected a failure")
+    } catch {}
+    fail.withLock { $0 = false }
+    let version = try await google.availableVersion()
+    XCTAssertEqual(version, "1.1")
   }
 
   // MARK: - Adobe
@@ -330,7 +483,10 @@ final class VendorAdaptersTest: XCTestCase {
     XCTAssertFalse(missing.manages(bundle))
   }
 
-  func testAdobeRouteIsAHandOffAndNotAnUpdateClaim() async throws {
+  /// Sol R3-003: availability is unknown, the app sits under "Check in Creative Cloud", and
+  /// the production button path opens Creative Cloud. No update is claimed.
+  @MainActor
+  func testAdobeAppsAreAnActionableCreativeCloudCheck() async throws {
     let root = try disposableDirectory()
     let ccApp = root.appendingPathComponent("Adobe Creative Cloud/Adobe Creative Cloud.app")
     try FileManager.default.createDirectory(at: ccApp, withIntermediateDirectories: true)
@@ -344,13 +500,29 @@ final class VendorAdaptersTest: XCTestCase {
     let photoshop = try FixtureApp.make(
       in: root.appendingPathComponent("PS"), name: "Adobe Photoshop 2026",
       identifier: "com.adobe.Photoshop", version: "27.9")
+    let opened = Mutex<[URL]>([])
+    var adobe = AdobeCreativeCloud(database: database, app: ccApp)
+    adobe.open = { url in opened.withLock { $0.append(url) } }
     let bundle = try XCTUnwrap(BundleCollector.collectBundle(at: photoshop))
-    let update = await VendorAdapters(adobe: AdobeCreativeCloud(database: database, app: ccApp))
-      .update(for: bundle)
+    let update = try await VendorAdapters(adobe: adobe).update(for: bundle)
     let app = App(bundle: bundle, update: update.map { .success($0) }, isIgnored: false)
+    XCTAssertTrue(app.availabilityUnknown)
+    XCTAssertFalse(app.updateAvailable, "no update is claimed")
+    XCTAssertTrue(app.isActionable)
     XCTAssertEqual(app.capability, .handOff)
-    XCTAssertEqual(app.externalUpdaterName, "Creative Cloud")
-    XCTAssertFalse(app.updateAvailable, "no version is invented")
+    XCTAssertEqual(SidebarUpdateActionTitle.text(for: app), "Open Creative Cloud")
+
+    let snapshot = AppListSnapshot(
+      withApps: [app], filterQuery: nil, settings: try isolatedAppListSettings(for: self))
+    XCTAssertEqual(snapshot.sections.map(\.section.title), ["Check in Creative Cloud"])
+
+    let model = UpdateActionViewModel(app: app, updating: AppUpdateService(queue: UpdateQueue()))
+    XCTAssertEqual(model.presentation, .update)
+    model.performAction()
+    for _ in 0..<100 where opened.withLock({ $0 }).isEmpty {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    XCTAssertEqual(opened.withLock { $0 }, [ccApp], "the button opens Creative Cloud")
   }
 
   // MARK: - System
@@ -422,7 +594,7 @@ final class VendorAdaptersTest: XCTestCase {
         print("LIVE \(path): not found")
         continue
       }
-      let update = await vendors.update(for: bundle)
+      let update = try await vendors.update(for: bundle)
       let app = App(bundle: bundle, update: update.map { .success($0) }, isIgnored: false)
       print(
         "LIVE \(bundle.name) \(bundle.version.versionNumber ?? "?") → route: \(update == nil ? "not a vendor app" : "\(app.capability)") remote: \(app.remoteVersion?.versionNumber ?? "-") available: \(app.updateAvailable) label: \(app.externalUpdaterName ?? "Update")"

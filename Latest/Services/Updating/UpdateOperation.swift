@@ -111,6 +111,13 @@ class UpdateOperation: StatefulOperation, @unchecked Sendable {
     set { resolver.withLock { $0 = newValue } }
   }
 
+  private let reasonStorage = Mutex<String?>(nil)
+  /// Why the version might not change, recorded with a no-change outcome.
+  var noChangeReason: String? {
+    get { reasonStorage.withLock { $0 } }
+    set { reasonStorage.withLock { $0 = newValue } }
+  }
+
   private let expectedStorage = Mutex<Version?>(nil)
   /// The version the installer promised, when known; an outcome below it is a failure.
   var expectedVersion: Version? {

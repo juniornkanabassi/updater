@@ -142,6 +142,18 @@ extension App {
   /// The source-provided action, executed by the updating service.
   var updateAction: Update.Action? { update?.updateAction }
 
+  /// Whether an update exists is unknown locally; the action is a hand-off to check.
+  var availabilityUnknown: Bool { update?.availabilityUnknown ?? false }
+
+  /// The update action can be offered: an update is available, or it is a check hand-off.
+  var isActionable: Bool { updateAvailable || availabilityUnknown }
+
+  /// The action relaunches the app instead of installing (Chrome).
+  var relaunchesToUpdate: Bool {
+    if case .relaunch? = updateAction { return true }
+    return false
+  }
+
 }
 
 extension App: Hashable {

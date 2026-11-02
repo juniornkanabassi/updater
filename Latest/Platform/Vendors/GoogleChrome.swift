@@ -2,55 +2,59 @@
 
 import Foundation
 
-/// Chrome through Google's own updater. The user-level GoogleUpdater maintains a Chrome the
-/// user owns; a Chrome owned by another account (a system install) would need the root
-/// updater, so it hands off. Availability comes from Google's version-history API.
+/// Chrome's available version from Google's version-history API. Updater does not run
+/// GoogleUpdater (`--wake` updates every registered Google app, not just this copy); Chrome's
+/// own updater stages the update, and "Relaunch Chrome" lets Chrome apply it.
 actor GoogleChrome {
   static let bundleIdentifier = "com.google.Chrome"
-  static let shared = GoogleChrome(
-    updater: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
-      "Library/Application Support/Google/GoogleUpdater/Current/GoogleUpdater.app/Contents/MacOS/GoogleUpdater"
-    ),
-    releases: {
-      let url = URL(
-        string:
-          "https://versionhistory.googleapis.com/v1/chrome/platforms/mac/channels/stable/versions/all/releases?filter=endtime=none"
-      )!
-      var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
-      request.timeoutInterval = 30
-      let (data, response) = try await URLSession.shared.data(for: request)
-      guard (response as? HTTPURLResponse)?.statusCode == 200 else {
-        throw URLError(.badServerResponse)
-      }
-      return data
-    })
+  static let shared = GoogleChrome(releases: {
+    let url = URL(
+      string:
+        "https://versionhistory.googleapis.com/v1/chrome/platforms/mac/channels/stable/versions/all/releases?filter=endtime=none"
+    )!
+    var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
+    request.timeoutInterval = 30
+    let (data, response) = try await URLSession.shared.data(for: request)
+    guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+      throw URLError(.badServerResponse)
+    }
+    return data
+  })
 
-  let updater: URL
+  struct Unreadable: LocalizedError {
+    var errorDescription: String? { "Google's Chrome version list could not be read." }
+  }
+
   private let releases: @Sendable () async throws -> Data
-  private let logDirectory: URL
-  private var cached: (date: Date, version: String?)?
+  private var cached: (date: Date, version: String)?
+  /// Shared by concurrent checks; a generation bump keeps an older lookup from refilling.
+  private var inFlight: (generation: Int, task: Task<String, Error>)?
+  private var generation = 0
 
-  init(
-    updater: URL, releases: @escaping @Sendable () async throws -> Data,
-    logDirectory: URL = ToolProcess.defaultLogDirectory
-  ) {
-    self.updater = updater
+  init(releases: @escaping @Sendable () async throws -> Data) {
     self.releases = releases
-    self.logDirectory = logDirectory
   }
 
-  /// The user-level updater exists and this Chrome belongs to the user.
-  func canUpdate(_ app: URL) -> Bool {
-    FileManager.default.isExecutableFile(atPath: updater.path)
-      && (try? FileManager.default.attributesOfItem(atPath: app.path)[.ownerAccountID] as? NSNumber)?
-        .uint32Value == getuid()
+  func invalidate() {
+    generation += 1
+    cached = nil
+    inFlight = nil
   }
 
-  /// The stable release served to the largest share of Macs.
-  func availableVersion() async -> String? {
+  /// The stable release served to the largest share of Macs. Throws when the list cannot be
+  /// read; failures are not cached.
+  func availableVersion() async throws -> String {
     if let cached, Date().timeIntervalSince(cached.date) < 60 { return cached.version }
-    let version = (try? await releases()).flatMap(Self.parseServedVersion)
-    cached = (Date(), version)
+    if let inFlight, inFlight.generation == generation { return try await inFlight.task.value }
+    let started = generation
+    let task = Task { [releases] in
+      guard let version = Self.parseServedVersion(try await releases()) else { throw Unreadable() }
+      return version
+    }
+    inFlight = (started, task)
+    defer { if inFlight?.generation == started { inFlight = nil } }
+    let version = try await task.value
+    if generation == started { cached = (Date(), version) }
     return version
   }
 
@@ -69,15 +73,34 @@ actor GoogleChrome {
           to: Version(versionNumber: rhs.0, buildNumber: nil)) == .older
     }?.0
   }
+}
 
-  /// `GoogleUpdater --wake` runs one update cycle for the user's Google apps and exits.
-  func install() async throws {
-    let log = try ToolProcess.newLog(named: "googleupdater-wake", in: logDirectory)
-    let status = try await ToolProcess.run(updater, ["--wake"], log: log)
-    cached = nil
-    guard status == 0 else {
-      throw VendorToolError.failed(
-        reason: "GoogleUpdater could not update Chrome (exit \(status)).", logPath: log.path)
+/// "Relaunch Chrome": a clean quit (with the usual consent), a reopen so Chrome applies what
+/// its updater staged, then the scheduler reads the version from disk. Updater replaces
+/// nothing, so no clone is needed; an unchanged version is no change, with the reason.
+final class ChromeRelaunchOperation: UpdateOperation, @unchecked Sendable {
+  var lifecycle = AppLifecycle.live
+
+  init(app: App.Bundle) {
+    super.init(bundleIdentifier: app.bundleIdentifier, appIdentifier: app.identifier)
+  }
+
+  override func execute() {
+    super.execute()
+    Task { @MainActor in
+      guard !self.isCancelled else { return self.finish() }
+      do {
+        _ = try await self.lifecycle.quit(
+          at: self.appIdentifier, name: self.appIdentifier.deletingPathExtension().lastPathComponent
+        )
+      } catch is CancellationError {
+        return self.finish()
+      } catch {
+        return self.finish(with: error)
+      }
+      self.lifecycle.reopen(self.appIdentifier)
+      self.noChangeReason = "Chrome hasn't downloaded the update yet."
+      self.finish()
     }
   }
 }

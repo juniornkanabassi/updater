@@ -155,7 +155,7 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
     guard let after else {
       return .failed(reason: "The app is no longer at \(before.fileURL.path).", logPath: nil)
     }
-    if after.version == before.version { return .noChange }
+    if after.version == before.version { return .noChange(reason: operation.noChangeReason) }
     switch before.version.comparisonForUpdate(to: after.version) {
     case .older:
       do {
@@ -165,7 +165,7 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
       } catch {
         return .failed(reason: error.localizedDescription, logPath: nil)
       }
-    case .samePrecedence: return .noChange
+    case .samePrecedence: return .noChange(reason: operation.noChangeReason)
     case .newer, .unavailable:
       return .failed(
         reason:

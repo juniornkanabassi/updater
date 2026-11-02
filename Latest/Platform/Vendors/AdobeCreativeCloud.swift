@@ -6,7 +6,8 @@ import SQLite3
 /// Adobe apps are updated by the Creative Cloud app. Its package database (pim.db) shows
 /// Creative Cloud is installed and managing packages, but neither it nor any other documented
 /// local file says which app version Creative Cloud would offer, so Adobe apps hand off to
-/// Creative Cloud with no invented version. RemoteUpdateManager (enterprise only) is not used.
+/// Creative Cloud ("Check in Creative Cloud") with availability unknown. RemoteUpdateManager is
+/// deferred; see PLAN.md, Round 3.
 struct AdobeCreativeCloud: Sendable {
   var database = URL(
     fileURLWithPath: "/Library/Application Support/Adobe/Adobe Desktop Common/pim.db")
@@ -14,6 +15,10 @@ struct AdobeCreativeCloud: Sendable {
     fileURLWithPath: "/Applications/Utilities/Adobe Creative Cloud/ACC/Creative Cloud.app")
   /// Current installs keep the app under Utilities; "/Applications/Adobe Creative Cloud" holds
   /// only an alias to it.
+  /// Opens Creative Cloud; injectable so tests open nothing.
+  var open: @MainActor @Sendable (URL) -> Void = {
+    MacApplicationWorkspace.shared.openApplication(at: $0)
+  }
   static let live = AdobeCreativeCloud(
     app: [
       "/Applications/Utilities/Adobe Creative Cloud/ACC/Creative Cloud.app",

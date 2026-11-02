@@ -137,6 +137,7 @@ struct UpdateActionSurface: View {
         appName: app.name,
         // Hand-offs read "Open" with "in <Vendor>" below; Updater installs only on "Update".
         isHandOff: app.capability == .handOff,
+        relaunches: app.relaunchesToUpdate,
         presentation: presentation,
         performAction: performAction
       )
@@ -145,7 +146,7 @@ struct UpdateActionSurface: View {
         height: VisualMetrics.detailUpdateButtonHeight
       )
 
-      if app.updateAvailable,
+      if app.isActionable,
         let externalUpdaterName = app.externalUpdaterName
       {
         Text(
@@ -192,6 +193,7 @@ enum UpdateActionVisualStyle {
 private struct UpdateActionControl: View {
   let appName: String
   let isHandOff: Bool
+  let relaunches: Bool
   let presentation: UpdateActionPresentation
   let performAction: () -> Void
 
@@ -201,10 +203,14 @@ private struct UpdateActionControl: View {
     case .update:
       UpdateActionCapsule(
         content: .title(
-          isHandOff
-            ? NSLocalizedString("OpenAction", comment: "Action to open an app")
-            : NSLocalizedString("UpdateAction", comment: "Action to update an app")),
-        accessibilityLabel: isHandOff ? "Open the updater for \(appName)" : "Update \(appName)",
+          relaunches
+            ? "Relaunch"
+            : isHandOff
+              ? NSLocalizedString("OpenAction", comment: "Action to open an app")
+              : NSLocalizedString("UpdateAction", comment: "Action to update an app")),
+        accessibilityLabel: relaunches
+          ? "Relaunch \(appName) to apply its update"
+          : isHandOff ? "Open the updater for \(appName)" : "Update \(appName)",
         performAction: performAction
       )
     case .open:

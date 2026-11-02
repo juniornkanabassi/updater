@@ -185,6 +185,8 @@ class UpdateCheckCoordinator: UpdateCheckCoordinating, @unchecked Sendable {
       if hardRefresh {
         await AppStoreUpdateCheckerOperation.invalidateLookupCache()
         await Homebrew.shared.invalidate()
+        await MicrosoftAutoUpdate.shared.invalidate()
+        await GoogleChrome.shared.invalidate()
       }
       guard let self else { return }
 
@@ -386,7 +388,7 @@ extension UpdateCheckCoordinator {
     _ bundle: App.Bundle, repository: UpdateRepository?, homebrew: Homebrew?,
     vendors: VendorAdapters = .none
   ) async throws -> App.Update {
-    if let vendor = await vendors.update(for: bundle) { return vendor }
+    if let vendor = try await vendors.update(for: bundle) { return vendor }
     if let owned = await HomebrewCheckerOperation.ownedUpdate(for: bundle, homebrew: homebrew) {
       return owned
     }
