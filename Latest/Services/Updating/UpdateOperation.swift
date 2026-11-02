@@ -15,6 +15,13 @@ extension Notification.Name {
   static let latestUpdateQueueDidChange = Notification.Name("LatestUpdateQueueDidChange")
 }
 
+/// Whether a submission may open another updater (the App Store, a web page) if its job ends
+/// up handing off. The window may; automation only with `--allow-handoff`. Read synchronously
+/// while the job is submitted, then kept on the job.
+enum ExternalHandOff {
+  @TaskLocal static var allowed = true
+}
+
 /// The abstract update operation used for updating apps.
 class UpdateOperation: StatefulOperation, @unchecked Sendable {
 
@@ -28,6 +35,25 @@ class UpdateOperation: StatefulOperation, @unchecked Sendable {
 
   /// Names this job to automation callers (`updater status <job-id>`).
   let jobID = UUID().uuidString.lowercased()
+
+  private let handOffPolicy = Mutex(true)
+  /// False when automation submitted the job without `--allow-handoff`: every fallback then
+  /// records `handedOff` and opens nothing.
+  var allowsExternalHandOff: Bool {
+    get { handOffPolicy.withLock { $0 } }
+    set { handOffPolicy.withLock { $0 = newValue } }
+  }
+
+  private let declinedQuit = Mutex(false)
+  /// The user declined (or did not answer) the quit prompt. Like any cancel nothing is
+  /// recorded in history, but automation reports it as needsQuit.
+  var quitDeclined: Bool { declinedQuit.withLock { $0 } }
+
+  /// Ends the job as a declined quit: a cancel that is reported as needsQuit.
+  func declineQuit() {
+    declinedQuit.withLock { $0 = true }
+    cancel()
+  }
 
   private let completionNotificationLock = NSLock()
 

@@ -10,53 +10,77 @@ final class ControlService {
   struct Dependencies {
     var apps: @MainActor () -> [App]
     var isChecking: @MainActor () -> Bool
+    /// The first discovery and the first full check since launch have both finished.
+    var initialCheckFinished: @MainActor () -> Bool
     var startCheck: @MainActor (_ refresh: Bool) -> Void
     var updateAllCandidates: @MainActor () -> [App]
     var updateAll: @MainActor () -> Void
     var updating: any AppUpdating
     var history: UpdateHistoryStore?
-  }
-
-  private struct Job {
-    let id: String
-    let app: App
-    let caller: String
-    let started: Date
-    var result: [String: JSONValue]?
+    /// How long a command waits for readiness before answering not_ready.
+    var readinessWait: Duration = .seconds(20)
   }
 
   private let dependencies: Dependencies
-  private var jobs = [String: Job]()
-  private var jobOrder = [String]()
-  private var observations = [String: Task<Void, Never>]()
+  /// Who started the jobs started here; the scheduler knows every job, this only adds a name.
+  private var callers = [String: String]()
+  private var startedHere = [String]()
 
   init(_ dependencies: Dependencies) { self.dependencies = dependencies }
 
   func handle(_ request: ControlRequest) async -> ControlResponse {
+    let args = request.args
     switch request.command {
-    case "list": await list(updatesOnly: Self.flag(request.args["updates"]))
-    case "check": await check(request.args)
-    case "update": update(request.args, caller: request.caller)
-    case "status": status(jobID: request.args["job"])
-    case "history": history(limit: Int(request.args["limit"] ?? "") ?? 20)
+    case "list":
+      let updatesOnly = Self.flag(args["updates"])
+      // Versions are only known once the first check has run; names after discovery.
+      if let notReady = await ready(needsCheck: updatesOnly) { return notReady }
+      return list(updatesOnly: updatesOnly)
+    case "check": return await check(args)
+    case "update":
+      if let notReady = await ready(needsCheck: true) { return notReady }
+      return update(args, caller: request.caller)
+    case "status": return status(jobID: args["job"])
+    case "history": return history(limit: Int(args["limit"] ?? "") ?? 20)
     default:
-      .failure("unknown_command", "Unknown command \(request.command). Run `updater --help`.")
+      return .failure(
+        "unknown_command", "Unknown command \(request.command). Run `updater --help`.")
     }
+  }
+
+  // MARK: Readiness
+
+  /// Waits (bounded) for discovery, and for the first check when versions matter. A cold
+  /// start from the CLI answers not_ready instead of an empty or stale list.
+  private func ready(needsCheck: Bool) async -> ControlResponse? {
+    func isReady() -> Bool {
+      needsCheck
+        ? dependencies.initialCheckFinished()
+        : !dependencies.apps().isEmpty || dependencies.initialCheckFinished()
+    }
+    let deadline = ContinuousClock.now + dependencies.readinessWait
+    while !isReady(), ContinuousClock.now < deadline {
+      try? await Task.sleep(for: .milliseconds(100))
+    }
+    guard !isReady() else { return nil }
+    return ControlResponse(
+      ok: false, code: "not_ready",
+      message: "Updater is still running its first check since launch. Retry in a few seconds.",
+      data: ["retryable": .bool(true)])
   }
 
   // MARK: Commands
 
-  private func list(updatesOnly: Bool) async -> ControlResponse {
-    // Just after a headless launch the first scan is still finding apps.
-    let deadline = Date().addingTimeInterval(30)
-    while dependencies.apps().isEmpty, dependencies.isChecking(), Date() < deadline {
-      try? await Task.sleep(for: .milliseconds(250))
-    }
+  private func list(updatesOnly: Bool) -> ControlResponse {
     let apps = dependencies.apps()
       .filter { !updatesOnly || (($0.updateAvailable || $0.availabilityUnknown) && !$0.isIgnored) }
       .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-    return ControlResponse(
-      ok: true, data: ["apps": .array(apps.map(describe)), "count": JSONValue(apps.count)])
+    var data: [String: JSONValue] = [
+      "apps": .array(apps.map(describe)), "count": JSONValue(apps.count),
+    ]
+    // A check in progress means some versions may still change.
+    if dependencies.isChecking() { data["checking"] = .bool(true) }
+    return ControlResponse(ok: true, data: data)
   }
 
   private func check(_ args: [String: String]) async -> ControlResponse {
@@ -84,7 +108,6 @@ final class ControlService {
     guard let target = args["target"], !target.isEmpty else {
       return .failure("usage", "Name an app by bundle id or path, or use all.")
     }
-    let allowHandOff = Self.flag(args["allow-handoff"])
     let apps = dependencies.apps()
     if target == "all" { return updateAll(apps, caller: caller) }
     let matches =
@@ -104,7 +127,7 @@ final class ControlService {
         message: "\(matches.count) copies have bundle id \(target); name one by path.",
         data: ["paths": .array(matches.map { .string($0.fileURL.path) })])
     }
-    let result = start(app, allowHandOff: allowHandOff, caller: caller)
+    let result = start(app, allowHandOff: Self.flag(args["allow-handoff"]), caller: caller)
     return ControlResponse(ok: true, data: ["results": .array([.object(result)])])
   }
 
@@ -117,25 +140,17 @@ final class ControlService {
       }
     }
     let candidates = dependencies.updateAllCandidates()
-    let started = Date()
-    dependencies.updateAll()
+    // Update All never hands off, not even from inside a job (an App Store gate fallback).
+    ExternalHandOff.$allowed.withValue(false) { dependencies.updateAll() }
     for app in candidates {
       guard let id = dependencies.updating.jobID(for: app.identifier) else {
-        results.append(
-          .object(
-            entry(
-              app, "notQueued",
-              [
-                "message":
-                  "Not started. App Store updates may need the update helper; open Updater."
-              ])))
+        results.append(.object(notStarted(app)))
         continue
       }
-      track(id, app: app, caller: caller, started: started)
+      remember(id, caller: caller)
       results.append(
         .object(entry(app, "started", ["jobId": .string(id), "state": state(of: app)])))
     }
-    // Update All never hands off; the caller tells the user where these update instead.
     let handOffs = apps.filter {
       $0.updateAvailable && !$0.isIgnored && $0.capability == .handOff
     }
@@ -153,33 +168,51 @@ final class ControlService {
     case .unsupported: return entry(app, "unsupported", [:])
     case .handOff where !allowHandOff:
       // Opening the App Store, Terminal or Creative Cloud is for a person to choose.
-      return entry(
-        app, "handOff",
-        [
-          "label": .string(Self.label(app)),
-          "message": "Updates through \(Self.label(app)). Pass --allow-handoff to open it.",
-        ])
+      return handOffEntry(app)
     case .handOff, .install, .vendorTool: break
     }
-    let started = Date()
-    updating.update(app)
+    // The policy travels with the job, so a fallback inside it opens nothing either.
+    ExternalHandOff.$allowed.withValue(allowHandOff) { updating.update(app) }
     guard let id = updating.jobID(for: app.identifier) else {
-      return app.capability == .handOff
-        ? entry(app, "handedOff", ["label": .string(Self.label(app))])
-        : entry(app, "notQueued", ["message": "Updater could not start this update; open Updater."])
+      if app.capability == .handOff, allowHandOff {
+        return entry(app, "handedOff", ["label": .string(Self.label(app))])
+      }
+      return notStarted(app)
     }
-    track(id, app: app, caller: caller, started: started)
+    remember(id, caller: caller)
     return entry(app, "started", ["jobId": .string(id), "state": state(of: app)])
+  }
+
+  /// Nothing was queued. If the route turned into a hand-off meanwhile (the App Store's
+  /// manual preference) say so; otherwise the window has the reason.
+  private func notStarted(_ app: App) -> [String: JSONValue] {
+    if app.capability == .handOff { return handOffEntry(app) }
+    return entry(
+      app, "notQueued",
+      ["message": "Not started. App Store updates may need the update helper; open Updater."])
+  }
+
+  private func handOffEntry(_ app: App) -> [String: JSONValue] {
+    entry(
+      app, "handOff",
+      [
+        "label": .string(Self.label(app)),
+        "message": "Updates through \(Self.label(app)). Pass --allow-handoff to open it.",
+      ])
   }
 
   private func status(jobID: String?) -> ControlResponse {
     guard let jobID, !jobID.isEmpty else {
       let waiting = dependencies.apps().filter { $0.updateAvailable && !$0.isIgnored }.count
+      let active = dependencies.apps().compactMap {
+        dependencies.updating.jobID(for: $0.identifier)
+      }
+      let recent = startedHere.suffix(20).reversed().filter { !active.contains($0) }
       return ControlResponse(
         ok: true,
         data: [
           "checking": .bool(dependencies.isChecking()), "updatesAvailable": JSONValue(waiting),
-          "jobs": .array(jobOrder.suffix(20).reversed().compactMap { describeJob($0) }),
+          "jobs": .array((active + recent).compactMap(describeJob)),
         ])
     }
     guard let job = describeJob(jobID) else {
@@ -203,80 +236,80 @@ final class ControlService {
                   "name": .string(
                     URL(fileURLWithPath: entry.appPath).deletingPathExtension().lastPathComponent),
                   "path": .string(entry.appPath), "bundleId": .string(entry.bundleIdentifier),
-                ].merging(Self.outcome(entry.outcome)) { $1 }))
+                ].merging(Self.outcome(entry.outcome, label: nil)) { $1 }))
           })
       ])
   }
 
   // MARK: Jobs
 
-  /// Follows the job's state feed until it ends, then keeps its result for `status`.
-  private func track(_ id: String, app: App, caller: String, started: Date) {
-    guard jobs[id] == nil else { return }
-    jobs[id] = Job(id: id, app: app, caller: caller, started: started)
-    jobOrder.append(id)
-    if jobOrder.count > 200 { jobs[jobOrder.removeFirst()] = nil }
-    let feed = dependencies.updating.states(for: app.identifier)
-    observations[id] = Task { [weak self] in
-      for await state in feed {
-        guard let self else { return }
-        if case .error = state {
-          self.settle(id, error: state)
-          break
-        }
-        if case .none = state, self.dependencies.updating.jobID(for: app.identifier) != id {
-          self.settle(id, error: nil)
-          break
-        }
-      }
-      self?.observations[id] = nil
-    }
+  private func remember(_ id: String, caller: String) {
+    callers[id] = caller
+    startedHere.append(id)
+    if startedHere.count > 200 { callers[startedHere.removeFirst()] = nil }
   }
 
-  /// The recorded outcome decides; with none recorded nothing changed, which for a declined
-  /// or timed-out quit prompt (and a cancel) is reported as needsQuit.
-  private func settle(_ id: String, error: UpdateProgressState?) {
-    guard var job = jobs[id], job.result == nil else { return }
-    if let entry = dependencies.history?.latestEntry(for: job.app.identifier),
-      entry.date >= job.started
-    {
-      job.result = Self.outcome(entry.outcome)
-    } else if case .error(let failure) = error {
-      job.result = ["state": "failed", "message": .string(failure.localizedDescription)]
-    } else {
-      job.result = [
-        "state": "needsQuit",
-        "message":
-          "Nothing changed: the quit prompt was declined or timed out, or the update was cancelled.",
+  /// Any job id the scheduler handed out, including the window's own jobs.
+  private func describeJob(_ id: String) -> JSONValue? {
+    guard let job = dependencies.updating.job(withID: id) else { return nil }
+    let app = dependencies.apps().first { $0.identifier == job.appURL }
+    var object: [String: JSONValue] = [
+      "jobId": .string(id), "path": .string(job.appURL.path),
+      "name": .string(app?.name ?? job.appURL.deletingPathExtension().lastPathComponent),
+      "caller": JSONValue(callers[id]),
+    ]
+    if let state = job.state {
+      object["state"] = Self.state(state)
+    } else if let record = job.record {
+      object.merge(Self.result(record, label: app.map(Self.label))) { $1 }
+    }
+    return .object(Self.compact(object))
+  }
+
+  /// A recorded outcome decides. Without one nothing changed: a declined or unanswered quit
+  /// prompt is needsQuit, a cancel is cancelled.
+  private static func result(_ record: UpdateJobRecord, label: String?) -> [String: JSONValue] {
+    if record.outcome == .handedOff, !record.openedExternally {
+      let place = label ?? "the vendor's updater"
+      return [
+        "state": "handOff", "label": .string(place),
+        "message": "Not opened: this update goes through \(place). Retry with --allow-handoff.",
       ]
     }
-    jobs[id] = job
-  }
-
-  private func describeJob(_ id: String) -> JSONValue? {
-    guard let job = jobs[id] else { return nil }
-    let live: [String: JSONValue] =
-      dependencies.updating.jobID(for: job.app.identifier) == id
-      ? ["state": state(of: job.app)] : ["state": "finished"]
-    return .object(
-      Self.compact(
-        entry(job.app, nil, ["jobId": .string(id), "caller": .string(job.caller)])
-          .merging(job.result ?? live) { $1 }))
+    if let outcome = record.outcome { return Self.outcome(outcome, label: label) }
+    if record.quitDeclined {
+      return [
+        "state": "needsQuit",
+        "message": "Nothing changed: the quit prompt was declined or not answered in time.",
+      ]
+    }
+    if record.cancelled {
+      return ["state": "cancelled", "message": "The update was cancelled; nothing changed."]
+    }
+    if let failure = record.failure { return ["state": "failed", "message": .string(failure)] }
+    return ["state": "finished", "message": "The job ended without a recorded outcome."]
   }
 
   // MARK: Formatting
 
   private func describe(_ app: App) -> JSONValue {
-    .object(
+    // Adobe-style apps: Updater cannot see the available version, so it is not invented.
+    let availability: JSONValue =
+      app.availabilityUnknown ? "unknown" : app.updateAvailable ? "available" : "current"
+    return .object(
       Self.compact([
         "name": .string(app.name), "bundleId": .string(app.bundleIdentifier),
         "path": .string(app.fileURL.path), "installed": JSONValue(Self.version(app.version)),
-        "available": JSONValue(app.remoteVersion.flatMap(Self.version)),
+        "available": app.availabilityUnknown
+          ? .null : JSONValue(app.remoteVersion.flatMap(Self.version)),
+        "availability": availability,
         "updateAvailable": .bool(app.updateAvailable),
         "capability": .string(app.capability.rawValue),
         "handOffLabel": JSONValue(app.capability == .handOff ? Self.label(app) : nil),
         "ignored": app.isIgnored ? .bool(true) : .null,
-        "source": .string(app.bundle.source.rawValue),
+        // The route Updater chose; where it was found only when that differs.
+        "source": .string(app.source.rawValue),
+        "detectedBy": app.bundle.source == app.source ? .null : .string(app.bundle.source.rawValue),
         "jobId": JSONValue(dependencies.updating.jobID(for: app.identifier)),
       ]))
   }
@@ -290,7 +323,11 @@ final class ControlService {
   }
 
   private func state(of app: App) -> JSONValue {
-    switch dependencies.updating.state(for: app.identifier) {
+    Self.state(dependencies.updating.state(for: app.identifier))
+  }
+
+  private static func state(_ state: UpdateProgressState) -> JSONValue {
+    switch state {
     case .none: "idle"
     case .pending: "waiting"
     case .initializing, .downloading, .extracting, .installing, .waitingForVendor: "running"
@@ -300,7 +337,7 @@ final class ControlService {
     }
   }
 
-  private static func outcome(_ outcome: UpdateOutcome) -> [String: JSONValue] {
+  private static func outcome(_ outcome: UpdateOutcome, label: String?) -> [String: JSONValue] {
     switch outcome {
     case .updated(let from, let to): ["state": "updated", "from": .string(from), "to": .string(to)]
     case .noChange(let reason): ["state": "noChange", "message": JSONValue(reason)]
@@ -316,13 +353,18 @@ final class ControlService {
       ]
     case .failed(let reason, let logPath):
       ["state": "failed", "message": .string(reason), "log": JSONValue(logPath)]
-    case .handedOff: ["state": "handedOff"]
+    case .handedOff: ["state": "handedOff", "label": JSONValue(label)]
     }
   }
 
   private static func label(_ app: App) -> String {
     if app.relaunchesToUpdate { return "a relaunch of \(app.name)" }
-    return app.externalUpdaterName ?? "the vendor's updater"
+    if let name = app.externalUpdaterName { return name }
+    switch app.source {
+    case .appStore: return "the App Store"
+    case .sparkle: return "the developer's website"
+    default: return "the vendor's updater"
+    }
   }
 
   private static func version(_ version: Version) -> String? {

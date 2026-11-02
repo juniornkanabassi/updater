@@ -81,7 +81,7 @@ final class HomebrewUpgradeOperation: UpdateOperation, @unchecked Sendable {
             at: self.appIdentifier,
             name: self.appIdentifier.deletingPathExtension().lastPathComponent))
       } catch is CancellationError {
-        self.cancel()  // a declined quit records nothing
+        self.declineQuit()  // a declined quit records nothing
         return self.finish()
       } catch {
         return self.finish(with: error)

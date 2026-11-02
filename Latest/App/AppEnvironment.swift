@@ -27,6 +27,8 @@ final class AppEnvironment: ObservableObject {
   private let settings: any AppListSettingsProviding
   private let updating: any AppUpdating
   private var control: (service: ControlService, server: ControlServer)?
+  /// The first full check since launch has finished (automation waits for it).
+  private var initialCheckFinished = false
 
   init(
     searchFocusController: SearchFocusController = SearchFocusController(),
@@ -110,7 +112,8 @@ final class AppEnvironment: ObservableObject {
     let notifications = UpdateNotificationController(
       notifier: LiveUpdateNotifier(open: { MainWindow.show() }))
     self.notifications = notifications
-    coordinator.checkCompletion = { [settings] completion in
+    coordinator.checkCompletion = { [weak self, settings] completion in
+      self?.initialCheckFinished = true
       let includeExternal = settings.includeAppsWithLimitedSupport
       Task {
         await notifications.checkFinished(completion, includeExternal: includeExternal)
@@ -150,6 +153,7 @@ extension AppEnvironment {
       .init(
         apps: { [coordinator] in coordinator.appProvider.apps },
         isChecking: { checking.isRunning },
+        initialCheckFinished: { [weak self] in self?.initialCheckFinished ?? false },
         startCheck: { checking.checkForUpdates(hardRefresh: $0) },
         updateAllCandidates: { checking.updateAllCandidates },
         updateAll: { checking.updateAll() },

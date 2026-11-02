@@ -90,8 +90,11 @@ updater history --limit 10
 Add `--json` for one line of JSON. Exit codes: 0 ok, 1 Updater refused or failed, 2 usage, 3 Updater is not running and could not be started.
 
 - A second request for an app that is already updating gets the same job id back as `inProgress`. Jobs that share a tool (brew, msupdate, the App Store helper) wait their turn and show as `waiting`.
-- Apps that update somewhere else (App Store page, Creative Cloud, a Terminal command, a Chrome relaunch) come back as `handOff` with the place named. Only `update <app> --allow-handoff` opens it. `update all` never hands off.
+- Apps that update somewhere else (App Store page, Creative Cloud, a Terminal command, a Chrome relaunch) come back as `handOff` with the place named. Only `update <app> --allow-handoff` opens it, and that also covers a job that falls back to a hand-off while it runs (an App Store install that cannot prove its target, a Sparkle item that turned informational). `update all` never hands off.
 - A running app is quit only after you click Quit and Update in Updater's prompt. If nobody answers within five minutes, or you cancel, the job ends as `needsQuit` and nothing changes.
+- Jobs the window started can be looked up by the job id `updater list` shows.
+- Just after Updater starts, commands that need the first check (`list --updates`, `update`) answer `not_ready` for a short while; retry. A list taken while a check runs says `checking`.
+- Where Updater cannot see the available version (Adobe apps), `list` says `availability: unknown` and the command prints "check in Creative Cloud" instead of a version.
 - A request retried with the same `--request-id` within five minutes acts once and gets the first answer again. Nothing is ever sent or published.
 
 To connect the MCP server (needs Node.js 18 or later) to Claude Code:

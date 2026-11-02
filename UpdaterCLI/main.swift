@@ -113,14 +113,21 @@ func render(_ response: ControlResponse, command: String) {
   case "list":
     let apps = data["apps"]?.arrayValue ?? []
     for app in apps.compactMap(\.objectValue) {
-      let versions = [text(app["installed"]), text(app["available"]).map { "→ \($0)" }]
-        .compactMap { $0 }.joined(separator: " ")
+      // An unknown availability (Adobe) has no version to show: say where to look instead.
+      let available =
+        text(app["availability"]) == "unknown"
+        ? "→ ? (check in \(text(app["handOffLabel"]) ?? "the vendor's app"))"
+        : text(app["available"]).map { "→ \($0)" }
+      let versions = [text(app["installed"]), available].compactMap { $0 }.joined(separator: " ")
       let notes = [
         text(app["capability"]), text(app["handOffLabel"]), text(app["jobId"]).map { "job \($0)" },
       ].compactMap { $0 }.joined(separator: ", ")
       print("\(text(app["name"]) ?? "?")  \(versions)  (\(notes))  \(text(app["path"]) ?? "")")
     }
     if apps.isEmpty { print("No apps.") }
+    if data["checking"]?.boolValue == true {
+      print("A check is still running; versions may change.")
+    }
   case "update":
     for result in (data["results"]?.arrayValue ?? []).compactMap(\.objectValue) {
       let details = [

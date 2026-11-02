@@ -86,7 +86,13 @@ class DownloadUpdateOperation: UpdateOperation, @unchecked Sendable {
   /// Reopen the surviving app after success, rollback, or cancellation after quitting.
   @MainActor
   func withApplicationClosed(_ install: @Sendable () async throws -> Void) async throws {
-    try await lifecycle.withApplicationClosed(at: app.fileURL, name: app.name, install)
+    do {
+      try await lifecycle.withApplicationClosed(at: app.fileURL, name: app.name, install)
+    } catch is CancellationError where !isCancelled {
+      // Not a cancel from the user: the quit prompt was declined or timed out.
+      declineQuit()
+      throw CancellationError()
+    }
   }
 
   /// Same-volume renames. The original stays in `backupDirectory` until `verify` accepts

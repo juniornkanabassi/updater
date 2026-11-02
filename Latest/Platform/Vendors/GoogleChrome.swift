@@ -99,7 +99,7 @@ final class ChromeRelaunchOperation: UpdateOperation, @unchecked Sendable {
         )
       } catch is CancellationError {
         // A declined quit is a cancel: no outcome, and an earlier failure stays as it was.
-        self.cancel()
+        self.declineQuit()
         return self.finish()
       } catch {
         return self.finish(with: error)

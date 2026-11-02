@@ -1,6 +1,7 @@
 // Copyright © 2026 Junior Nkana Bassi. Licensed under GPL-3.0; see LICENSE.md.
 
 import Darwin
+import Sparkle
 import Synchronization
 import XCTest
 
@@ -21,6 +22,7 @@ final class ControlTest: XCTestCase {
     let history: UpdateHistoryStore
     var apps = [App]()
     var checking = false
+    var initialCheckFinished = true
     var server: ControlServer?
     let service: ControlService
 
@@ -34,6 +36,7 @@ final class ControlTest: XCTestCase {
         .init(
           apps: { harness?.apps ?? [] },
           isChecking: { harness?.checking ?? false },
+          initialCheckFinished: { harness?.initialCheckFinished ?? false },
           startCheck: { _ in
             harness?.checking = true
             Task { @MainActor in
@@ -53,7 +56,7 @@ final class ControlTest: XCTestCase {
               harness.updating.update(app, isBulkUpdate: true)
             }
           },
-          updating: updating, history: history))
+          updating: updating, history: history, readinessWait: .milliseconds(400)))
       harness = self
     }
 
@@ -127,8 +130,7 @@ final class ControlTest: XCTestCase {
   private func waitForJob(_ harness: Harness, _ id: String) async throws -> [String: JSONValue] {
     for _ in 0..<200 {
       let job = try await request(harness, "status", ["job": id]).data?["job"]?.objectValue ?? [:]
-      if let state = job["state"]?.stringValue, !["waiting", "running", "finished"].contains(state)
-      {
+      if let state = job["state"]?.stringValue, !["waiting", "running", "idle"].contains(state) {
         return job
       }
       try await Task.sleep(for: .milliseconds(25))
@@ -318,6 +320,199 @@ final class ControlTest: XCTestCase {
     XCTAssertEqual(results(firstReply).first?["jobId"], results(replay).first?["jobId"])
   }
 
+  // MARK: Sol R5 findings
+
+  /// R5-001: the policy travels with the job. A real App Store job whose gate fails at run
+  /// time opens nothing for automation (single app or Update All), but still does for the window.
+  func testAutomationJobsNeverOpenTheAppStoreFromInsideTheJob() async throws {
+    let harness = try harness()
+    let opened = InstallLog()
+    let url = try FixtureApp.make(
+      in: try disposableDirectory(), name: "Store", identifier: "com.example.store",
+      version: "1.0", signed: false)
+    let bundle = try XCTUnwrap(BundleCollector.collectBundle(at: url))
+    let queue = harness.queue
+    let action = App.Update.Action.builtIn { app in
+      let operation = AppStoreUpdateOperation(
+        bundleIdentifier: app.bundleIdentifier, installURL: app.fileURL,
+        appIdentifier: app.identifier, appStoreIdentifier: 1)
+      operation.installGate = { _, _ in false }  // another copy appeared: fail closed
+      operation.usesVerifiedHelperInstall = true
+      operation.prepare = {}
+      operation.openURL = { url in
+        opened.entries.withLock { $0.append((url.absoluteString, Date(), Date())) }
+      }
+      queue.addOperation(operation)
+    }
+    let app = App(
+      bundle: bundle,
+      update: .success(
+        App.Update(
+          app: bundle, remoteVersion: Version(versionNumber: "1.1", buildNumber: nil),
+          minimumOSVersion: nil, source: .appStore, date: nil, releaseNotes: nil,
+          updateAction: action)),
+      isIgnored: false)
+    harness.apps = [app]
+    XCTAssertEqual(app.capability, .install)
+
+    let single = try await updateResults(harness, ["target": url.path])
+    let singleJob = try await waitForJob(
+      harness, try XCTUnwrap(single.first?["jobId"]?.stringValue))
+    XCTAssertEqual(singleJob["state"], "handOff")
+    XCTAssertEqual(singleJob["label"], "the App Store")
+    let all = try await updateResults(harness, ["target": "all"])
+    let allJob = try await waitForJob(harness, try XCTUnwrap(all.first?["jobId"]?.stringValue))
+    XCTAssertEqual(allJob["state"], "handOff")
+    XCTAssertTrue(opened.entries.withLock { $0 }.isEmpty, "automation opened nothing")
+
+    harness.updating.update(app)  // the window: hand-offs open as before
+    for _ in 0..<200 where opened.entries.withLock({ $0 }).isEmpty {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    XCTAssertEqual(opened.entries.withLock { $0.count }, 1)
+  }
+
+  /// R5-001: a Sparkle job submitted by automation keeps the policy, so an item that turned
+  /// information-only records a hand-off without opening its page.
+  func testAutomationSparkleInfoOnlyItemOpensNothing() throws {
+    let queue = UpdateQueue()
+    queue.isSuspended = true  // the policy is set at submission; Sparkle itself never runs here
+    let url = URL(fileURLWithPath: "/tmp/Info-\(UUID().uuidString).app")
+    let operation = SparkleUpdateOperation(bundleIdentifier: "test.info", appIdentifier: url)
+    ExternalHandOff.$allowed.withValue(false) { queue.submit(operation) }
+    XCTAssertFalse(operation.allowsExternalHandOff)
+    let item = try XCTUnwrap(
+      SUAppcastItem(dictionary: [
+        "sparkle:version": "2.0", "sparkle:shortVersionString": "2.0",
+        "link": "https://example.com/release",
+      ]))
+    let opened = InstallLog()
+    operation.openURL = { url in
+      opened.entries.withLock { $0.append((url.absoluteString, Date(), Date())) }
+    }
+    operation.handleUpdateFound(item) { _ in }
+    XCTAssertEqual(operation.outcomeOverride, .handedOff)
+    XCTAssertTrue(opened.entries.withLock { $0 }.isEmpty)
+    let gui = SparkleUpdateOperation(bundleIdentifier: "test.info", appIdentifier: url)
+    queue.submit(gui)
+    XCTAssertTrue(gui.allowsExternalHandOff, "the window's jobs keep opening hand-offs")
+    queue.cancelAllOperations()
+  }
+
+  /// R5-002: before the first check finishes, commands that need it answer not_ready
+  /// (retryable) instead of an empty or stale answer; a running check marks lists.
+  func testColdStartAnswersNotReadyThenMarksPartialLists() async throws {
+    let harness = try harness()
+    harness.initialCheckFinished = false
+    let early = try await request(harness, "list")
+    XCTAssertEqual(early.code, "not_ready", "nothing discovered yet")
+    XCTAssertEqual(early.data?["retryable"], .bool(true))
+    harness.apps = [try fixtureApp(harness, name: "Cold")]
+    let names = try await request(harness, "list")
+    XCTAssertEqual(names.ok, true, "names are fine once discovery has run")
+    let versions = try await request(harness, "list", ["updates": "1"])
+    XCTAssertEqual(versions.code, "not_ready", "versions need the first check")
+    let update = try await request(harness, "update", ["target": "all"])
+    XCTAssertEqual(update.code, "not_ready")
+    harness.initialCheckFinished = true
+    harness.checking = true
+    let partial = try await request(harness, "list", ["updates": "1"])
+    XCTAssertEqual(partial.data?["checking"], .bool(true))
+  }
+
+  /// R5-003: a job the window started is resolvable by the id `list` shows.
+  func testWindowStartedJobsResolveByID() async throws {
+    let harness = try harness()
+    let gate = AsyncStream<Void>.makeStream()
+    let app = try fixtureApp(harness, name: "Gui", gate: gate.stream)
+    harness.apps = [app]
+    harness.updating.update(app)
+    let listed = try await request(harness, "list")
+    let id = try XCTUnwrap(
+      listed.data?["apps"]?.arrayValue?.first?.objectValue?["jobId"]?.stringValue)
+    let running = try await request(harness, "status", ["job": id])
+    XCTAssertNotNil(running.data?["job"]?.objectValue?["state"])
+    gate.continuation.finish()
+    let finished = try await waitForJob(harness, id)
+    XCTAssertEqual(finished["state"], "updated")
+  }
+
+  /// R5-004: a real App Store job whose quit prompt is declined reports needsQuit and writes
+  /// no history; the real Sparkle path marks the decline too.
+  func testDeclinedQuitInRealOperationsIsNeedsQuit() async throws {
+    let harness = try harness()
+    let url = try FixtureApp.make(
+      in: try disposableDirectory(), name: "Busy", identifier: "com.example.busy",
+      version: "1.0", signed: false)
+    let bundle = try XCTUnwrap(BundleCollector.collectBundle(at: url))
+    let declining = AppLifecycle(
+      runningApps: { _ in [.init(terminate: {}, isTerminated: { false })] },
+      confirmQuit: { _ in false }, reopen: { _ in })
+    let queue = harness.queue
+    let action = App.Update.Action.builtIn { app in
+      let operation = AppStoreUpdateOperation(
+        bundleIdentifier: app.bundleIdentifier, installURL: app.fileURL,
+        appIdentifier: app.identifier, appStoreIdentifier: 1)
+      operation.installGate = { _, _ in true }
+      operation.usesVerifiedHelperInstall = true
+      operation.prepare = {}
+      operation.openURL = { _ in }
+      operation.lifecycle = declining
+      queue.addOperation(operation)
+    }
+    harness.apps = [
+      App(
+        bundle: bundle,
+        update: .success(
+          App.Update(
+            app: bundle, remoteVersion: Version(versionNumber: "1.1", buildNumber: nil),
+            minimumOSVersion: nil, source: .appStore, date: nil, releaseNotes: nil,
+            updateAction: action)),
+        isIgnored: false)
+    ]
+    let started = try await updateResults(harness, ["target": url.path])
+    let job = try await waitForJob(harness, try XCTUnwrap(started.first?["jobId"]?.stringValue))
+    XCTAssertEqual(job["state"], "needsQuit")
+    XCTAssertNil(harness.history.latestEntry(for: url), "a declined quit writes no history")
+
+    let sparkle = SparkleUpdateOperation(bundleIdentifier: "test.busy", appIdentifier: url)
+    sparkle.lifecycle = declining
+    let replied = expectation(description: "replied")
+    sparkle.showReady { _ in replied.fulfill() }
+    await fulfillment(of: [replied], timeout: 3)
+    XCTAssertTrue(sparkle.quitDeclined)
+    XCTAssertTrue(sparkle.isCancelled, "a cancel, so nothing is recorded")
+  }
+
+  /// R5-005: availability Updater cannot see is reported as unknown, never as the installed
+  /// version, and the source is the route Updater chose.
+  func testUnknownAvailabilityAndSelectedSourceAreReported() async throws {
+    let harness = try harness()
+    let url = try FixtureApp.make(
+      in: try disposableDirectory(), name: "Premiere", identifier: "com.adobe.premiere",
+      version: "25.0", signed: false)
+    let bundle = try XCTUnwrap(BundleCollector.collectBundle(at: url))
+    harness.apps = [
+      App(
+        bundle: bundle,
+        update: .success(
+          App.Update(
+            app: bundle, remoteVersion: bundle.version, minimumOSVersion: nil, source: .vendor,
+            date: nil, releaseNotes: nil, updateAction: .external(label: "Creative Cloud") { _ in },
+            availabilityUnknown: true)),
+        isIgnored: false)
+    ]
+    let listed = try await request(harness, "list", ["updates": "1"])
+    let entry = try XCTUnwrap(listed.data?["apps"]?.arrayValue?.first?.objectValue)
+    XCTAssertEqual(entry["availability"], "unknown")
+    XCTAssertNil(entry["available"], "no invented version")
+    XCTAssertEqual(entry["source"], "vendor")
+    XCTAssertEqual(entry["detectedBy"], .string(bundle.source.rawValue))
+    let cli = helpers.appendingPathComponent("Helpers/updater")
+    let output = try await run(cli, ["list", "--updates"], home: harness.home)
+    XCTAssertTrue(output.output.contains("check in Creative Cloud"), output.output)
+  }
+
   // MARK: The built CLI and MCP adapter
 
   private var helpers: URL { Bundle.main.bundleURL.appendingPathComponent("Contents") }
@@ -473,7 +668,7 @@ final class FixtureInstall: UpdateOperation, @unchecked Sendable {
       let start = Date()
       if let gate { for await _ in gate {} }
       if declinesQuit {
-        cancel()
+        declineQuit()
         return finish()
       }
       progressState = .installing

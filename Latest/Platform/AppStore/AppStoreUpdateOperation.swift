@@ -126,6 +126,8 @@ final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
           wasRunning: try await self.lifecycle.quit(
             at: self.installURL, name: self.installURL.deletingPathExtension().lastPathComponent))
       } catch is CancellationError {
+        // A declined or unanswered quit prompt: a cancel, recorded nowhere, reported as needsQuit.
+        if !self.isCancelled { self.declineQuit() }
         return self.finishOnMain()
       } catch {
         return self.finish(with: error)
@@ -189,6 +191,8 @@ final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
 
   @MainActor private func handOff() {
     outcomeOverride = .handedOff
+    // Automation without --allow-handoff only learns that the App Store has it.
+    guard allowsExternalHandOff else { return }
     openURL(URL(string: "macappstore://showUpdatesPage")!)
   }
 
@@ -201,11 +205,16 @@ final class AppStoreUpdateOperation: UpdateOperation, @unchecked Sendable {
     UpdateInstallHelperAlert.shared.prepare(
       fallbackURL: fallback,
       error: error as? InstallHelperError ?? .unavailable(error.localizedDescription)
-    ) { [bundleIdentifier, installURL, appIdentifier, itemIdentifier, expectedVersion] in
+    ) {
+      [
+        bundleIdentifier, installURL, appIdentifier, itemIdentifier, expectedVersion,
+        allowsExternalHandOff
+      ] in
       let retry = AppStoreUpdateOperation(
         bundleIdentifier: bundleIdentifier, installURL: installURL,
         appIdentifier: appIdentifier, appStoreIdentifier: itemIdentifier)
       retry.expectedVersion = expectedVersion
+      retry.allowsExternalHandOff = allowsExternalHandOff
       UpdateQueue.shared.addOperation(retry)
     }
   }

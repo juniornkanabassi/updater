@@ -66,7 +66,7 @@ final class VendorToolOperation: UpdateOperation, @unchecked Sendable {
             name: self.appIdentifier.deletingPathExtension().lastPathComponent))
       } catch is CancellationError {
         // A declined quit is a cancel: nothing is recorded.
-        self.cancel()
+        self.declineQuit()
         return self.finish()
       } catch {
         return self.finish(with: error)

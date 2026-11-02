@@ -149,7 +149,7 @@ extension SparkleUpdateOperation: SPUUserDriver {
     // The feed may have turned informational since the check: never reply .install.
     if appcastItem.isInformationOnlyUpdate {
       reply(.dismiss)
-      if let infoURL = appcastItem.infoURL { openURL(infoURL) }
+      if allowsExternalHandOff, let infoURL = appcastItem.infoURL { openURL(infoURL) }
       outcomeOverride = .handedOff
       finish()
       return
@@ -257,8 +257,13 @@ extension SparkleUpdateOperation: SPUUserDriver {
           protection.noteQuit(
             wasRunning: try await lifecycle.quit(
               at: appIdentifier, name: appIdentifier.deletingPathExtension().lastPathComponent))
+        } catch is CancellationError where !isCancelled {
+          // A declined or unanswered quit prompt: cancel (nothing recorded), reported as
+          // needsQuit. .skip cancels the installation; .dismiss would defer it.
+          reply(.skip)
+          declineQuit()
+          return
         } catch {
-          // .skip cancels the installation; .dismiss would defer it.
           reply(.skip)
           await finalize(error is CancellationError ? nil : error)
           return

@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import Synchronization
 
 /// The update scheduler. GUI and Update All submit here (CLI and MCP will too): one job
 /// per target URL, jobs sharing a `lockKey` run one after another, and every finished job
@@ -35,6 +36,10 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
   private let operationIndexLock = NSLock()
 
   private var operationsByIdentifier = [App.Bundle.Identifier: UpdateOperation]()
+  /// How recent jobs ended, by job id, so any job id handed out (by the window's jobs too)
+  /// can be looked up after it finishes. Bounded; guarded by the index lock.
+  private var finishedJobs = [String: UpdateJobRecord]()
+  private var finishedOrder = [String]()
   /// Unfinished jobs per lock, in submission order. A new job depends on all of them: a
   /// cancelled waiter becomes ready at once, so depending only on the last one would let
   /// the newcomer overtake the running holder.
@@ -56,6 +61,19 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
   /// The unfinished job for the app, if any.
   func jobID(for identifier: App.Bundle.Identifier) -> String? {
     operation(for: identifier)?.jobID
+  }
+
+  /// A job by id: running or waiting (its current state), or finished (how it ended).
+  func job(withID id: String) -> UpdateJob? {
+    operationIndexLock.withLock {
+      if let operation = operationsByIdentifier.values.first(where: {
+        $0.jobID == id && !$0.isFinished
+      }) {
+        return UpdateJob(
+          id: id, appURL: operation.appIdentifier, state: operation.progressState, record: nil)
+      }
+      return finishedJobs[id].map { UpdateJob(id: id, appURL: $0.appURL, state: nil, record: $0) }
+    }
   }
 
   /// Whether the queue contains an update operation for the given app.
@@ -87,16 +105,21 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
   @discardableResult
   func submit(_ operation: UpdateOperation) -> UpdateOperation {
     if let existing = index(operation) { return existing }
+    if !ExternalHandOff.allowed { operation.allowsExternalHandOff = false }
     let before = readBundle(operation.appIdentifier)
+    let resolved = Mutex<UpdateOutcome?>(nil)
 
     operation.resolveOutcome = { [weak self] operation in
-      self?.resolveOutcome(of: operation, before: before)
+      let outcome = self?.resolveOutcome(of: operation, before: before)
+      resolved.withLock { $0 = outcome }
+      return outcome
     }
     let previousCompletionBlock = operation.completionBlock
     operation.completionBlock = { [weak self, weak operation] in
       previousCompletionBlock?()
 
       guard let self, let operation else { return }
+      self.record(operation, outcome: resolved.withLock { $0 })
       self.removeIndexedOperation(operation)
       // A clean finish (a declined quit records nothing) published .none while the job was
       // still indexed; republish so the row falls back to history and an earlier failure
@@ -295,6 +318,18 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
     }
   }
 
+  private func record(_ operation: UpdateOperation, outcome: UpdateOutcome?) {
+    let record = UpdateJobRecord(
+      appURL: operation.appIdentifier, outcome: outcome, quitDeclined: operation.quitDeclined,
+      cancelled: operation.isCancelled, failure: operation.error?.localizedDescription,
+      openedExternally: operation.allowsExternalHandOff)
+    operationIndexLock.withLock {
+      finishedJobs[operation.jobID] = record
+      finishedOrder.append(operation.jobID)
+      if finishedOrder.count > 200 { finishedJobs[finishedOrder.removeFirst()] = nil }
+    }
+  }
+
   private func removeIndexedOperation(_ operation: UpdateOperation) {
     operationIndexLock.withLock {
       operationsByLock[operation.lockKey]?.removeAll { $0 === operation }
@@ -309,4 +344,24 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
     }
   }
 
+}
+
+/// How a finished job ended, kept for status queries by job id.
+struct UpdateJobRecord: Sendable {
+  let appURL: URL
+  /// The outcome written to history, if any (a cancel or declined quit writes none).
+  let outcome: UpdateOutcome?
+  let quitDeclined: Bool
+  let cancelled: Bool
+  let failure: String?
+  /// False when a hand-off was recorded but nothing was opened (automation's default).
+  let openedExternally: Bool
+}
+
+/// A job as automation sees it: `state` while it is queued or running, `record` once it ended.
+struct UpdateJob: Sendable {
+  let id: String
+  let appURL: URL
+  let state: UpdateProgressState?
+  let record: UpdateJobRecord?
 }

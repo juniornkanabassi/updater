@@ -404,7 +404,8 @@ extension AppStoreUpdateCheckerOperation {
     _ app: App.Bundle, entry: AppStoreEntry, enqueue: AppStoreEnqueue
   ) {
     if AppStoreUpdateSettings.alwaysPerformManualUpdates.active {
-      openAppStorePage(for: entry)
+      // The preference may have changed since the caller looked; automation opens nothing.
+      if ExternalHandOff.allowed { openAppStorePage(for: entry) }
       return
     }
     enqueue(app, entry.appStoreIdentifier, entry.versionNumber)
