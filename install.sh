@@ -29,7 +29,8 @@ fi
 # One install at a time for this destination. shlock writes our pid atomically and
 # only replaces a lock whose recorded owner is no longer running.
 LOCK="$INSTALL_ROOT/.updater-install.lock"
-[[ -d "$LOCK" ]] && ! kill -0 "$(<"$LOCK/pid" 2>/dev/null)" 2>/dev/null && /bin/rm -rf "$LOCK"  # lock folder from install.sh before 0.8.2
+# A lock folder comes from install.sh before 0.8.2 and has no owner to check: never remove it automatically.
+[[ -d "$LOCK" ]] && { print -u2 "Found an old-style install lock folder at $LOCK. If no Updater install is running, remove it (rmdir) and run again."; exit 1; }
 /usr/bin/shlock -f "$LOCK" -p $$ || { print -u2 "Another Updater install is running (pid $(<"$LOCK" 2>/dev/null))."; exit 1; }
 for old in "$INSTALL_ROOT"/.updater-install.*(N/); do print -u2 "Left from an earlier run (not removed): $old"; done
 WORK=$(mktemp -d "$INSTALL_ROOT/.updater-install.XXXXXX")
