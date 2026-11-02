@@ -59,15 +59,6 @@ class UpdateOperation: StatefulOperation, @unchecked Sendable {
   /// and the scheduler writes no history for it.
   func markQuitDeclined() { declinedQuit.withLock { $0 = true } }
 
-  /// Where a job that ended as a hand-off sends the user, why, and whether anything opened.
-  struct HandOffNote: Sendable, Equatable {
-    let destination: String
-    let reason: String
-    let opened: Bool
-    /// Something would have opened, but automation did not pass --allow-handoff.
-    let blockedByPolicy: Bool
-  }
-
   private let handOffStorage = Mutex<HandOffNote?>(nil)
   var handOffNote: HandOffNote? { handOffStorage.withLock { $0 } }
 

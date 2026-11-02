@@ -132,6 +132,36 @@ final class UpdateRepository: Sendable {
     EntryMatcher.preferredEntry(from: possibleEntries, for: bundleIdentifier)
   }
 
+  /// What loading the catalogue produces: entries for name matching (casks with app names)
+  /// and the identity index over every cask, from the compact cache when it matches.
+  struct DecodedCatalogue {
+    let sourceEntryCount: Int
+    let appEntries: [Entry]
+    let identityIndex: [String: Set<String>]
+    let usedCompactIndex: Bool
+  }
+
+  static func decodeCatalogue(_ data: Data, cache: UpdateRepositoryCompactIndexCache) throws
+    -> DecodedCatalogue
+  {
+    if let compact = cache.load(matching: data) {
+      return DecodedCatalogue(
+        sourceEntryCount: compact.sourceEntryCount, appEntries: compact.entries,
+        identityIndex: compact.identityIndex.mapValues(Set.init), usedCompactIndex: true)
+    }
+    let entries = try JSONDecoder().decode([Entry].self, from: data)
+    let appEntries = entries.filter { !$0.names.isEmpty }
+    // Every cask counts as a competitor, including ones without app names (R5B-002).
+    let identityIndex = caskTokensByIdentifier(entries)
+    cache.store(
+      UpdateRepositoryCompactIndex(
+        sourceData: data, sourceEntryCount: entries.count, entries: appEntries,
+        identityIndex: identityIndex))
+    return DecodedCatalogue(
+      sourceEntryCount: entries.count, appEntries: appEntries, identityIndex: identityIndex,
+      usedCompactIndex: false)
+  }
+
   /// Bundle ID → every cask carrying it as identifier evidence (app artifacts, uninstall
   /// quit, zap paths). Name matching plays no part.
   static func caskTokensByIdentifier(_ entries: [Entry]) -> [String: Set<String>] {
@@ -197,36 +227,22 @@ final class UpdateRepository: Sendable {
     }
 
     do {
-      let compactCache = UpdateRepositoryCompactIndexCache(
-        cacheURL: RemoteURL.repository.compactIndexCacheURL
-      )
-      let sourceEntryCount: Int
-      let appEntries: [Entry]
-      let usedCompactIndex: Bool
-      if let compactIndex = compactCache.load(matching: repositoryData) {
-        sourceEntryCount = compactIndex.sourceEntryCount
-        appEntries = compactIndex.entries
-        usedCompactIndex = true
-      } else {
-        let entries = try JSONDecoder().decode([Entry].self, from: repositoryData)
-        sourceEntryCount = entries.count
-        appEntries = entries.filter { !$0.names.isEmpty }
-        compactCache.store(
-          UpdateRepositoryCompactIndex(
-            sourceData: repositoryData,
-            sourceEntryCount: sourceEntryCount,
-            entries: appEntries
-          ))
-        usedCompactIndex = false
+      let catalogue = try Self.decodeCatalogue(
+        repositoryData,
+        cache: UpdateRepositoryCompactIndexCache(
+          cacheURL: RemoteURL.repository.compactIndexCacheURL))
+      let (sourceEntryCount, appEntries, usedCompactIndex) =
+        (catalogue.sourceEntryCount, catalogue.appEntries, catalogue.usedCompactIndex)
+      state.withLock {
+        $0.entryMatcher.update(entries: appEntries, identityIndex: catalogue.identityIndex)
       }
-      state.withLock { $0.entryMatcher.update(entries: appEntries) }
       let duration = Double(DispatchTime.now().uptimeNanoseconds - start) / 1_000_000
       updateRepositoryLogger.info(
         "Loaded \(sourceEntryCount, privacy: .public) casks and indexed \(appEntries.count, privacy: .public) app entries in \(duration, privacy: .public) ms compact=\(usedCompactIndex, privacy: .public)"
       )
       return true
     } catch {
-      state.withLock { $0.entryMatcher.update(entries: []) }
+      state.withLock { $0.entryMatcher.update(entries: [], identityIndex: [:]) }
       updateRepositoryLogger.error(
         "Failed to decode repository catalog: \(error.localizedDescription, privacy: .public)")
       return false
@@ -383,9 +399,9 @@ private struct EntryMatcher {
     self.unsupportedBundleIdentifiers = unsupportedBundleIdentifiers
   }
 
-  mutating func update(entries: [UpdateRepository.Entry]) {
+  mutating func update(entries: [UpdateRepository.Entry], identityIndex: [String: Set<String>]) {
     self.entriesByName = Self.entriesByName(entries)
-    self.tokensByIdentifier = Self.tokensByIdentifier(entries)
+    self.tokensByIdentifier = identityIndex
   }
 
   func caskTokens(withBundleIdentifier identifier: String) -> [String] {

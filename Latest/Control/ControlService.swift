@@ -236,7 +236,7 @@ final class ControlService {
                   "name": .string(
                     URL(fileURLWithPath: entry.appPath).deletingPathExtension().lastPathComponent),
                   "path": .string(entry.appPath), "bundleId": .string(entry.bundleIdentifier),
-                ].merging(Self.outcome(entry.outcome, label: nil)) { $1 }))
+                ].merging(Self.report(entry.outcome, handOff: entry.handOff, label: nil)) { $1 }))
           })
       ])
   }
@@ -269,21 +269,9 @@ final class ControlService {
   /// A recorded outcome decides. Without one nothing changed: a declined or unanswered quit
   /// prompt is needsQuit, a cancel is cancelled.
   private static func result(_ record: UpdateJobRecord, label: String?) -> [String: JSONValue] {
-    // handedOff means something was actually opened; otherwise the caller gets where to go
-    // and why, and --allow-handoff only when it would open that place.
-    if record.outcome == .handedOff, let note = record.handOff {
-      guard !note.opened else {
-        return ["state": "handedOff", "label": .string(note.destination)]
-      }
-      return [
-        "state": "handOff", "label": .string(note.destination), "reason": .string(note.reason),
-        "message": .string(
-          note.blockedByPolicy
-            ? "Not opened: \(note.reason) Retry with --allow-handoff to open \(note.destination)."
-            : "\(note.reason) Update it with \(note.destination)."),
-      ]
+    if let outcome = record.outcome {
+      return Self.report(outcome, handOff: record.handOff, label: label)
     }
-    if let outcome = record.outcome { return Self.outcome(outcome, label: label) }
     if record.quitDeclined {
       return [
         "state": "needsQuit",
@@ -356,6 +344,30 @@ final class ControlService {
     case .cancelling: "cancelling"
     case .error: "failed"
     }
+  }
+
+  /// One reading of an outcome for both `status` and `history`. handedOff only when something
+  /// actually opened; otherwise where to go and why, suggesting --allow-handoff only when it
+  /// would open that place. Records without a note (before 0.7.0) claim nothing opened.
+  static func report(_ outcome: UpdateOutcome, handOff note: HandOffNote?, label: String?)
+    -> [String: JSONValue]
+  {
+    guard outcome == .handedOff else { return Self.outcome(outcome, label: label) }
+    guard let note else {
+      return [
+        "state": "handOff", "label": JSONValue(label),
+        "message":
+          "Recorded before Updater kept hand-off details; it may not have opened anything.",
+      ]
+    }
+    guard !note.opened else { return ["state": "handedOff", "label": .string(note.destination)] }
+    return [
+      "state": "handOff", "label": .string(note.destination), "reason": .string(note.reason),
+      "message": .string(
+        note.blockedByPolicy
+          ? "Not opened: \(note.reason) Retry with --allow-handoff to open \(note.destination)."
+          : "\(note.reason) Update it with \(note.destination)."),
+    ]
   }
 
   private static func outcome(_ outcome: UpdateOutcome, label: String?) -> [String: JSONValue] {

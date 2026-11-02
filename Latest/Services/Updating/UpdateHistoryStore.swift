@@ -16,8 +16,14 @@ struct UpdateHistoryEntry: Codable, Equatable, Sendable {
   let resultVersionNumber: String?
   let resultBuildNumber: String?
   let outcome: UpdateOutcome
+  /// For a hand-off: where to, why, whether anything opened. Missing in records written
+  /// before 0.7.0, which are read conservatively (nothing is claimed to have opened).
+  var handOff: HandOffNote?
 
-  init(before: App.Bundle, after: App.Bundle?, outcome: UpdateOutcome) {
+  init(
+    before: App.Bundle, after: App.Bundle?, outcome: UpdateOutcome, handOff: HandOffNote? = nil
+  ) {
+    self.handOff = handOff
     appPath = before.fileURL.path
     bundleIdentifier = before.bundleIdentifier
     versionNumber = before.version.versionNumber

@@ -16,6 +16,16 @@ enum UpdateCapability: String, Codable, Sendable {
   var isAutomatic: Bool { self == .install || self == .vendorTool }
 }
 
+/// Where a hand-off sends the user, why, and whether Updater actually opened anything.
+/// Kept with the outcome in history, so status and history say the same thing.
+struct HandOffNote: Codable, Sendable, Equatable {
+  let destination: String
+  let reason: String
+  let opened: Bool
+  /// Something would have opened, but automation did not pass --allow-handoff.
+  let blockedByPolicy: Bool
+}
+
 /// The durable result of one update action, decided by re-reading the bundle on disk.
 enum UpdateOutcome: Codable, Equatable, Sendable {
   case updated(from: String, to: String)

@@ -17,6 +17,14 @@ struct InstalledCask: Sendable, Equatable {
   var installedApp: String?
 }
 
+/// Whether brew owns an app. A failed query is `unknown`, never "not owned": a catalogue
+/// download must not replace an app brew may own.
+enum CaskOwnership: Sendable, Equatable {
+  case owned(InstalledCask)
+  case notOwned
+  case unknown
+}
+
 /// Formats Homebrew unpacks with macOS's own tools. Others (RAR, 7z, ...) make brew install
 /// an unpacking tool on the fly, outside Updater's protection, so they hand off.
 enum HomebrewPayload {
@@ -152,6 +160,16 @@ actor Homebrew {
   func owningCask(of app: URL, fresh: Bool = false) async throws -> InstalledCask? {
     let canonical = Self.canonical(app)
     return try await detect(fresh: fresh).installed.first { $0.apps.contains(canonical) }
+  }
+
+  /// No brew at its fixed locations means nothing can be owned; a query that fails is unknown.
+  func ownership(of app: URL, fresh: Bool = false) async -> CaskOwnership {
+    guard brew != nil else { return .notOwned }
+    do {
+      return try await owningCask(of: app, fresh: fresh).map(CaskOwnership.owned) ?? .notOwned
+    } catch {
+      return .unknown
+    }
   }
 
   /// The version brew would upgrade the cask to, or nil if it is current.

@@ -131,6 +131,11 @@ final class AppDownloadUpdateOperation: DownloadUpdateOperation, @unchecked Send
     do { try await check.assess(candidate) } catch {
       throw CatalogueInstall.Refusal.trust("macOS Gatekeeper did not accept the downloaded app.")
     }
+    // brew must still not own it, freshly asked (an unknown answer refuses too).
+    guard await check.ownership(app.fileURL, true) == .notOwned else {
+      return await keepOwnRoute(
+        .scope("Homebrew may own this app (or could not be asked), so Updater leaves it to brew."))
+    }
     // Fail closed after staging: our own staged candidate is the only extra copy allowed.
     do {
       try CatalogueInstall.recheck(

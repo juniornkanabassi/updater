@@ -208,6 +208,35 @@ final class ControlFollowUpTest: XCTestCase {
     }
     throw XCTSkip("job did not finish")
   }
+  /// R5B-003: history keeps where a hand-off went, why and whether it opened; status and
+  /// history read it the same way, also after reloading; old records claim nothing opened.
+  func testHandOffDetailsSurviveHistoryReload() throws {
+    let file = try disposableDirectory().appendingPathComponent("history.jsonl")
+    let app = makeTestApp(name: "Store", version: "1", remoteVersion: "2")
+    let blocked = HandOffNote(
+      destination: "the App Store", reason: "Updater could not confirm the copy.", opened: false,
+      blockedByPolicy: true)
+    UpdateHistoryStore(fileURL: file).record(
+      UpdateHistoryEntry(
+        before: app.bundle, after: app.bundle, outcome: .handedOff, handOff: blocked))
+    let reloaded = try XCTUnwrap(UpdateHistoryStore(fileURL: file).entries(limit: 1).first)
+    XCTAssertEqual(reloaded.handOff, blocked)
+    let fromHistory = ControlService.report(reloaded.outcome, handOff: reloaded.handOff, label: nil)
+    let fromStatus = ControlService.report(.handedOff, handOff: blocked, label: "ignored")
+    XCTAssertEqual(fromHistory, fromStatus)
+    XCTAssertEqual(fromHistory["state"], "handOff")
+    XCTAssertTrue(fromHistory["message"]?.stringValue?.contains("--allow-handoff") == true)
+
+    // A 0.6 record: no note, so nothing is claimed to have opened.
+    let old =
+      #"{"date":"2026-11-01T10:00:00Z","appPath":"/Applications/Old.app","bundleIdentifier":"com.example.old","versionNumber":"1","buildNumber":null,"resultBundleIdentifier":"com.example.old","resultVersionNumber":"1","resultBuildNumber":null,"outcome":{"handedOff":{}}}"#
+    let legacy = try disposableDirectory().appendingPathComponent("old.jsonl")
+    try Data((old + "\n").utf8).write(to: legacy)
+    let entry = try XCTUnwrap(UpdateHistoryStore(fileURL: legacy).entries(limit: 1).first)
+    XCTAssertNil(entry.handOff)
+    XCTAssertEqual(
+      ControlService.report(entry.outcome, handOff: nil, label: nil)["state"], "handOff")
+  }
 }
 
 private final class QuickOperation: UpdateOperation, @unchecked Sendable {

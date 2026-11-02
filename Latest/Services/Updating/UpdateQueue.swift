@@ -142,7 +142,12 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
 
   /// Hand-offs happen outside the queue; record them so the row can say so.
   func recordHandOff(of app: App) {
-    history?.record(UpdateHistoryEntry(before: app.bundle, after: app.bundle, outcome: .handedOff))
+    // The window's hand-off actions open their target directly.
+    let note = HandOffNote(
+      destination: app.externalUpdaterName ?? app.name, reason: "Opened from Updater.",
+      opened: true, blockedByPolicy: false)
+    history?.record(
+      UpdateHistoryEntry(before: app.bundle, after: app.bundle, outcome: .handedOff, handOff: note))
   }
 
   /// Called by the job as it finishes, before its terminal state is published.
@@ -153,7 +158,9 @@ class UpdateQueue: OperationQueue, @unchecked Sendable {
     guard let outcome = Self.outcome(of: operation, before: before, after: after) else {
       return nil
     }
-    history?.record(UpdateHistoryEntry(before: before, after: after, outcome: outcome))
+    history?.record(
+      UpdateHistoryEntry(
+        before: before, after: after, outcome: outcome, handOff: operation.handOffNote))
     return outcome
   }
 
@@ -361,7 +368,7 @@ struct UpdateJobRecord: Sendable {
   let cancelled: Bool
   let failure: String?
   /// Where a hand-off sends the user and whether anything was opened.
-  let handOff: UpdateOperation.HandOffNote?
+  let handOff: HandOffNote?
 }
 
 /// A job as automation sees it: `state` while it is queued or running, `record` once it ended.

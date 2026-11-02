@@ -176,6 +176,10 @@ struct CatalogueInstallCheck: Sendable {
   var isWritable: @Sendable (_ folder: URL) -> Bool = {
     FileManager.default.isWritableFile(atPath: $0.path)
   }
+  /// Whether brew owns the app; anything but a confirmed `notOwned` refuses (R5B-001).
+  var ownership: @Sendable (_ app: URL, _ fresh: Bool) async -> CaskOwnership = {
+    await Homebrew.shared.ownership(of: $0, fresh: $1)
+  }
   /// Gatekeeper's verdict on the staged candidate (notarised, or otherwise accepted).
   var assess: @Sendable (_ app: URL) async throws -> Void = { app in
     _ = try await InstallerCommand.run(
@@ -190,6 +194,7 @@ struct CatalogueInstallCheck: Sendable {
     catalogueVersion: Version
   ) async -> (token: String, release: AppDownloadRelease)? {
     guard bundle.version.comparisonForUpdate(to: catalogueVersion) == .older,
+      await ownership(bundle.fileURL, false) == .notOwned,
       let token = try? CatalogueInstall.token(
         for: bundle.bundleIdentifier, candidates: candidateTokens),
       // The version shown came from name matching; a different cask would install something

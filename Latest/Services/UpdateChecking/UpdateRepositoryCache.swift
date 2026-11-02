@@ -110,20 +110,27 @@ final class UpdateRepositoryCache: Sendable {
 }
 
 struct UpdateRepositoryCompactIndex: Codable, Sendable {
-  static let currentSchemaVersion = 2
+  /// 3: adds the identity index, built from every cask (Round 5b, R5B-002).
+  static let currentSchemaVersion = 3
 
   let schemaVersion: Int
   let sourceFingerprint: Data
   let sourceByteCount: Int
   let sourceEntryCount: Int
   let records: [UpdateRepository.Entry.CompactRecord]
+  /// Bundle ID → every cask with identifier evidence, including casks without app names.
+  let identityIndex: [String: [String]]
 
-  init(sourceData: Data, sourceEntryCount: Int, entries: [UpdateRepository.Entry]) {
+  init(
+    sourceData: Data, sourceEntryCount: Int, entries: [UpdateRepository.Entry],
+    identityIndex: [String: Set<String>] = [:]
+  ) {
     self.schemaVersion = Self.currentSchemaVersion
     self.sourceFingerprint = Self.fingerprint(sourceData)
     self.sourceByteCount = sourceData.count
     self.sourceEntryCount = sourceEntryCount
     self.records = entries.map(\.compactRecord)
+    self.identityIndex = identityIndex.mapValues { $0.sorted() }
   }
 
   func matches(_ sourceData: Data) -> Bool {

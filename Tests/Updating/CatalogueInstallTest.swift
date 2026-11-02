@@ -115,7 +115,8 @@ final class CatalogueInstallTest: XCTestCase {
       fetchCask: { _ in
         calls.fetches.withLock { $0 += 1 }
         return cask
-      }, copies: walk(scene), isWritable: { _ in true }, assess: { _ in })
+      }, copies: walk(scene), isWritable: { _ in true }, ownership: { _, _ in .notOwned },
+      assess: { _ in })
     transform(&check)
     let operation = AppDownloadUpdateOperation(
       app: scene.bundle,
@@ -415,7 +416,8 @@ final class CatalogueInstallTest: XCTestCase {
     let scene = try scene()
     let data = try cask(url: "https://example.com/a.zip", sha256: String(repeating: "a", count: 64))
     let check = CatalogueInstallCheck(
-      fetchCask: { _ in data }, copies: walk(scene), isWritable: { _ in true }, assess: { _ in })
+      fetchCask: { _ in data }, copies: walk(scene), isWritable: { _ in true },
+      ownership: { _, _ in .notOwned }, assess: { _ in })
     let newer = Version(versionNumber: "1.1", buildNumber: nil)
     func plan(
       _ check: CatalogueInstallCheck, tokens: [String] = ["fixture"], matched: String = "fixture"
@@ -441,6 +443,74 @@ final class CatalogueInstallTest: XCTestCase {
     noCheck.fetchCask = { _ in noCheckData }
     let unverifiable = await plan(noCheck)
     XCTAssertNil(unverifiable)
+  }
+
+  // MARK: Sol's inspection (R5B)
+
+  /// R5B-001: an ownership query that fails is unknown, not "not owned": no catalogue
+  /// decision and no replacement, rechecked freshly right before replacing.
+  func testFailedBrewOwnershipQueryNeverAllowsADirectReplacement() async throws {
+    let scene = try scene()
+    let failing = try disposableDirectory().appendingPathComponent("brew")
+    try "#!/bin/sh\nexit 1\n".write(to: failing, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: failing.path)
+    let brew = Homebrew(brew: failing, logDirectory: try disposableDirectory())
+    let unknown = await brew.ownership(of: scene.installed, fresh: true)
+    XCTAssertEqual(unknown, .unknown)
+    let none = await Homebrew(brew: nil).ownership(of: scene.installed)
+    XCTAssertEqual(none, .notOwned, "no brew installed: nothing can own it")
+
+    let data = try cask(url: "https://example.com/a.zip", sha256: String(repeating: "a", count: 64))
+    let check = CatalogueInstallCheck(
+      fetchCask: { _ in data }, copies: walk(scene), isWritable: { _ in true },
+      ownership: { app, fresh in await brew.ownership(of: app, fresh: fresh) }, assess: { _ in })
+    let decided = await check.plan(
+      for: scene.bundle, candidateTokens: ["fixture"], matchedToken: "fixture",
+      catalogueVersion: Version(versionNumber: "1.1", buildNumber: nil))
+    XCTAssertNil(decided, "unknown ownership offers no install")
+
+    // Offered while brew answered, then the fresh query before replacing fails.
+    let server = try await LocalFileServer.start(serving: scene.payloads)
+    defer { server.stop() }
+    let (name, hash) = try payload(in: scene, kind: .zip)
+    let before = try FixtureApp.digest(scene.installed)
+    let record = try await install(
+      scene,
+      cask: try cask(url: server.baseURL.appendingPathComponent(name).absoluteString, sha256: hash),
+      check: {
+        $0.ownership = { app, fresh in
+          fresh ? await brew.ownership(of: app, fresh: true) : .notOwned
+        }
+      })
+    XCTAssertEqual(record.outcome, .handedOff)
+    XCTAssertEqual(record.handOff?.opened, false)
+    XCTAssertEqual(try FixtureApp.digest(scene.installed), before, "no direct replacement")
+  }
+
+  /// R5B-002: the identity index comes from every cask, including one without app names, and
+  /// survives the compact cache.
+  func testIdentityIndexCountsCasksWithoutAppNamesThroughLoadingAndTheCache() throws {
+    let catalogue = """
+      [
+        {"token": "fixture", "version": "1.1", "artifacts": [{"app": ["Fixture.app"]},
+          {"uninstall": [{"quit": "com.juniornkanabassi.updater-fixture"}]}], "depends_on": {}},
+        {"token": "fixture-suite", "version": "3", "artifacts": [{"pkg": ["Suite.pkg"]},
+          {"uninstall": [{"quit": "com.juniornkanabassi.updater-fixture"}]}], "depends_on": {}}
+      ]
+      """
+    let data = Data(catalogue.utf8)
+    let cache = UpdateRepositoryCompactIndexCache(
+      cacheURL: try disposableDirectory().appendingPathComponent("compact.plist"))
+    let fresh = try UpdateRepository.decodeCatalogue(data, cache: cache)
+    XCTAssertFalse(fresh.usedCompactIndex)
+    XCTAssertEqual(fresh.appEntries.map(\.token), ["fixture"], "name matching sees only app casks")
+    XCTAssertEqual(fresh.identityIndex[identifier], ["fixture", "fixture-suite"])
+    let cached = try UpdateRepository.decodeCatalogue(data, cache: cache)
+    XCTAssertTrue(cached.usedCompactIndex)
+    XCTAssertEqual(cached.identityIndex, fresh.identityIndex)
+    XCTAssertThrowsError(
+      try CatalogueInstall.token(
+        for: identifier, candidates: Array(cached.identityIndex[identifier] ?? [])))
   }
 
   /// Opt-in, read-only: which apps on this Mac the catalogue rules would install today. It reads
