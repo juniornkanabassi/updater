@@ -132,7 +132,7 @@ struct LatestCommands: Commands {
       .keyboardShortcut("f")
     }
 
-    CommandMenu("View Options") {
+    CommandGroup(after: .sidebar) {
       Menu("Sort By") {
         ForEach(AppListSettings.SortOptions.allCases, id: \.rawValue) { order in
           Button {
@@ -148,7 +148,7 @@ struct LatestCommands: Commands {
       }
 
       Toggle("Show Installed Apps", isOn: showInstalledApps)
-        .keyboardShortcut("i")
+        .keyboardShortcut("l", modifiers: [.command, .shift])
       Toggle("Show Ignored Apps", isOn: showIgnoredApps)
         .keyboardShortcut("i", modifiers: [.command, .shift])
     }

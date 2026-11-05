@@ -183,14 +183,14 @@ struct ReleaseNotesHeaderView: View {
 
       VStack(alignment: .leading, spacing: 0) {
         Text(app.name)
-          .font(.system(size: 15, weight: .semibold))
+          .font(.title3.weight(.semibold))
           .lineLimit(1)
           .truncationMode(.tail)
           .offset(y: VisualMetrics.detailTitleVerticalCorrection)
           .frame(height: 19)
 
         Text(versionLine)
-          .font(.system(size: 11).monospacedDigit())
+          .font(.subheadline.monospacedDigit())
           .foregroundStyle(Color(nsColor: .secondaryLabelColor))
           .offset(y: VisualMetrics.detailMetadataLineVerticalCorrection)
           .lineLimit(1)
@@ -201,7 +201,7 @@ struct ReleaseNotesHeaderView: View {
         if let date = app.latestUpdateDate {
           GeometryReader { geometry in
             Text("Released \(date.formatted(.dateTime.year().month(.wide).day()))")
-              .font(.system(size: 11))
+              .font(.subheadline)
               .foregroundStyle(Color(nsColor: .secondaryLabelColor))
               .lineLimit(1)
               .offset(y: geometry.size.height + VisualMetrics.detailMetadataLineVerticalCorrection)
@@ -249,12 +249,12 @@ private struct UpdateSummaryView: View {
   let updating: any AppUpdating
 
   var body: some View {
-    HStack(alignment: .firstTextBaseline, spacing: 8) {
+    HStack(alignment: .firstTextBaseline, spacing: Space.sm) {
       Image(systemName: symbol)
         .foregroundStyle(tint)
         .frame(width: 16)
         .accessibilityHidden(true)
-      VStack(alignment: .leading, spacing: 8) {
+      VStack(alignment: .leading, spacing: Space.sm) {
         Text(sentence)
           .fixedSize(horizontal: false, vertical: true)
           .textSelection(.enabled)
@@ -270,9 +270,9 @@ private struct UpdateSummaryView: View {
       }
       .frame(maxWidth: .infinity, alignment: .leading)
     }
-    .font(.system(size: 13))
+    .font(.body)
     .padding(.horizontal, VisualMetrics.detailHeaderHorizontalPadding)
-    .padding(.vertical, 12)
+    .padding(.vertical, Space.md)
     .accessibilityElement(children: .combine)
     .accessibilityIdentifier("detail.summary")
   }
@@ -340,9 +340,9 @@ private struct AppInfoPanel: View {
           row("Last update", lastResult.displaySummary)
         }
       }
-      .font(.system(size: 12))
+      .font(.callout)
       .padding(.horizontal, VisualMetrics.detailHeaderHorizontalPadding)
-      .padding(.vertical, 16)
+      .padding(.vertical, Space.lg)
       .frame(maxWidth: .infinity, alignment: .leading)
     }
     .accessibilityIdentifier("detail.info")
