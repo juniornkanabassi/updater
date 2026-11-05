@@ -50,6 +50,32 @@ export TEST_RUNNER_UPDATER_BUILD_DIR="$BUILD_DIR"
 RUN_ID="$(date +%Y%m%d-%H%M%S)-$$"
 mkdir -p "$BUILD_DIR" "$MODULE_CACHE"
 
+# cfprefsd can recreate empty plists as the test process exits. Remove only the
+# UUID suites this invocation records, after every test writer has stopped.
+DEFAULTS_MANIFEST="$(mktemp "$BUILD_DIR/test-defaults.XXXXXX")"
+export UPDATER_TEST_DEFAULTS_MANIFEST="$DEFAULTS_MANIFEST"
+export TEST_RUNNER_UPDATER_TEST_DEFAULTS_MANIFEST="$DEFAULTS_MANIFEST"
+cleanup_test_defaults() {
+  local result=$?
+  /usr/bin/python3 - "$DEFAULTS_MANIFEST" <<'PY_CLEANUP' || result=1
+from pathlib import Path
+import subprocess
+import sys
+import uuid
+
+manifest = Path(sys.argv[1])
+for name in set(manifest.read_text().splitlines()):
+    uuid.UUID(name.rsplit(".", 1)[-1])
+    if "/" in name:
+        raise ValueError("Invalid test defaults domain")
+    subprocess.run(["/usr/bin/defaults", "delete", name], capture_output=True)
+    (Path.home() / "Library/Preferences" / (name + ".plist")).unlink(missing_ok=True)
+manifest.unlink()
+PY_CLEANUP
+  exit "$result"
+}
+trap cleanup_test_defaults EXIT
+
 /usr/bin/python3 -m unittest discover -s "$ROOT_DIR/script/tests"
 "$ROOT_DIR/script/check_structure.sh"
 # The main list keeps its measured geometry; grid-check the migrated Settings views only.

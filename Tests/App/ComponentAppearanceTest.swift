@@ -54,7 +54,11 @@ private enum AppearanceFixtureRenderer {
     .appendingPathComponent("macos-26", isDirectory: true)
 
   static func render(_ scenario: AppearanceFixtureScenario) async throws -> NSBitmapImageRep {
-    let rootView = AppearanceFixtureView(scenario: scenario)
+    let suite = "LocationsAppearanceFixture.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removeTestPersistentDomain(forName: suite) }
+    let rootView = AppearanceFixtureView(
+      scenario: scenario, settings: AppListSettings(userDefaults: defaults))
     let hostingView = NSHostingView(rootView: rootView)
     hostingView.frame = CGRect(origin: .zero, size: scenario.size)
 

@@ -119,7 +119,7 @@ final class AppDependencyBoundaryTest: XCTestCase {
 
   func testSnapshotUsesInjectedSettingsInsteadOfGlobalPreferences() throws {
     let (settings, defaults, suiteName) = try makeSettings()
-    defer { defaults.removePersistentDomain(forName: suiteName) }
+    defer { defaults.removeTestPersistentDomain(forName: suiteName) }
     settings.includeUnsupportedApps = false
 
     let app = makeApp(source: .none)
@@ -138,7 +138,7 @@ final class AppDependencyBoundaryTest: XCTestCase {
 
   func testUpdatesViewModelRoutesWorkspaceAndStoreActionsThroughInjectedBoundaries() throws {
     let (settings, defaults, suiteName) = try makeSettings()
-    defer { defaults.removePersistentDomain(forName: suiteName) }
+    defer { defaults.removeTestPersistentDomain(forName: suiteName) }
     let app = makeApp(source: .sparkle)
     let provider = StubAppProvider(apps: [app])
     let workspace = StubApplicationWorkspace()
@@ -162,7 +162,7 @@ final class AppDependencyBoundaryTest: XCTestCase {
 
   func testSelectedAppUsesFreshObjectAfterProviderRefresh() throws {
     let (settings, defaults, suiteName) = try makeSettings()
-    defer { defaults.removePersistentDomain(forName: suiteName) }
+    defer { defaults.removeTestPersistentDomain(forName: suiteName) }
     settings.showInstalledUpdates = true
     let original = makeApp(source: .sparkle)
     let refreshed = original.with(ignoredState: true)
@@ -191,7 +191,7 @@ final class AppDependencyBoundaryTest: XCTestCase {
 
   func testCommandsUseInjectedPreferences() throws {
     let (settings, defaults, suiteName) = try makeSettings()
-    defer { defaults.removePersistentDomain(forName: suiteName) }
+    defer { defaults.removeTestPersistentDomain(forName: suiteName) }
     let commands = AppCommands(
       updateCheckingService: StubUpdateCheckingCommands(),
       updatesListViewModel: UpdatesListViewModel(
@@ -218,7 +218,7 @@ final class AppDependencyBoundaryTest: XCTestCase {
   private func makeSettings() throws -> (AppListSettings, UserDefaults, String) {
     let suiteName = "AppDependencyBoundaryTest.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-    defaults.removePersistentDomain(forName: suiteName)
+    defaults.removeTestPersistentDomain(forName: suiteName)
     return (AppListSettings(userDefaults: defaults), defaults, suiteName)
   }
 

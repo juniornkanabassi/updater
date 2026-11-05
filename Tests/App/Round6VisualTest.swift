@@ -21,7 +21,7 @@ final class Round6VisualTest: XCTestCase {
     }
     let defaultsName = "Round6Snapshots.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: defaultsName))
-    defer { defaults.removePersistentDomain(forName: defaultsName) }
+    defer { defaults.removeTestPersistentDomain(forName: defaultsName) }
     let settings = try isolatedAppListSettings(for: self)
     settings.sortOrder = .updateDate
     let fixture = Round6Fixture(defaults: defaults)

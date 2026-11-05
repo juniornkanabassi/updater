@@ -15,7 +15,7 @@ final class AppListSnapshotTest: XCTestCase {
   func testUnknownPersistedSortOrderFallsBackToDate() throws {
     let suite = "AppListSnapshotTest.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite) }
+    defer { defaults.removeTestPersistentDomain(forName: suite) }
     let settings = AppListSettings(userDefaults: defaults)
     for value in [-1, 99] {
       defaults.set(value, forKey: "SortOptionsKey")

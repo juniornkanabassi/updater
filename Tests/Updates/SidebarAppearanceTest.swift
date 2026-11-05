@@ -13,7 +13,7 @@ final class SidebarAppearanceTest: XCTestCase {
     let settings = try isolatedAppListSettings(for: self)
     let suite = "SidebarVersions.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite) }
+    defer { defaults.removeTestPersistentDomain(forName: suite) }
     let store = AppDataStore(userDefaults: defaults)
     let installed = makeTestApp(name: "Chrome", version: "154.0.8037.98")
     _ = store.set(appBundle: installed.bundle)

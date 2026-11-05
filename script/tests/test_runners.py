@@ -1,4 +1,6 @@
 import os
+import plistlib
+import uuid
 from pathlib import Path
 import shutil
 import subprocess
@@ -14,6 +16,7 @@ class RunnerArgumentsTest(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
+        (self.root / "scratch").mkdir()
         self.script = self.root / "script"
         self.script.mkdir()
         (self.script / "tests").mkdir()
@@ -50,6 +53,25 @@ class RunnerArgumentsTest(unittest.TestCase):
     def run_script(self, name, *arguments):
         return subprocess.run([str(self.script / name), *arguments], env=self.environment,
                               capture_output=True, text=True, timeout=5)
+
+    def test_failed_run_removes_only_its_recorded_preference_files(self):
+        domain = "UpdaterRunnerTest." + str(uuid.uuid4())
+        preferences = Path.home() / "Library/Preferences"
+        recorded = preferences / (domain + ".plist")
+        unrelated = preferences / ("UpdaterRunnerTest." + str(uuid.uuid4()) + ".plist")
+        for path in (recorded, unrelated):
+            path.write_bytes(plistlib.dumps({}))
+            self.addCleanup(path.unlink, missing_ok=True)
+        xcodebuild = self.root / "bin/xcodebuild"
+        xcodebuild.write_text(
+            '#!/bin/bash\n'
+            f'printf "%s\\n" "{domain}" >> "$TEST_RUNNER_UPDATER_TEST_DEFAULTS_MANIFEST"\n'
+            'exit 42\n')
+        result = self.run_script("test.sh")
+        self.assertEqual(result.returncode, 42, result.stderr)
+        self.assertFalse(recorded.exists())
+        self.assertTrue(unrelated.exists())
+        self.assertEqual(list((self.root / "scratch").glob("test-defaults.*")), [])
 
     def test_build_help_and_invalid_arguments_have_no_side_effects(self):
         for arguments, status in ((["--help"], 0), (["typo"], 2),

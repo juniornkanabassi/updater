@@ -1,4 +1,5 @@
 {
+  "0.9.0": "Updater 0.9.0\n\n• Uses standard Settings tabs and adds Undo and Redo for removed scan locations.\n• Moves appearance controls to the View menu and improves detail text styles.\n• Preserves saved location order and native table scrolling.\n• Cleans up temporary test preferences after each run.",
   "0.58": "Latest Dev 0.58\n\n• Improved refresh behavior and release-note cache handling.\n• Simplified app-list state and reduced unnecessary work during updates.",
   "0.59": "Latest Dev 0.59\n\n• Added offline release notes for Latest Dev.\n• Fixed release-note margins shifting when switching apps or scrolling.\n• Aligned app names and versions consistently when a release date is displayed.",
   "0.60": "Latest Dev 0.60\n\n• Unified release-note typography, spacing, lists, links, and code formatting.\n• Expanded release-note coverage and improved version and platform selection.\n• Fixed BetterDisplay release notes when GitHub limits API requests.\n• Replaced internal fetch errors with readable messages.",

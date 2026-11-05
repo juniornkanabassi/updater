@@ -143,6 +143,7 @@ enum AppearanceFixtureMetrics {
 
 struct AppearanceFixtureView: View {
   let scenario: AppearanceFixtureScenario
+  let settings: AppListSettings
 
   var body: some View {
     content
@@ -175,7 +176,7 @@ struct AppearanceFixtureView: View {
       }
       .background(.background)
     case .locations:
-      LocationsFixture()
+      LocationsFixture(settings: settings)
     }
   }
 }
@@ -260,16 +261,17 @@ private struct LocationsFixture: View {
     fileURLWithPath: "/Volumes/Archived Applications", isDirectory: true)
   private static let urls = [applicationsURL, utilitiesURL, archiveURL]
 
-  @StateObject private var model: SettingsViewModel = {
+  @StateObject private var model: SettingsViewModel
+
+  init(settings: AppListSettings) {
     let model = SettingsViewModel(
-      settings: AppListSettings(
-        userDefaults: UserDefaults(suiteName: "LocationsAppearanceFixture.\(UUID().uuidString)")!),
+      settings: settings,
       installHelperService: HelperRegistrationFixture(),
-      directoryStoreFactory: { _ in AppearanceDirectoryStore(urls: urls) }
+      directoryStoreFactory: { _ in AppearanceDirectoryStore(urls: Self.urls) }
     )
-    model.selectedDirectory = applicationsURL
-    return model
-  }()
+    model.selectedDirectory = Self.applicationsURL
+    _model = StateObject(wrappedValue: model)
+  }
 
   var body: some View {
     LocationsSettingsView(viewModel: model, loadDetails: Self.loadDetails)

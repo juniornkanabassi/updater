@@ -75,6 +75,11 @@ if [[ -e "$DEST" ]]; then /bin/mv "$DEST" "$BACKUP"; fi
 [[ -n "${UPDATER_INSTALL_ROOT:-}" && -n "${UPDATER_INSTALL_TEST_PAUSE:-}" ]] && sleep "$UPDATER_INSTALL_TEST_PAUSE"  # test installs only: window to interrupt mid-replace
 if ! /bin/mv "$STAGE" "$DEST"; then print -u2 "Could not install $DEST."; exit 1; fi
 if ! verify_signed "$DEST"; then /bin/rm -rf "$DEST"; print -u2 "Installed signature failed to verify."; exit 1; fi
+# Keep the superseded local app in the Bin after the replacement verifies.
+if [[ -e "$BACKUP" && -z "${UPDATER_INSTALL_ROOT:-}" ]]; then
+  mkdir -p "$HOME/.Trash"
+  /bin/mv "$BACKUP" "$HOME/.Trash/Updater-$(date +%Y%m%d-%H%M%S)-$$.app"
+fi
 VERIFIED=1
 print "Installed Updater $(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$DEST/Contents/Info.plist") at $DEST"
 

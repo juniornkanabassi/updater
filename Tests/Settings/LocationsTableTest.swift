@@ -207,7 +207,7 @@ extension LocationsTableTest {
   func testRealDirectoryStoreRestoresMiddleLocationInIsolatedDefaults() throws {
     let suite = "DirectoryOrder.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite) }
+    defer { defaults.removeTestPersistentDomain(forName: suite) }
     let store = AppDirectoryStore(defaults: defaults, updateHandler: {})
     let urls = ["First", "Middle", "Last"].map {
       URL(fileURLWithPath: "/tmp/\(suite)/\($0)", isDirectory: true)
@@ -226,7 +226,7 @@ extension LocationsTableTest {
   func testRestoreOrderWithDuplicateStoredDefaultsAndCustomLocations() throws {
     let suite = "DuplicateDirectoryOrder.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite) }
+    defer { defaults.removeTestPersistentDomain(forName: suite) }
     let store = AppDirectoryStore(defaults: defaults, updateHandler: {})
     let urls = ["First", "Middle", "Last"].map {
       URL(fileURLWithPath: "/tmp/\(suite)/\($0)", isDirectory: true)

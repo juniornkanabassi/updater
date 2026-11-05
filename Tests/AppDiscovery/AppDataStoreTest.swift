@@ -36,7 +36,7 @@ final class AppDataStoreTest: XCTestCase {
   func testPendingSubscribersSeeCurrentResultsIgnoreStateAndReplacementGeneration() async throws {
     let suite = "PendingDiscovery.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite) }
+    defer { defaults.removeTestPersistentDomain(forName: suite) }
     let store = AppDataStore(userDefaults: defaults)
     let first = makeBundle(versionNumber: "1", at: URL(fileURLWithPath: "/tmp/First.app"))
     let second = makeBundle(versionNumber: "1", at: URL(fileURLWithPath: "/tmp/Second.app"))
@@ -81,7 +81,7 @@ final class AppDataStoreTest: XCTestCase {
   func testReplacementAtSamePathDoesNotInheritAnotherProductOrSourcesUpdate() throws {
     let suite = "AppIdentity.\(UUID())"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite) }
+    defer { defaults.removeTestPersistentDomain(forName: suite) }
     let url = URL(fileURLWithPath: "/tmp/Replaced.app")
     for bulk in [false, true] {
       for changesIdentifier in [false, true] {
@@ -155,7 +155,7 @@ final class AppDataStoreTest: XCTestCase {
   func testIgnoredIdentifiersAreCachedAndPersistedWithAppState() throws {
     let suiteName = "AppDataStoreTest.\(UUID().uuidString)"
     let userDefaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-    defer { userDefaults.removePersistentDomain(forName: suiteName) }
+    defer { userDefaults.removeTestPersistentDomain(forName: suiteName) }
 
     let store = AppDataStore(userDefaults: userDefaults)
     let appURL = URL(
@@ -194,7 +194,7 @@ final class AppDataStoreTest: XCTestCase {
   func testIgnoringStaleAppPreservesLatestBundleAndUpdate() throws {
     let suiteName = "AppDataStoreTest.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-    defer { defaults.removePersistentDomain(forName: suiteName) }
+    defer { defaults.removeTestPersistentDomain(forName: suiteName) }
     let store = AppDataStore(userDefaults: defaults)
     let url = URL(fileURLWithPath: "/Applications/Stale.app")
     let original = store.set(appBundle: makeBundle(versionNumber: "1.0", at: url))
@@ -215,7 +215,7 @@ final class AppDataStoreTest: XCTestCase {
   func testIgnoreAppliesToEveryInstalledCopyWithoutRestoringRemovedApps() throws {
     let suiteName = "AppDataStoreTest.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-    defer { defaults.removePersistentDomain(forName: suiteName) }
+    defer { defaults.removeTestPersistentDomain(forName: suiteName) }
     let store = AppDataStore(userDefaults: defaults)
     let bundles = ["First", "Second"].map { name in
       App.Bundle(

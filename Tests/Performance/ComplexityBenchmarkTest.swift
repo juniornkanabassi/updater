@@ -23,7 +23,7 @@ final class ComplexityBenchmarkTest: XCTestCase {
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
     defer {
       try? FileManager.default.removeItem(at: directory)
-      defaults.removePersistentDomain(forName: suiteName)
+      defaults.removeTestPersistentDomain(forName: suiteName)
     }
 
     let cache = UpdateRepositoryCache(

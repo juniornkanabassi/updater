@@ -14,7 +14,7 @@ final class SidebarInteractionTest: XCTestCase {
     let settings = try isolatedAppListSettings(for: self)
     let suite = "SupportStatus.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite) }
+    defer { defaults.removeTestPersistentDomain(forName: suite) }
     let store = AppDataStore(userDefaults: defaults)
     let bundle = App.Bundle(
       version: Version(versionNumber: "1", buildNumber: nil), name: "Pending support",
@@ -74,7 +74,7 @@ final class SidebarInteractionTest: XCTestCase {
     try requireUITests()
     let suite = "StartupRows.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite) }
+    defer { defaults.removeTestPersistentDomain(forName: suite) }
     let settings = AppListSettings(userDefaults: defaults)
     settings.sortOrder = .name
     let store = AppDataStore(userDefaults: defaults)
@@ -252,7 +252,7 @@ final class SidebarInteractionTest: XCTestCase {
     let app = makeTestApp(name: "Example", version: "1")
     let suite = "SidebarSupport.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite) }
+    defer { defaults.removeTestPersistentDomain(forName: suite) }
     let settings = AppListSettings(userDefaults: defaults)
     settings.showInstalledUpdates = true
     let store = AppDataStore(userDefaults: defaults)

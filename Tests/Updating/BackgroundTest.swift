@@ -59,7 +59,7 @@ final class BackgroundTest: XCTestCase {
   func testIntervalSettingDefaultsToFourHours() throws {
     let suite = "BackgroundTest.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite) }
+    defer { defaults.removeTestPersistentDomain(forName: suite) }
     XCTAssertEqual(BackgroundCheckInterval.current(in: defaults).seconds, 4 * 3600)
     defaults.set(0, forKey: BackgroundCheckInterval.storageKey)
     XCTAssertNil(BackgroundCheckInterval.current(in: defaults).seconds)
@@ -79,7 +79,7 @@ final class BackgroundTest: XCTestCase {
   func testOnlyNewUpdatesNotifyAndOnlyManualChecksStayQuiet() async throws {
     let suite = "BackgroundTest.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite) }
+    defer { defaults.removeTestPersistentDomain(forName: suite) }
     let notifier = RecordingNotifier()
     let controller = UpdateNotificationController(notifier: notifier, defaults: defaults)
     let warp = makeTestApp(name: "Warp", version: "1", remoteVersion: "2")
@@ -173,8 +173,11 @@ final class BackgroundTest: XCTestCase {
     XCTAssertEqual(completions.first?.apps.map(\.fileURL), [second.fileURL])
   }
 
-  func testStoreFinishReturnsOnlyItsOwnGenerationsInventory() {
-    let store = AppDataStore(userDefaults: UserDefaults(suiteName: "BackgroundTest.\(UUID())")!)
+  func testStoreFinishReturnsOnlyItsOwnGenerationsInventory() throws {
+    let suite = "BackgroundTest.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removeTestPersistentDomain(forName: suite) }
+    let store = AppDataStore(userDefaults: defaults)
     let first = makeTestApp(name: "First", version: "1").bundle
     let second = makeTestApp(name: "Second", version: "1").bundle
     store.beginUpdateCheck(generation: 1)

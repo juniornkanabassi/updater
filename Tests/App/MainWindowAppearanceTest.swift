@@ -30,7 +30,7 @@ final class MainWindowAppearanceTest: XCTestCase {
       for state in ["initial", "selection", "search", "downloading", "pinned"] {
         let suite = "MainWindowAppearance.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
+        defer { defaults.removeTestPersistentDomain(forName: suite) }
         let settings = AppListSettings(userDefaults: defaults)
         let apps = LocalUATFixture.apps
         let model = UpdatesListViewModel(
