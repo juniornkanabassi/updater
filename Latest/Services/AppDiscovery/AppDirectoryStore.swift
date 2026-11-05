@@ -13,19 +13,26 @@ typealias AppDirectoryUpdateHandler = @MainActor @Sendable () -> Void
 protocol AppDirectoryStoring: AnyObject {
   var URLs: [URL] { get }
   func add(_ url: URL)
+  func insert(_ url: URL, at index: Int)
   func remove(_ url: URL)
   func canRemove(_ url: URL) -> Bool
   func isReachable(_ url: URL) -> Bool
+}
+
+extension AppDirectoryStoring {
+  func insert(_ url: URL, at index: Int) { add(url) }
 }
 
 /// Object that takes care of storing and observing application directories.
 final class AppDirectoryStore: AppDirectoryStoring {
 
   private let observer: NSKeyValueObservation?
+  private let defaults: UserDefaults
 
   /// Initializes the store with the given update handler.
-  init(updateHandler: @escaping AppDirectoryUpdateHandler) {
-    observer = UserDefaults.standard.observe(
+  init(defaults: UserDefaults = .standard, updateHandler: @escaping AppDirectoryUpdateHandler) {
+    self.defaults = defaults
+    observer = defaults.observe(
       \.directoryPaths,
       changeHandler: { _, _ in
         Task { @MainActor in
@@ -57,7 +64,7 @@ final class AppDirectoryStore: AppDirectoryStoring {
   /// User-definable URLs.
   private var customURLs: [URL] {
     get {
-      guard let paths = UserDefaults.standard.directoryPaths else { return [] }
+      guard let paths = defaults.directoryPaths else { return [] }
 
       return paths.map { path in
         URL(filePath: path, directoryHint: .isDirectory, relativeTo: nil)
@@ -65,7 +72,7 @@ final class AppDirectoryStore: AppDirectoryStoring {
     }
 
     set {
-      UserDefaults.standard.directoryPaths = newValue.map { $0.relativePath }
+      defaults.directoryPaths = newValue.map { $0.relativePath }
     }
   }
 
@@ -78,6 +85,16 @@ final class AppDirectoryStore: AppDirectoryStoring {
     // Ignore adding the same URL multiple times
     guard !URLs.contains(url) else { return }
     customURLs.append(url)
+  }
+
+  func insert(_ url: URL, at index: Int) {
+    guard !URLs.contains(url) else { return }
+    // Stored preferences can repeat defaults or custom folders; index the visible list.
+    let defaults = Set(Self.defaultURLs.map(\.standardizedFileURL))
+    var urls = customURLs.filter { !defaults.contains($0.standardizedFileURL) }.deduplicated()
+    let defaultCount = Self.defaultURLs.count
+    urls.insert(url, at: min(max(0, index - defaultCount), urls.count))
+    customURLs = urls
   }
 
   /// Removes the custom URL, if set.

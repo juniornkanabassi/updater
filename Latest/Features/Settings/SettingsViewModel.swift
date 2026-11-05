@@ -112,11 +112,29 @@ final class SettingsViewModel: ObservableObject {
     refreshDirectories()
   }
 
-  func removeSelectedDirectory() {
+  func removeSelectedDirectory(undoManager: UndoManager? = nil) {
     guard let selectedDirectory, directoryStore.canRemove(selectedDirectory) else { return }
-    directoryStore.remove(selectedDirectory)
-    self.selectedDirectory = nil
+    setDirectory(
+      selectedDirectory, present: false,
+      index: directoryURLs.firstIndex(of: selectedDirectory) ?? directoryURLs.count,
+      undoManager: undoManager)
+  }
+
+  private func setDirectory(_ url: URL, present: Bool, index: Int, undoManager: UndoManager?) {
+    if present {
+      guard !directoryStore.URLs.contains(url) else { return }
+      directoryStore.insert(url, at: index)
+      selectedDirectory = url
+    } else {
+      guard directoryStore.canRemove(url) else { return }
+      directoryStore.remove(url)
+      selectedDirectory = nil
+    }
     refreshDirectories()
+    undoManager?.registerUndo(withTarget: self) { [weak undoManager] target in
+      target.setDirectory(url, present: !present, index: index, undoManager: undoManager)
+    }
+    undoManager?.setActionName("Remove Location")
   }
 
   /// Refreshes locations and clears selection when its directory was removed.
