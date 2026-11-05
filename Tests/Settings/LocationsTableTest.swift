@@ -70,7 +70,7 @@ private final class SelectionBox {
 
 extension LocationsTableTest {
   @MainActor
-  func testLocationsFormProvidesScrollableViewportOffscreen() async throws {
+  func testLocationsPaneHasOnlyTheTableScrollViewOffscreen() async throws {
     let store = UndoDirectoryStore()
     for index in 0..<30 {
       store.add(URL(fileURLWithPath: "/tmp/LocationWheelFixture/Folder-\(index)"))
@@ -96,6 +96,11 @@ extension LocationsTableTest {
     let table = try XCTUnwrap(locationsTable(in: host))
     XCTAssertEqual(table.numberOfRows, model.directoryURLs.count)
     let scroll = try XCTUnwrap(table.enclosingScrollView)
+    var ancestor = scroll.superview
+    while let view = ancestor {
+      XCTAssertFalse(view is NSScrollView, "The table must not sit inside a second scroll view")
+      ancestor = view.superview
+    }
     XCTAssertGreaterThan(table.bounds.height, scroll.contentView.bounds.height)
     let lastRow = table.rect(ofRow: table.numberOfRows - 1)
     // Offscreen windows do not route wheel events; verify the available scroll range.
@@ -103,6 +108,99 @@ extension LocationsTableTest {
     scroll.reflectScrolledClipView(scroll.contentView)
     XCTAssertGreaterThan(scroll.contentView.bounds.minY, 0)
     XCTAssertTrue(scroll.documentVisibleRect.intersects(lastRow))
+  }
+
+  @MainActor
+  func testSettingsWindowRoutesRemoveUndoAndRedoThroughItsOwnUndoManager() async throws {
+    let store = UndoDirectoryStore()
+    let model = SettingsViewModel(
+      settings: try isolatedAppListSettings(for: self),
+      installHelperService: HelperRegistrationFixture(), directoryStoreFactory: { _ in store })
+    model.selectedTab = .locations
+    model.selectedDirectory = store.custom
+    let permissions = PermissionsViewModel(probes: [:], history: { [] })
+    let host = NSHostingView(
+      rootView: SettingsRootView(viewModel: model, permissionsModel: permissions))
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 520, height: 360),
+      styleMask: [.titled], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    window.contentView = host
+    defer { window.close() }
+    host.layoutSubtreeIfNeeded()
+    try await Task.sleep(for: .milliseconds(200))
+    let table = try XCTUnwrap(host.descendant(of: NSTableView.self))
+    XCTAssertTrue(window.makeFirstResponder(table))
+    let undo = try XCTUnwrap(window.undoManager)
+    XCTAssertFalse(undo.canUndo)
+    let original = model.directoryURLs
+    let enhancedAccessibility = NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface")
+    let previousAccessibility = NSApp.accessibilityAttributeValue(enhancedAccessibility) ?? false
+    NSApp.accessibilitySetValue(true, forAttribute: enhancedAccessibility)
+    defer {
+      NSApp.accessibilitySetValue(previousAccessibility, forAttribute: enhancedAccessibility)
+    }
+    var seen = Set<ObjectIdentifier>()
+    func removeButton(in value: Any) -> NSObject? {
+      guard let object = value as? NSObject,
+        seen.insert(ObjectIdentifier(object)).inserted
+      else { return nil }
+      let element = SidebarAccessibilityElement(object: object)
+      if element.accessibilityLabel() == "Remove Location" { return object }
+      for child in element.accessibilityChildren() ?? [] {
+        if let match = removeButton(in: child) { return match }
+      }
+      for child in (object as? NSView)?.subviews ?? [] {
+        if let match = removeButton(in: child) { return match }
+      }
+      return nil
+    }
+    let button = try XCTUnwrap(removeButton(in: window))
+    let press = NSSelectorFromString("accessibilityPerformPress")
+    XCTAssertTrue(button.responds(to: press))
+    // SwiftUI exposes virtual AX buttons, not NSButton instances.
+    typealias Press = @convention(c) (AnyObject, Selector) -> Bool
+    let performPress = unsafeBitCast(button.method(for: press), to: Press.self)
+    _ = performPress(button, press)
+    try await Task.sleep(for: .milliseconds(100))
+    XCTAssertFalse(model.directoryURLs.contains(store.custom))
+    XCTAssertTrue(undo.canUndo, "The production button must register with the window's manager")
+    XCTAssertEqual(undo.undoActionName, "Remove Location")
+    let undoItem = NSMenuItem(
+      title: "Undo", action: NSSelectorFromString("undo:"), keyEquivalent: "z")
+    XCTAssertTrue(table.tryToPerform(try XCTUnwrap(undoItem.action), with: undoItem))
+    XCTAssertEqual(model.directoryURLs, original)
+    XCTAssertEqual(model.selectedDirectory, store.custom)
+    XCTAssertTrue(undo.canRedo)
+    let redoItem = NSMenuItem(
+      title: "Redo", action: NSSelectorFromString("redo:"), keyEquivalent: "Z")
+    XCTAssertTrue(table.tryToPerform(try XCTUnwrap(redoItem.action), with: redoItem))
+    XCTAssertFalse(model.directoryURLs.contains(store.custom))
+    XCTAssertFalse(window.isVisible, "The test must never order the Settings window on screen")
+  }
+
+  @MainActor
+  func testSettingsPermissionsModelIsCreatedOnceAcrossRootUpdates() async throws {
+    let store = UndoDirectoryStore()
+    let model = SettingsViewModel(
+      settings: try isolatedAppListSettings(for: self),
+      installHelperService: HelperRegistrationFixture(), directoryStoreFactory: { _ in store })
+    var creationCount = 0
+    func makePermissions() -> PermissionsViewModel {
+      creationCount += 1
+      return PermissionsViewModel(probes: [:], history: { [] })
+    }
+    let root = SettingsRootView(viewModel: model, permissionsModel: makePermissions())
+    XCTAssertEqual(creationCount, 0, "Constructing the root must not eagerly create the model")
+    let host = NSHostingView(rootView: root)
+    host.frame = NSRect(x: 0, y: 0, width: 520, height: 360)
+    host.layoutSubtreeIfNeeded()
+    try await Task.sleep(for: .milliseconds(100))
+    XCTAssertEqual(creationCount, 1)
+    host.rootView = SettingsRootView(viewModel: model, permissionsModel: makePermissions())
+    host.layoutSubtreeIfNeeded()
+    try await Task.sleep(for: .milliseconds(100))
+    XCTAssertEqual(creationCount, 1, "Rebuilding the root must reuse its StateObject")
   }
 
   @MainActor
@@ -135,10 +233,12 @@ extension LocationsTableTest {
     }
     defaults.directoryPaths = (store.URLs + [urls[0], urls[0], urls[1], urls[2]]).map(\.path)
     let original = store.URLs
+    let originalPaths = defaults.directoryPaths
     let index = try XCTUnwrap(original.firstIndex(of: urls[1]))
     store.remove(urls[1])
     store.insert(urls[1], at: index)
     XCTAssertEqual(store.URLs, original)
+    XCTAssertEqual(defaults.directoryPaths, originalPaths, "Undo must retain hidden saved entries")
   }
 
   @MainActor

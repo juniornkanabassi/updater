@@ -350,6 +350,9 @@ private final class LibraryDirectoryStore: AppDirectoryStoring, Sendable {
   init(urls: [URL]) { self.urls = Mutex(urls) }
   var URLs: [URL] { urls.withLock { $0 } }
   func add(_ url: URL) { urls.withLock { $0.append(url) } }
+  func insert(_ url: URL, at index: Int) {
+    urls.withLock { $0.insert(url, at: min(max(0, index), $0.count)) }
+  }
   func remove(_ url: URL) { urls.withLock { $0.removeAll { $0 == url } } }
   func canRemove(_ url: URL) -> Bool { true }
   func isReachable(_ url: URL) -> Bool { true }

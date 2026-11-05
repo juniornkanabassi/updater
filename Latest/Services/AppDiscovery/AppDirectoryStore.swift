@@ -19,10 +19,6 @@ protocol AppDirectoryStoring: AnyObject {
   func isReachable(_ url: URL) -> Bool
 }
 
-extension AppDirectoryStoring {
-  func insert(_ url: URL, at index: Int) { add(url) }
-}
-
 /// Object that takes care of storing and observing application directories.
 final class AppDirectoryStore: AppDirectoryStoring {
 
@@ -89,12 +85,22 @@ final class AppDirectoryStore: AppDirectoryStoring {
 
   func insert(_ url: URL, at index: Int) {
     guard !URLs.contains(url) else { return }
-    // Stored preferences can repeat defaults or custom folders; index the visible list.
-    let defaults = Set(Self.defaultURLs.map(\.standardizedFileURL))
-    var urls = customURLs.filter { !defaults.contains($0.standardizedFileURL) }.deduplicated()
-    let defaultCount = Self.defaultURLs.count
-    urls.insert(url, at: min(max(0, index - defaultCount), urls.count))
-    customURLs = urls
+    // Translate the visible index into stored paths without rewriting hidden duplicates.
+    var paths = defaults.directoryPaths ?? []
+    var seen = Set(Self.defaultURLs.map(\.standardizedFileURL))
+    var visibleIndex = Self.defaultURLs.count
+    var storageIndex = paths.endIndex
+    for (rawIndex, path) in paths.enumerated() {
+      let existing = URL(filePath: path, directoryHint: .isDirectory).standardizedFileURL
+      guard seen.insert(existing).inserted else { continue }
+      if visibleIndex >= index {
+        storageIndex = rawIndex
+        break
+      }
+      visibleIndex += 1
+    }
+    paths.insert(url.relativePath, at: storageIndex)
+    defaults.directoryPaths = paths
   }
 
   /// Removes the custom URL, if set.

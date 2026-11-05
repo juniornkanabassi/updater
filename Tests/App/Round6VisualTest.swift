@@ -10,16 +10,15 @@ import XCTest
 /// each render has content. PNGs are written under the isolated build directory.
 @MainActor
 final class Round6VisualTest: XCTestCase {
-  static let outputDirectory = URL(
-    fileURLWithPath:
-      ProcessInfo.processInfo.environment[
-        "UPDATER_BUILD_DIR", default: "\(FileManager.default.temporaryDirectory.path)/updater-tests"
-      ]
-  ).appendingPathComponent("snapshots")
+  static let outputDirectory = ProcessInfo.processInfo.environment["UPDATER_BUILD_DIR"].map {
+    URL(fileURLWithPath: $0).appendingPathComponent("snapshots")
+  }
 
   func testRendersMainWindowDetailStatesSettingsAndMenu() async throws {
-    try FileManager.default.createDirectory(
-      at: Self.outputDirectory, withIntermediateDirectories: true)
+    if let outputDirectory = Self.outputDirectory {
+      try FileManager.default.createDirectory(
+        at: outputDirectory, withIntermediateDirectories: true)
+    }
     let defaultsName = "Round6Snapshots.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: defaultsName))
     defer { defaults.removePersistentDomain(forName: defaultsName) }
@@ -281,12 +280,13 @@ final class Round6VisualTest: XCTestCase {
   }
 
   private func write(_ data: Data, name: String) throws {
+    guard let outputDirectory = Self.outputDirectory else { return }
     var isDirectory: ObjCBool = false
     guard
-      FileManager.default.fileExists(atPath: Self.outputDirectory.path, isDirectory: &isDirectory),
+      FileManager.default.fileExists(atPath: outputDirectory.path, isDirectory: &isDirectory),
       isDirectory.boolValue
     else { return }
-    try data.write(to: Self.outputDirectory.appendingPathComponent(name))
+    try data.write(to: outputDirectory.appendingPathComponent(name))
   }
 }
 
@@ -417,6 +417,7 @@ private struct Round6Fixture {
 private final class SnapshotDirectoryStore: AppDirectoryStoring {
   var URLs = [URL(fileURLWithPath: "/tmp/Fixture Apps", isDirectory: true)]
   func add(_ url: URL) { URLs.append(url) }
+  func insert(_ url: URL, at index: Int) { URLs.insert(url, at: min(max(0, index), URLs.count)) }
   func remove(_ url: URL) { URLs.removeAll { $0 == url } }
   func canRemove(_ url: URL) -> Bool { URLs.contains(url) }
   func isReachable(_ url: URL) -> Bool { false }

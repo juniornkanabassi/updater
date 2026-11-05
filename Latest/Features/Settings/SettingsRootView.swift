@@ -12,14 +12,14 @@ import SwiftUI
 
 struct SettingsRootView: View {
   @ObservedObject private var viewModel: SettingsViewModel
-  private let permissionsModel: PermissionsViewModel
+  @StateObject private var permissionsModel: PermissionsViewModel
 
   init(
     viewModel: SettingsViewModel = SettingsViewModel(),
-    permissionsModel: PermissionsViewModel = PermissionsViewModel()
+    permissionsModel: @autoclosure @escaping () -> PermissionsViewModel = PermissionsViewModel()
   ) {
     self.viewModel = viewModel
-    self.permissionsModel = permissionsModel
+    _permissionsModel = StateObject(wrappedValue: permissionsModel())
   }
 
   var body: some View {

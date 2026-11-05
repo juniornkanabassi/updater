@@ -133,8 +133,6 @@ enum AppearanceFixtureMetrics {
   static let minimumWindowSize = CGSize(width: 560, height: 360)
   static let sidebarWidth: CGFloat = 308
   static let detailHeaderHeight: CGFloat = 79
-  static let locationsContentSize = CGSize(width: 440, height: 296)
-  static let locationsTableSize = CGSize(width: 400, height: 200)
 
   static func detailFrame(in size: CGSize) -> CGRect {
     let sidebarWidth = min(self.sidebarWidth, size.width)
@@ -262,42 +260,22 @@ private struct LocationsFixture: View {
     fileURLWithPath: "/Volumes/Archived Applications", isDirectory: true)
   private static let urls = [applicationsURL, utilitiesURL, archiveURL]
 
-  // The synthesized $selection binding is consumed by SettingsLocationsPane.
-  // swiftlint:disable:next unused_declaration
-  @State private var selection: URL? = applicationsURL
+  @StateObject private var model: SettingsViewModel = {
+    let model = SettingsViewModel(
+      settings: AppListSettings(
+        userDefaults: UserDefaults(suiteName: "LocationsAppearanceFixture.\(UUID().uuidString)")!),
+      installHelperService: HelperRegistrationFixture(),
+      directoryStoreFactory: { _ in AppearanceDirectoryStore(urls: urls) }
+    )
+    model.selectedDirectory = applicationsURL
+    return model
+  }()
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      Text("Check apps from:")
-
-      DirectoryLocationsTable(
-        urls: Self.urls,
-        selection: $selection,
-        loadDetails: Self.loadDetails
-      )
-      .frame(
-        width: AppearanceFixtureMetrics.locationsTableSize.width,
-        height: AppearanceFixtureMetrics.locationsTableSize.height
-      )
-
-      ControlGroup {
-        Button("Add Location", systemImage: "plus") {}
-          .labelStyle(.iconOnly)
-        Button("Remove Location", systemImage: "minus") {}
-          .labelStyle(.iconOnly)
-      }
-      .controlSize(.small)
-      .fixedSize()
-    }
-    .padding(.horizontal, 20)
-    .padding(.top, 19)
-    .frame(
-      width: AppearanceFixtureMetrics.locationsContentSize.width,
-      height: AppearanceFixtureMetrics.locationsContentSize.height,
-      alignment: .topLeading
-    )
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .background(.background)
+    LocationsSettingsView(viewModel: model, loadDetails: Self.loadDetails)
+      .frame(width: 520)
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      .background(.background)
   }
 
   private static func loadDetails(for url: URL) async -> DirectoryLocationDetails {
@@ -311,4 +289,14 @@ private struct LocationsFixture: View {
       return DirectoryLocationDetails(isReachable: true, appCount: 38)
     }
   }
+}
+
+private final class AppearanceDirectoryStore: AppDirectoryStoring {
+  var URLs: [URL]
+  init(urls: [URL]) { URLs = urls }
+  func add(_ url: URL) { if !URLs.contains(url) { URLs.append(url) } }
+  func insert(_ url: URL, at index: Int) { URLs.insert(url, at: min(max(0, index), URLs.count)) }
+  func remove(_ url: URL) { URLs.removeAll { $0 == url } }
+  func canRemove(_ url: URL) -> Bool { URLs.contains(url) }
+  func isReachable(_ url: URL) -> Bool { false }
 }

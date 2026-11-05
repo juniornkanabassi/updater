@@ -72,7 +72,7 @@ Obsidian's installed version comes from its ASAR payload; Delta's comes from val
 `./script/test.sh --integration` writes light and dark fixture PNGs for the main content,
 detail states, Settings tabs, About and Licences to `$UPDATER_BUILD_DIR/snapshots`
 (default `build/snapshots`). The runner forwards this path to the test host.
-Direct Xcode runs fall back to `$TMPDIR/updater-tests/snapshots`.
+Direct Xcode runs render the same checks without saving PNGs unless `UPDATER_BUILD_DIR` is set.
 The main-content fixture uses the production sidebar and detail surface with disposable data;
 it does not render the root window chrome. Offscreen captures cannot establish active-window
 appearance or keyboard behaviour. Keep existing visual baselines until a same-system
