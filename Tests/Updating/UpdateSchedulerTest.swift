@@ -247,11 +247,15 @@ final class UpdateSchedulerTest: XCTestCase {
 
     func run(_ body: @escaping @Sendable () throws -> Void) async {
       let previous = history.latestEntry(for: url)?.date
-      queue.addOperation(ScriptedOperation(url: url, body: body))
-      // The queue records the outcome in its completion block, just after finishing.
-      for _ in 0..<200 where history.latestEntry(for: url)?.date == previous {
+      let operation = ScriptedOperation(url: url, body: body)
+      XCTAssertTrue(queue.submit(operation) === operation)
+      // History is written before the completion block removes the target from the queue.
+      for _ in 0..<200
+      where history.latestEntry(for: url)?.date == previous || queue.contains(url) {
         try? await Task.sleep(for: .milliseconds(10))
       }
+      XCTAssertFalse(queue.contains(url), "The next run must not reuse the finishing job")
+      XCTAssertNotEqual(history.latestEntry(for: url)?.date, previous)
     }
 
     await run { installed.withLock { $0 = "1.1" } }
