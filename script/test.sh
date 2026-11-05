@@ -46,11 +46,14 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="${UPDATER_BUILD_DIR:-$ROOT_DIR/build}" # override to keep build products out of iCloud-synced folders
 DERIVED_DATA="$BUILD_DIR/DerivedData"
 MODULE_CACHE="$BUILD_DIR/ModuleCache"
+export TEST_RUNNER_UPDATER_BUILD_DIR="$BUILD_DIR"
 RUN_ID="$(date +%Y%m%d-%H%M%S)-$$"
 mkdir -p "$BUILD_DIR" "$MODULE_CACHE"
 
 /usr/bin/python3 -m unittest discover -s "$ROOT_DIR/script/tests"
 "$ROOT_DIR/script/check_structure.sh"
+# The main list keeps its measured geometry; grid-check the migrated Settings views only.
+"$ROOT_DIR/script/grid-lint.sh" "$ROOT_DIR/Latest/Features/Settings"
 
 run_lane() {
   local lane="$1" scheme='Updater' target='Latest Tests'

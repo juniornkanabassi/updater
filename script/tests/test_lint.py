@@ -109,5 +109,20 @@ exit 1
         self.assertFalse(self.tool.exists())
 
 
+class GridLintTest(unittest.TestCase):
+    def test_tokens_grid_values_and_documented_exceptions_pass(self):
+        self.check('VStack(spacing: Space.sm) {}\n.padding(20)\n.offset(x: 3) // grid: ok drag preview\n', 0)
+
+    def test_off_grid_spacing_and_layout_offsets_fail(self):
+        self.check('VStack(spacing: 7.5) {}\n.padding(10)\n.offset(x: 16)\n', 1)
+
+    def check(self, content, expected):
+        with tempfile.TemporaryDirectory() as folder:
+            Path(folder, "View.swift").write_text(content)
+            result = subprocess.run([str(SCRIPT.with_name("grid-lint.sh")), folder],
+                                    capture_output=True, text=True, timeout=5)
+            self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

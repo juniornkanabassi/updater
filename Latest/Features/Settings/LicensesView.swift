@@ -28,8 +28,8 @@ struct LicensesView: View {
   @State private var selectedLicense = License.updater
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 16) {
-      VStack(alignment: .leading, spacing: 6) {
+    VStack(alignment: .leading, spacing: Space.lg) {
+      VStack(alignment: .leading, spacing: Space.sm) {
         Text("Updater is based on Latest by Max Langer and the Ertyoii fork")
           .font(.headline)
         Text("Modifications © 2026 Junior Nkana Bassi. Upstream notices are retained.")
@@ -38,7 +38,7 @@ struct LicensesView: View {
         )
         .foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)
-        HStack(spacing: 16) {
+        HStack(spacing: Space.lg) {
           Link(
             "Latest by Max Langer",
             destination: URL(string: "https://github.com/mangerlahn/Latest")!)
@@ -59,12 +59,12 @@ struct LicensesView: View {
           .font(.system(.body, design: .monospaced))
           .textSelection(.enabled)
           .frame(maxWidth: .infinity, alignment: .leading)
-          .padding(12)
+          .padding(Space.md)
       }
       .id(selectedLicense)
       .background(.background, in: .rect(cornerRadius: 8))
     }
-    .padding(20)
+    .padding(Space.xl)
     .frame(minWidth: 480, minHeight: 400)
   }
 }

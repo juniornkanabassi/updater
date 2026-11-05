@@ -12,35 +12,29 @@ import SwiftUI
 
 struct SettingsRootView: View {
   @ObservedObject private var viewModel: SettingsViewModel
+  private let permissionsModel: PermissionsViewModel
 
-  init(viewModel: SettingsViewModel = SettingsViewModel()) {
+  init(
+    viewModel: SettingsViewModel = SettingsViewModel(),
+    permissionsModel: PermissionsViewModel = PermissionsViewModel()
+  ) {
     self.viewModel = viewModel
+    self.permissionsModel = permissionsModel
   }
 
   var body: some View {
-    VStack(spacing: 0) {
-      Picker("Settings", selection: $viewModel.selectedTab) {
-        ForEach(SettingsViewModel.Tab.allCases, id: \.self) { tab in
-          Text(tab.title).tag(tab)
-        }
-      }
-      .labelsHidden()
-      .pickerStyle(.segmented)
-      .controlSize(.large)
-      .frame(width: 330)
-      .padding(.top, 12)
-
-      switch viewModel.selectedTab {
-      case .general:
-        GeneralSettingsView(viewModel: viewModel)
-      case .locations:
-        LocationsSettingsView(viewModel: viewModel)
-      case .permissions:
-        PermissionsSettingsView()
-      }
+    TabView(selection: $viewModel.selectedTab) {
+      GeneralSettingsView(viewModel: viewModel)
+        .tabItem { Label(SettingsViewModel.Tab.general.title, systemImage: "gearshape") }
+        .tag(SettingsViewModel.Tab.general)
+      LocationsSettingsView(viewModel: viewModel)
+        .tabItem { Label(SettingsViewModel.Tab.locations.title, systemImage: "folder") }
+        .tag(SettingsViewModel.Tab.locations)
+      PermissionsSettingsView(model: permissionsModel)
+        .tabItem { Label(SettingsViewModel.Tab.permissions.title, systemImage: "lock.shield") }
+        .tag(SettingsViewModel.Tab.permissions)
     }
-    .frame(width: 460)
+    .frame(width: 520)
     .fixedSize(horizontal: false, vertical: true)
-    .navigationTitle("Settings")
   }
 }

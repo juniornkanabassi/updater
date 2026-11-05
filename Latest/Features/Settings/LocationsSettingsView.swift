@@ -14,39 +14,42 @@ import UniformTypeIdentifiers
 struct LocationsSettingsView: View {
   @ObservedObject var viewModel: SettingsViewModel
   @State private var showsDirectoryImporter = false
+  @Environment(\.undoManager) private var undoManager
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      Text("Check apps from these folders.")
-        .foregroundStyle(.secondary)
+    Form {
+      Section {
 
-      DirectoryLocationsTable(
-        urls: viewModel.directoryURLs,
-        selection: $viewModel.selectedDirectory
-      )
-      .frame(height: min(200, max(96, CGFloat(viewModel.directoryURLs.count) * 34 + 12)))
-      .clipShape(.rect(cornerRadius: 8))
+        DirectoryLocationsTable(
+          urls: viewModel.directoryURLs,
+          selection: $viewModel.selectedDirectory
+        )
+        .frame(minHeight: 160, idealHeight: 200, maxHeight: 200)
+        .clipShape(.rect(cornerRadius: 8))
 
-      ControlGroup {
-        Button {
-          showsDirectoryImporter = true
-        } label: {
-          Image(systemName: "plus")
+        ControlGroup {
+          Button {
+            showsDirectoryImporter = true
+          } label: {
+            Image(systemName: "plus")
+          }
+          .accessibilityLabel("Add Location")
+
+          Button {
+            viewModel.removeSelectedDirectory(undoManager: undoManager)
+          } label: {
+            Image(systemName: "minus")
+          }
+          .accessibilityLabel("Remove Location")
+          .disabled(!viewModel.canRemove(viewModel.selectedDirectory))
         }
-        .accessibilityLabel("Add Location")
-
-        Button {
-          viewModel.removeSelectedDirectory()
-        } label: {
-          Image(systemName: "minus")
-        }
-        .accessibilityLabel("Remove Location")
-        .disabled(!viewModel.canRemove(viewModel.selectedDirectory))
+        .controlSize(.small)
+        .fixedSize()
+      } footer: {
+        Text("Check apps from these folders. Removed locations can be restored with Undo.")
       }
-      .controlSize(.small)
-      .fixedSize()
     }
-    .padding(20)
+    .formStyle(.grouped)
     .fileImporter(
       isPresented: $showsDirectoryImporter,
       allowedContentTypes: [.folder],
@@ -121,7 +124,7 @@ private struct DirectoryLocationRow: View {
   @State private var loadState: LoadState = .loading
 
   var body: some View {
-    HStack(spacing: 6) {
+    HStack(spacing: Space.sm) {
       locationIcon
         .frame(width: 16, height: 16)
 

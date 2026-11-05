@@ -67,6 +67,17 @@ Signed standalone bundle replacement supports Docker Desktop, Telegram Desktop, 
 
 Obsidian's installed version comes from its ASAR payload; Delta's comes from validated metadata in its main executable, since its plist and bundled CLI can report older versions. Obsidian public payload updates verify the vendor checksum and RSA signature. Early-access preferences are respected: authenticated updates open Obsidian, and incompatible launchers open the official installer page. Ghostty uses its official Sparkle feed.
 
+## Appearance snapshots
+
+`./script/test.sh --integration` writes light and dark fixture PNGs for the main content,
+detail states, Settings tabs, About and Licences to `$UPDATER_BUILD_DIR/snapshots`
+(default `build/snapshots`). The runner forwards this path to the test host.
+Direct Xcode runs fall back to `$TMPDIR/updater-tests/snapshots`.
+The main-content fixture uses the production sidebar and detail surface with disposable data;
+it does not render the root window chrome. Offscreen captures cannot establish active-window
+appearance or keyboard behaviour. Keep existing visual baselines until a same-system
+original/candidate comparison has been reviewed.
+
 ## Command line and AI assistants
 
 Updater includes an `updater` command and an MCP server so Claude, Codex and other assistants can use it. Both talk to the running app over a socket in `~/Library/Application Support/Updater/control.sock` that only your own user account can open. If Updater is closed, a command starts it in the background with no window. Every action goes through the same scheduler as the window, so the window shows a job started from the command line as it runs.

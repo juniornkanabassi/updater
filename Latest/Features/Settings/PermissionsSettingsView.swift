@@ -155,7 +155,11 @@ final class PermissionsViewModel: ObservableObject {
 }
 
 struct PermissionsSettingsView: View {
-  @StateObject private var model = PermissionsViewModel()
+  @StateObject private var model: PermissionsViewModel
+
+  init(model: PermissionsViewModel = PermissionsViewModel()) {
+    _model = StateObject(wrappedValue: model)
+  }
 
   var body: some View {
     Form {
@@ -183,7 +187,7 @@ struct PermissionsSettingsView: View {
       Button("Open Settings") { model.openSettings(for: kind) }
         .accessibilityLabel("Open System Settings for \(kind.title)")
     } label: {
-      HStack(alignment: .firstTextBaseline, spacing: 8) {
+      HStack(alignment: .firstTextBaseline, spacing: Space.sm) {
         Image(systemName: state.symbol)
           .foregroundStyle(state.tint)
           .frame(width: 16)

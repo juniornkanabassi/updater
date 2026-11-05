@@ -7,23 +7,36 @@ import XCTest
 @testable import Latest
 
 /// Renders the Round 6 surfaces offscreen (never ordered on screen, never activated) and checks
-/// each render has content. PNGs are written only when `outputDirectory` exists, so the
-/// integration lane stays side-effect free.
+/// each render has content. PNGs are written under the isolated build directory.
 @MainActor
 final class Round6VisualTest: XCTestCase {
-  static let outputDirectory = URL(fileURLWithPath: "/private/tmp/updater-build/r81-shots")
+  static let outputDirectory = URL(
+    fileURLWithPath:
+      ProcessInfo.processInfo.environment[
+        "UPDATER_BUILD_DIR", default: "\(FileManager.default.temporaryDirectory.path)/updater-tests"
+      ]
+  ).appendingPathComponent("snapshots")
 
   func testRendersMainWindowDetailStatesSettingsAndMenu() async throws {
+    try FileManager.default.createDirectory(
+      at: Self.outputDirectory, withIntermediateDirectories: true)
+    let defaultsName = "Round6Snapshots.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: defaultsName))
+    defer { defaults.removePersistentDomain(forName: defaultsName) }
     let settings = try isolatedAppListSettings(for: self)
     settings.sortOrder = .updateDate
-    let fixture = Round6Fixture()
+    let fixture = Round6Fixture(defaults: defaults)
     let store = fixture.store
     let model = UpdatesListViewModel(
       snapshot: AppListSnapshot(withApps: store.apps, filterQuery: nil, settings: settings),
       settings: settings, appProvider: store, updating: fixture.updating)
     let environment = AppEnvironment(
       settings: settings, coordinator: fixture.coordinator, updating: fixture.updating,
-      updatesListViewModel: model)
+      appStoreUpdateService: SnapshotAppStoreService(),
+      updatesListViewModel: model,
+      settingsViewModel: SettingsViewModel(
+        settings: settings, installHelperService: HelperRegistrationFixture(),
+        directoryStoreFactory: { _ in SnapshotDirectoryStore() }))
     environment.menuBar.refresh(with: store.apps)
     XCTAssertEqual(
       environment.menuBar.updateAllCount, 5, "Goodnotes, Notion, Word, Audio Hijack, Discord")
@@ -32,63 +45,100 @@ final class Round6VisualTest: XCTestCase {
     try await Task.sleep(for: .milliseconds(200))
     XCTAssertEqual(model.selectedApp?.name, "Goodnotes", "The first update is selected")
 
+    let historyURL = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "round6-\(UUID().uuidString).jsonl")
+    let history = UpdateHistoryStore(fileURL: historyURL)
+    defer { try? FileManager.default.removeItem(at: historyURL) }
     for dark in [false, true] {
       let suffix = dark ? "dark" : "light"
       try await render(
-        LatestRootView(environment: environment), size: CGSize(width: 900, height: 640),
-        dark: dark, window: true, name: "main-window-\(suffix)")
+        SnapshotMainContent(environment: environment, history: history),
+        size: CGSize(width: 900, height: 640),
+        dark: dark, window: true, name: "main-content-\(suffix)")
     }
 
     let detail = CGSize(width: 560, height: 420)
-    let history = UpdateHistoryStore(
-      fileURL: FileManager.default.temporaryDirectory.appendingPathComponent(
-        "round6-\(UUID().uuidString).jsonl"))
     let goodnotes = try XCTUnwrap(store.apps.first { $0.name == "Goodnotes" })
     history.record(
       UpdateHistoryEntry(
         before: goodnotes.bundle, after: goodnotes.bundle,
         outcome: .updated(from: "7.1.30", to: "7.1.32")))
-    for name in [
-      "Shottr", "Goodnotes", "Adobe Premiere Pro 2026", "Discord", "OBS", "Google Chrome",
-      "Final Cut Pro", "Updater", "Raycast", "Audio Hijack",
-    ] {
-      let app = try XCTUnwrap(store.apps.first { $0.name == name })
-      try await render(
-        ReleaseNotesDetailSurface(
-          app: app,
-          contentState: .message(ReleaseNotesMessage(error: LatestError.releaseNotesUnavailable)),
-          updating: fixture.updating, history: history),
-        size: detail, dark: false,
-        name: "detail-\(name.lowercased().replacingOccurrences(of: " ", with: "-"))")
-    }
-    for (overview, name) in [
-      (DetailOverview.noUpdates(UpdateStatusSummary(current: 42)), "overview-up-to-date"),
-      (
-        .noUpdates(
-          UpdateStatusSummary(
-            current: 38, couldNotCheck: 2, checkInVendor: 3, vendor: "Creative Cloud")),
-        "overview-partial"
-      ),
-      (.checking, "overview-checking"), (.offline, "overview-offline"),
-      (.noMatches("Photoshop"), "overview-no-matches"),
-      (.lookingForApps, "overview-first-run"),
-    ] {
-      try await render(
-        ReleaseNotesDetailSurface(
-          app: nil, contentState: .message(.noSelection), overview: overview),
-        size: detail, dark: false, name: name)
-    }
 
-    let settingsModel = SettingsViewModel(settings: settings)
-    for tab in SettingsViewModel.Tab.allCases {
-      settingsModel.selectedTab = tab
-      // Settings sizes to its content; a grouped Form must not collapse inside it.
-      let fitting = NSHostingController(rootView: SettingsRootView(viewModel: settingsModel))
-        .sizeThatFits(in: CGSize(width: 460, height: 10_000))
-      XCTAssertGreaterThan(fitting.height, 200, "settings-\(tab) height")
+    for dark in [false, true] {
+      let suffix = dark ? "dark" : "light"
+      for name in [
+        "Shottr", "Goodnotes", "Adobe Premiere Pro 2026", "Discord", "OBS", "Google Chrome",
+        "Final Cut Pro", "Updater", "Raycast", "Audio Hijack",
+      ] {
+        let app = try XCTUnwrap(store.apps.first { $0.name == name })
+        try await render(
+          ReleaseNotesDetailSurface(
+            app: app,
+            contentState: .message(ReleaseNotesMessage(error: LatestError.releaseNotesUnavailable)),
+            updating: fixture.updating, history: history),
+          size: detail, dark: dark,
+          name: "detail-\(name.lowercased().replacingOccurrences(of: " ", with: "-"))-\(suffix)")
+      }
+      for (overview, name) in [
+        (DetailOverview.noUpdates(UpdateStatusSummary(current: 42)), "overview-up-to-date"),
+        (
+          .noUpdates(
+            UpdateStatusSummary(
+              current: 38, couldNotCheck: 2, checkInVendor: 3, vendor: "Creative Cloud")),
+          "overview-partial"
+        ),
+        (.checking, "overview-checking"), (.offline, "overview-offline"),
+        (.noMatches("Photoshop"), "overview-no-matches"),
+        (.lookingForApps, "overview-first-run"),
+        (.chooseApp, "overview-no-selection"),
+      ] {
+        try await render(
+          ReleaseNotesDetailSurface(
+            app: nil, contentState: .message(.noSelection),
+            updating: fixture.updating, overview: overview, history: history),
+          size: detail, dark: dark, name: "\(name)-\(suffix)")
+      }
+
       try await render(
-        SettingsRootView(viewModel: settingsModel), size: CGSize(width: 460, height: 560),
-        dark: false, name: "settings-\(tab)")
+        ReleaseNotesDetailSurface(
+          app: goodnotes, contentState: .loading,
+          updating: fixture.updating, history: history),
+        size: detail, dark: dark, name: "detail-loading-\(suffix)")
+      try await render(
+        ReleaseNotesDetailSurface(
+          app: goodnotes,
+          contentState: .text(
+            ReleaseNotesContent(string: "Fixture release notes\nImproved reliability.")),
+          updating: fixture.updating, history: history),
+        size: detail, dark: dark, name: "detail-notes-\(suffix)")
+      try await render(
+        AboutView(), size: CGSize(width: 320, height: 360),
+        dark: dark, name: "about-\(suffix)")
+      try await render(
+        LicensesView(), size: CGSize(width: 640, height: 520),
+        dark: dark, name: "licenses-\(suffix)")
+
+      let settingsModel = environment.settingsViewModel
+      let permissions = PermissionsViewModel(
+        probes: Dictionary(
+          uniqueKeysWithValues: PermissionKind.allCases.map { kind in
+            (kind, { @MainActor in PermissionState.unknown })
+          }), history: { [] })
+      for tab in SettingsViewModel.Tab.allCases {
+        settingsModel.selectedTab = tab
+        // Settings sizes to its content; a grouped Form must not collapse inside it.
+        let fitting = NSHostingController(
+          rootView: SettingsRootView(viewModel: settingsModel, permissionsModel: permissions)
+            .defaultAppStorage(defaults)
+        )
+        .sizeThatFits(in: CGSize(width: 520, height: 10_000))
+        XCTAssertGreaterThan(fitting.height, 200, "settings-\(tab) height")
+        try await render(
+          SettingsRootView(viewModel: settingsModel, permissionsModel: permissions)
+            .defaultAppStorage(defaults), size: CGSize(width: 520, height: 560),
+          dark: dark, window: true, name: "settings-\(tab)-\(suffix)")
+      }
+
     }
 
     // A menu bar menu only draws while it is open; record its real structure instead.
@@ -188,6 +238,8 @@ final class Round6VisualTest: XCTestCase {
   ) async throws {
     let root =
       content
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      .background(.background)
       .environment(\.colorScheme, dark ? .dark : .light)
       .environment(\.locale, Locale(identifier: "en_GB"))
     let controller = NSHostingController(rootView: root)
@@ -204,6 +256,7 @@ final class Round6VisualTest: XCTestCase {
     for _ in 0..<5 {
       try await Task.sleep(for: .milliseconds(80))
       host.contentView?.layoutSubtreeIfNeeded()
+      if let content = host.contentView { materialiseTables(in: content) }
     }
     // The frame view draws the titlebar and toolbar as well as the content.
     let view = try XCTUnwrap(window ? host.contentView?.superview : host.contentView)
@@ -212,6 +265,19 @@ final class Round6VisualTest: XCTestCase {
     XCTAssertGreaterThan(bitmap.pixelsWide, 0, name)
     try write(
       try XCTUnwrap(bitmap.representation(using: .png, properties: [:])), name: "\(name).png")
+  }
+
+  private func materialiseTables(in view: NSView) {
+    if let table = view as? NSTableView {
+      for row in 0..<table.numberOfRows {
+        _ = table.rowView(atRow: row, makeIfNecessary: true)
+        for column in 0..<table.numberOfColumns {
+          _ = table.view(atColumn: column, row: row, makeIfNecessary: true)
+        }
+      }
+      table.layoutSubtreeIfNeeded()
+    }
+    for child in view.subviews { materialiseTables(in: child) }
   }
 
   private func write(_ data: Data, name: String) throws {
@@ -249,15 +315,15 @@ private final class Round6Updating: AppUpdating {
   }
 }
 
-/// Real app paths only for their icons; nothing on disk is read beyond that or changed.
+/// Disposable paths keep the fixture away from installed apps and their icons.
 @MainActor
 private struct Round6Fixture {
-  let coordinator = UpdateCheckCoordinator(
-    check: { _, _ in throw LatestError.updateInfoUnavailable }, repositoryProvider: { nil })
+  let coordinator: SnapshotCoordinator
   let store: AppDataStore
   let updating: Round6Updating
 
-  init() {
+  init(defaults: UserDefaults) {
+    coordinator = SnapshotCoordinator(defaults: defaults)
     var states = [Latest.App.Bundle.Identifier: UpdateProgressState]()
     guard let store = coordinator.appProvider as? AppDataStore else {
       preconditionFailure("UpdateCheckCoordinator publishes an AppDataStore")
@@ -273,7 +339,10 @@ private struct Round6Fixture {
         version: Version(versionNumber: version, buildNumber: nil), name: name,
         bundleIdentifier: bundleID
           ?? "fixture.round6.\(name.replacingOccurrences(of: " ", with: "-"))",
-        fileURL: URL(fileURLWithPath: path, isDirectory: true), source: source,
+        fileURL: FileManager.default.temporaryDirectory
+          .appendingPathComponent("UpdaterSnapshotFixtures", isDirectory: true)
+          .appendingPathComponent(URL(fileURLWithPath: path).lastPathComponent, isDirectory: true),
+        source: source,
         modificationDate: Date(timeIntervalSince1970: 1_790_000_000 - days * 86_400))
       _ = store.set(appBundle: bundle)
       if let remote {
@@ -342,4 +411,56 @@ private struct Round6Fixture {
       remote: nil, source: .none, bundleID: Foundation.Bundle.main.bundleIdentifier, days: 11)
     updating = Round6Updating(states: states)
   }
+}
+
+@MainActor
+private final class SnapshotDirectoryStore: AppDirectoryStoring {
+  var URLs = [URL(fileURLWithPath: "/tmp/Fixture Apps", isDirectory: true)]
+  func add(_ url: URL) { URLs.append(url) }
+  func remove(_ url: URL) { URLs.removeAll { $0 == url } }
+  func canRemove(_ url: URL) -> Bool { URLs.contains(url) }
+  func isReachable(_ url: URL) -> Bool { false }
+}
+
+@MainActor
+private final class SnapshotCoordinator: UpdateCheckCoordinating {
+  let appProvider: any AppProviding
+  var progressDelegate: (any UpdateCheckProgressReporting)?
+  var checkCompletion: (@MainActor (UpdateCheckCompletion) -> Void)?
+  init(defaults: UserDefaults) { appProvider = AppDataStore(userDefaults: defaults) }
+  func run(hardRefresh: Bool, origin: UpdateCheckOrigin) {}
+}
+
+/// Render unchanged production child views without the root's live notes/history defaults.
+/// This covers main content; it does not claim to capture the production window chrome.
+@MainActor
+private struct SnapshotMainContent: View {
+  let environment: AppEnvironment
+  let history: UpdateHistoryStore
+  @FocusState private var focus: SidebarFocus?
+
+  var body: some View {
+    HStack(spacing: 0) {
+      UpdatesSidebarView(
+        viewModel: environment.updatesListViewModel,
+        searchFocusController: environment.searchFocusController
+      )
+      .frame(width: VisualMetrics.sidebarIdealWidth)
+      .frame(maxHeight: .infinity)
+      .overlay(alignment: .trailing) { Divider() }
+      ReleaseNotesDetailSurface(
+        app: environment.updatesListViewModel.selectedApp,
+        contentState: .message(ReleaseNotesMessage(error: LatestError.releaseNotesUnavailable)),
+        updating: environment.updatesListViewModel.updating, history: history
+      )
+      .frame(minWidth: VisualMetrics.detailMinWidth)
+    }
+    .environment(\.windowFocus, $focus)
+  }
+}
+
+@MainActor
+private final class SnapshotAppStoreService: AppStoreUpdateServicing {
+  var alwaysUsesManualUpdates = false
+  func verifyAvailability() throws(InstallHelperError) {}
 }

@@ -22,23 +22,30 @@ class RunnerArgumentsTest(unittest.TestCase):
         checker = self.script / "check_structure.sh"
         checker.write_text("#!/bin/bash\nexit 0\n")
         checker.chmod(0o755)
+        self.grid_calls = self.root / "grid-calls"
+        grid = self.script / "grid-lint.sh"
+        grid.write_text('#!/bin/bash\nprintf "grid\\n" >> "$GRID_CALLS"\nexit "${GRID_EXIT:-0}"\n')
+        grid.chmod(0o755)
         commands = self.root / "bin"
         commands.mkdir()
         self.calls = self.root / "calls"
         self.arguments = self.root / "arguments"
         self.lane = self.root / "lane"
+        self.snapshot_root = self.root / "snapshot-root"
         for name in ("xcodebuild", "pkill", "rm", "mkdir"):
             command = commands / name
             body = '#!/bin/bash\nprintf "%s\\n" "$0" >> "$CALLS"\n'
             if name == "xcodebuild":
                 body += ('printf "__CALL__\\n" >> "$ARGUMENTS"\n'
                          'printf "%s\\n" "$@" >> "$ARGUMENTS"\n'
-                         'printf "%s:%s\\n" "$TEST_RUNNER_LATEST_UI_TESTS" "$LATEST_UI_TESTS" >> "$LANE"\n')
+                         'printf "%s:%s\\n" "$TEST_RUNNER_LATEST_UI_TESTS" "$LATEST_UI_TESTS" >> "$LANE"\n'
+                         'printf "%s\\n" "$TEST_RUNNER_UPDATER_BUILD_DIR" >> "$SNAPSHOT_ROOT"\n')
             command.write_text(body)
             command.chmod(0o755)
         self.environment = dict(os.environ, PATH=str(commands) + ":" + os.environ["PATH"],
                                 CALLS=str(self.calls), ARGUMENTS=str(self.arguments),
-                                LANE=str(self.lane), LATEST_UI_TESTS="1")
+                                LANE=str(self.lane), LATEST_UI_TESTS="1", GRID_CALLS=str(self.grid_calls),
+                                UPDATER_BUILD_DIR=str(self.root / "scratch"), SNAPSHOT_ROOT=str(self.snapshot_root))
 
     def run_script(self, name, *arguments):
         return subprocess.run([str(self.script / name), *arguments], env=self.environment,
@@ -63,6 +70,14 @@ class RunnerArgumentsTest(unittest.TestCase):
         self.assertEqual(calls[0][calls[0].index("-scheme") + 1], "Latest Unit Tests")
         self.assertNotIn("-testPlan", calls[0])
         self.assertEqual(self.lane.read_text().strip(), "0:0")
+        self.assertEqual(self.grid_calls.read_text().strip(), "grid")
+        self.assertEqual(self.snapshot_root.read_text().strip(), str(self.root / "scratch"))
+
+    def test_grid_failure_stops_before_build(self):
+        self.environment["GRID_EXIT"] = "1"
+        result = self.run_script("test.sh")
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertFalse(self.arguments.exists())
 
     def test_hosted_plans_and_filters_are_preserved(self):
         for mode, plan, environment in (("--integration", "LatestIntegration", "0:0"),

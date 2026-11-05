@@ -23,7 +23,7 @@ struct AboutView: View {
   }()
 
   var body: some View {
-    VStack(spacing: 8) {
+    VStack(spacing: Space.sm) {
       Group {
         if let icon = Self.icon {
           Image(decorative: icon, scale: 1)
@@ -37,7 +37,7 @@ struct AboutView: View {
       .scaledToFit()
       .frame(width: 80, height: 80)
       .accessibilityLabel("Updater icon")
-      .padding(.bottom, 8)
+      .padding(.bottom, Space.sm)
 
       Text("Updater")
         .font(.title2.bold())
@@ -52,9 +52,9 @@ struct AboutView: View {
       .font(.caption)
       .foregroundStyle(.secondary)
       .multilineTextAlignment(.center)
-      .padding(.top, 12)
+      .padding(.top, Space.md)
     }
-    .padding(24)
+    .padding(Space.xxl)
     .frame(width: 320)
     .toolbar(removing: .title)
     .containerBackground(.ultraThinMaterial, for: .window)

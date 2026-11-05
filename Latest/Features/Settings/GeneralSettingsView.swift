@@ -26,7 +26,7 @@ struct GeneralSettingsView: View {
             Text(appearance.title).tag(appearance.rawValue)
           }
         }
-        .pickerStyle(.segmented)
+        .pickerStyle(.radioGroup)
         .accessibilityIdentifier("settings.appearance")
       }
 
@@ -92,7 +92,7 @@ struct GeneralSettingsView: View {
   }
 
   private func labelled(_ title: String, _ description: String) -> some View {
-    VStack(alignment: .leading, spacing: 2) {
+    VStack(alignment: .leading, spacing: Space.xs) {
       Text(title)
       Text(description)
         .font(.caption)
@@ -108,6 +108,7 @@ struct GeneralSettingsView: View {
   ) -> some View {
     Toggle(isOn: isOn) { labelled(title, description) }
       .toggleStyle(.switch)
+      .controlSize(.mini)
       .accessibilityLabel(title)
       .accessibilityHint(description)
   }
