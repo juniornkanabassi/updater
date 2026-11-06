@@ -41,6 +41,8 @@ extension UserDefaults {
 func isolatedAppListSettings(for testCase: XCTestCase) throws -> AppListSettings {
   let suiteName = "LatestTests.AppListSettings.\(UUID().uuidString)"
   let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+  // Register before test work, so the runner also cleans up after a crashed host.
+  defaults.removeTestPersistentDomain(forName: suiteName)
   testCase.addTeardownBlock {
     defaults.removeTestPersistentDomain(forName: suiteName)
   }

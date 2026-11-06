@@ -23,7 +23,7 @@ case "${1:---help}" in
     ;;
   run)
     mkdir -p "$ROOT_DIR/build/macos26-vm/shared"
-    exec "$TART" run "$VM_NAME" --no-audio --no-clipboard \
+    exec "$TART" run "$VM_NAME" --no-graphics --no-audio --no-clipboard \
       --dir="latest:$ROOT_DIR:ro" \
       --dir="artifacts:$ROOT_DIR/build/macos26-vm/shared"
     ;;

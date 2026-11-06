@@ -237,6 +237,10 @@
 		5EBC419A15074012A53335AF /* CatalogueInstallTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D61335B308493994A02626 /* CatalogueInstallTest.swift */; };
 		A520CEDCFB9F49B0A2113BC5 /* TransactionJournal.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3E98B7F93664A3B96278F88 /* TransactionJournal.swift */; };
 		2E4AA41B3CB6408ABCA08C9A /* TransactionJournalTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = D749BCDAFEBE4F33A20051B5 /* TransactionJournalTest.swift */; };
+		F06000000000000000000100 /* TestOffscreen.m in Sources */ = {isa = PBXBuildFile; fileRef = F06000000000000000000001 /* TestOffscreen.m */; };
+		F06000000000000000000101 /* TestOffscreenTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F06000000000000000000003 /* TestOffscreenTests.swift */; };
+		F06000000000000000000110 /* TestOffscreen.m in Sources */ = {isa = PBXBuildFile; fileRef = F06000000000000000000001 /* TestOffscreen.m */; };
+		F06000000000000000000111 /* TestOffscreenTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F06000000000000000000003 /* TestOffscreenTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -610,6 +614,9 @@
 		C3D61335B308493994A02626 /* CatalogueInstallTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogueInstallTest.swift; sourceTree = "<group>"; };
 		F3E98B7F93664A3B96278F88 /* TransactionJournal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransactionJournal.swift; sourceTree = "<group>"; };
 		D749BCDAFEBE4F33A20051B5 /* TransactionJournalTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransactionJournalTest.swift; sourceTree = "<group>"; };
+		F06000000000000000000001 /* TestOffscreen.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = TestOffscreen.m; path = Tests/TestOffscreen/TestOffscreen.m; sourceTree = "<group>"; };
+		F06000000000000000000002 /* TestOffscreen.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = TestOffscreen.h; path = Tests/TestOffscreen/include/TestOffscreen.h; sourceTree = "<group>"; };
+		F06000000000000000000003 /* TestOffscreenTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TestOffscreenTests.swift; path = Tests/TestOffscreenTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -659,6 +666,9 @@
 		50290E681E53EB6A00133E3D = {
 			isa = PBXGroup;
 			children = (
+				F06000000000000000000001 /* TestOffscreen.m */,
+				F06000000000000000000002 /* TestOffscreen.h */,
+				F06000000000000000000003 /* TestOffscreenTests.swift */,
 				C30BD9FB01014E0C8B034CFB /* UpdaterCLI */,
 				EDB1439536064F48BC0293DA /* mcp */,
 				50290E731E53EB6A00133E3D /* Latest */,
@@ -1628,6 +1638,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F06000000000000000000101 /* TestOffscreenTests.swift in Sources */,
+				F06000000000000000000100 /* TestOffscreen.m in Sources */,
 				2E4AA41B3CB6408ABCA08C9A /* TransactionJournalTest.swift in Sources */,
 				5EBC419A15074012A53335AF /* CatalogueInstallTest.swift in Sources */,
 				018068F9ECCE4A92B54AD847 /* ControlFollowUpTest.swift in Sources */,
@@ -1690,6 +1702,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F06000000000000000000111 /* TestOffscreenTests.swift in Sources */,
+				F06000000000000000000110 /* TestOffscreen.m in Sources */,
 				81F85B58314F425186C7EA2E /* UpdateHistoryStoreTest.swift in Sources */,
 				9908B350C9C84CF8BA24C0B0 /* UpdateHistoryStore.swift in Sources */,
 				163D0BA972754FE9BAE60D8F /* UpdateOutcome.swift in Sources */,
@@ -1841,6 +1855,8 @@
 		458C33C381ED3BFAC237EE2C /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				HEADER_SEARCH_PATHS = ("$(inherited)", "\"$(SRCROOT)/Tests/TestOffscreen/include\"", );
+				SWIFT_OBJC_BRIDGING_HEADER = "Tests/TestOffscreen/include/TestOffscreen.h";
 				BUNDLE_LOADER = "";
 				CODE_SIGN_STYLE = Automatic;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -2143,6 +2159,8 @@
 		50C81D701FBADC5900324C2E /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				HEADER_SEARCH_PATHS = ("$(inherited)", "\"$(SRCROOT)/Tests/TestOffscreen/include\"", );
+				SWIFT_OBJC_BRIDGING_HEADER = "Tests/TestOffscreen/include/TestOffscreen.h";
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CLANG_ENABLE_OBJC_WEAK = YES;
@@ -2178,6 +2196,8 @@
 		50C81D711FBADC5900324C2E /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				HEADER_SEARCH_PATHS = ("$(inherited)", "\"$(SRCROOT)/Tests/TestOffscreen/include\"", );
+				SWIFT_OBJC_BRIDGING_HEADER = "Tests/TestOffscreen/include/TestOffscreen.h";
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
 				CLANG_ENABLE_OBJC_WEAK = YES;
@@ -2213,6 +2233,8 @@
 		9C406EB6C8997AFB0BC6B582 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				HEADER_SEARCH_PATHS = ("$(inherited)", "\"$(SRCROOT)/Tests/TestOffscreen/include\"", );
+				SWIFT_OBJC_BRIDGING_HEADER = "Tests/TestOffscreen/include/TestOffscreen.h";
 				BUNDLE_LOADER = "";
 				CODE_SIGN_STYLE = Automatic;
 				GENERATE_INFOPLIST_FILE = YES;

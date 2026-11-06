@@ -171,10 +171,12 @@ final class LiveUpdateNotifier: NSObject, UpdateNotifying, UNUserNotificationCen
   }
 
   func requestAuthorization() async {
+    guard !CommandLine.arguments.contains("--agent-screen") else { return }
     _ = try? await center.requestAuthorization(options: [.alert, .sound])
   }
 
   func post(title: String, body: String) async {
+    guard !CommandLine.arguments.contains("--agent-screen") else { return }
     let content = UNMutableNotificationContent()
     content.title = title
     content.body = body

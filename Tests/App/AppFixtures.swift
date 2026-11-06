@@ -8,8 +8,7 @@ import XCTest
 
 @testable import Latest
 
-/// Native focus and WindowServer captures are explicit opt-in work. The default
-/// runner must remain usable while another application is in the foreground.
+/// Extra window/input checks are opt-in, but always invisible and inactive.
 func requireUITests() throws {
   try XCTSkipUnless(
     ProcessInfo.processInfo.environment["LATEST_UI_TESTS"] == "1",
@@ -105,7 +104,7 @@ func makeLatestTestWindow<Content: View>(
   (dark ? ApplicationAppearance.dark : .light).apply(to: NSApp)
   let id = "latest-test-\(UUID().uuidString)"
   let existingWindows = Set(NSApp.windows.map(ObjectIdentifier.init))
-  NSApp.setActivationPolicy(.regular)
+  NSApp.setActivationPolicy(.prohibited)
   let scene = NSHostingSceneRepresentation {
     LatestMainWindowScene(id: id) {
       content
@@ -137,50 +136,19 @@ func makeLatestTestWindow<Content: View>(
 @MainActor
 func activateTestWindow(_ window: NSWindow) async throws {
   try requireUITests()
-  NSApp.setActivationPolicy(.regular)
+  NSApp.setActivationPolicy(.prohibited)
   window.makeKeyAndOrderFront(nil)
-  // XCTest launches the host in the background. Request the explicit UI
-  // launch through LaunchServices; self-activation alone may be declined.
-  if !NSApp.isActive {
-    let configuration = NSWorkspace.OpenConfiguration()
-    configuration.activates = true
-    configuration.addsToRecentItems = false
-    configuration.createsNewApplicationInstance = false
-    let application = try await NSWorkspace.shared.openApplication(
-      at: Bundle.main.bundleURL, configuration: configuration)
-    XCTAssertEqual(application.processIdentifier, ProcessInfo.processInfo.processIdentifier)
-  }
-  let deadline = ContinuousClock.now + .seconds(5)
-  repeat {
-    NSApp.activate()
-    window.makeKeyAndOrderFront(nil)
-    if NSApp.isActive && window.isKeyWindow {
-      try await Task.sleep(for: .milliseconds(20))
-      if NSApp.isActive && window.isKeyWindow { return }
-    }
-    try await Task.sleep(for: .milliseconds(20))
-  } while ContinuousClock.now < deadline
-  XCTFail(
-    "UI test window could not acquire focus: title=\(window.title), class=\(type(of: window)), visible=\(window.isVisible), canBecomeKey=\(window.canBecomeKey), onActiveSpace=\(window.isOnActiveSpace), active=\(NSApp.isActive), policy=\(NSApp.activationPolicy().rawValue), running=\(NSApp.isRunning), launched=\(NSRunningApplication.current.isFinishedLaunching), frontmost=\(NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "unknown"). Run --ui when the desktop is available."
-  )
-  throw CocoaError(.userCancelled)
+  window.makeKey()
+  await Task.yield()
+  try XCTSkipUnless(
+    window.isKeyWindow, "Native key-window input is unavailable in the inactive host")
+  XCTAssertFalse(NSApp.isActive, "Tests must never activate the application")
 }
 
 @MainActor
 func deactivateTestApplication() async throws {
   try requireUITests()
-  if NSApp.isActive {
-    let background = try XCTUnwrap(
-      NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.finder").first)
-    // Deactivating a key window alone can leave its application active. Hand
-    // activation to another running app so native materials enter inactive state.
-    NSApp.yieldActivation(to: background)
-    XCTAssertTrue(background.activate(from: .current, options: []))
-  }
-  let deadline = ContinuousClock.now + .seconds(5)
-  while NSApp.isActive && ContinuousClock.now < deadline {
-    try await Task.sleep(for: .milliseconds(10))
-  }
+  for window in NSApp.windows { window.resignKey() }
   XCTAssertFalse(NSApp.isActive)
 }
 

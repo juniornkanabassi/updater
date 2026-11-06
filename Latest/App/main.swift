@@ -30,6 +30,28 @@ private struct LatestUnitTestHostApplication: SwiftUI.App {
   }
 }
 
+extension NSWindow {
+  /// Keep real-app checks and early test-host windows invisible on every display.
+  static func keepEveryWindowInvisible() { _ = invisibleWindowObserver }
+
+  private static let invisibleWindowObserver = NotificationCenter.default.addObserver(
+    forName: NSWindow.didUpdateNotification, object: nil, queue: .main
+  ) { note in
+    guard let window = note.object as? NSWindow,
+      window.alphaValue != 0 || !window.ignoresMouseEvents
+    else { return }
+    MainActor.assumeIsolated {
+      window.alphaValue = 0
+      window.ignoresMouseEvents = true
+    }
+  }
+}
+
+if isRunningUnitTests || CommandLine.arguments.contains("--agent-screen") {
+  NSWindow.keepEveryWindowInvisible()
+  NSApplication.shared.setActivationPolicy(.prohibited)
+}
+
 #if DEBUG
   if let index = CommandLine.arguments.firstIndex(of: "--journal-crash-probe") {
     JournalCrashProbe.run(Array(CommandLine.arguments[(index + 1)...]))
@@ -37,11 +59,6 @@ private struct LatestUnitTestHostApplication: SwiftUI.App {
 #endif
 
 if isRunningUnitTests {
-  if ProcessInfo.processInfo.environment["LATEST_UI_TESTS"] != "1" {
-    // The background lane has no visible scenes and must not activate over the
-    // user's foreground app. UI/benchmark runners explicitly opt in.
-    NSApplication.shared.setActivationPolicy(.prohibited)
-  }
   LatestUnitTestHostApplication.main()
 } else {
   LatestApplication.main()

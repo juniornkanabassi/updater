@@ -27,6 +27,7 @@ final class SidebarInteractionTest: XCTestCase {
     let window = try await makeLatestTestWindow(
       environment: environment, activate: false, testCase: self)
     defer { window.close() }
+    try requireWindowServerCapture(window)
     let fixture = try SidebarInputFixture(window: window, model: model)
 
     let results: [Result<Latest.App.Update, Error>] = [
@@ -361,7 +362,7 @@ final class SidebarInteractionTest: XCTestCase {
       settings: settings)
     let environment = AppEnvironment(
       settings: settings, updatesListViewModel: model)
-    NSApp.setActivationPolicy(.regular)
+    NSApp.setActivationPolicy(.prohibited)
     let window = try await makeLatestTestWindow(environment: environment, testCase: self)
     let fixture = try SidebarInputFixture(window: window, model: model)
     try await fixture.activate()

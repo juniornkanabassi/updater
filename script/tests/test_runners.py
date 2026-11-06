@@ -73,6 +73,23 @@ class RunnerArgumentsTest(unittest.TestCase):
         self.assertTrue(unrelated.exists())
         self.assertEqual(list((self.root / "scratch").glob("test-defaults.*")), [])
 
+    def test_verify_launches_only_its_binary_invisibly_and_stops_it(self):
+        executable = self.root / "scratch/DerivedData/Build/Products/Debug/Updater.app/Contents/MacOS/Updater"
+        executable.parent.mkdir(parents=True)
+        launched = self.root / "launched"
+        executable.write_text(
+            '#!/bin/bash\n'
+            'printf "%s\n" "$$" "$@" > "$LAUNCHED"\n'
+            'exec /bin/sleep 30\n')
+        executable.chmod(0o755)
+        self.environment["LAUNCHED"] = str(launched)
+        result = self.run_script("build_and_run.sh", "--verify")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        pid, *arguments = launched.read_text().splitlines()
+        self.assertEqual(arguments, ["--agent-screen"])
+        with self.assertRaises(ProcessLookupError):
+            os.kill(int(pid), 0)
+
     def test_build_help_and_invalid_arguments_have_no_side_effects(self):
         for arguments, status in ((["--help"], 0), (["typo"], 2),
                                   (["run", "--unknown"], 2), (["run", "--signed", "extra"], 2)):

@@ -56,24 +56,6 @@ final class MainWindowAppearanceTest: XCTestCase {
         try await deactivateTestApplication()
         let window = try await makeLatestTestWindow(
           environment: environment, dark: dark, activate: false, testCase: self)
-        // Native materials sample the window's backdrop. Keep position and
-        // key-window state explicit so earlier input tests cannot change the reference.
-        let screen = try XCTUnwrap(window.screen)
-        window.setFrameOrigin(
-          NSPoint(
-            x: screen.visibleFrame.minX + 80,
-            y: screen.visibleFrame.maxY - window.frame.height - 80))
-        // Native bar materials sample beyond the target window. Cover the
-        // screen so their input cannot include the user's foreground content.
-        let backdrop = NSWindow(
-          contentRect: screen.frame,
-          styleMask: [.borderless], backing: .buffered, defer: false)
-        backdrop.isReleasedWhenClosed = false
-        backdrop.backgroundColor = dark ? .black : .white
-        backdrop.isOpaque = true
-        backdrop.ignoresMouseEvents = true
-        backdrop.order(.below, relativeTo: window.windowNumber)
-        defer { backdrop.close() }
         try await deactivateTestApplication()
         XCTAssertFalse(window.isKeyWindow)
         let view = try XCTUnwrap(window.contentView)

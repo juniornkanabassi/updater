@@ -58,18 +58,7 @@ struct SidebarInputFixture {
   func clickProgress(for app: Latest.App) async throws {
     let frame = try contentFrame(for: app)
     let location = CGPoint(x: frame.minX + 264, y: frame.midY - 10)
-    let down = try XCTUnwrap(
-      NSEvent.mouseEvent(
-        with: .leftMouseDown, location: location, modifierFlags: [],
-        timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
-        context: nil, eventNumber: 1, clickCount: 1, pressure: 1))
-    let up = try XCTUnwrap(
-      NSEvent.mouseEvent(
-        with: .leftMouseUp, location: location, modifierFlags: [],
-        timestamp: down.timestamp + 0.05, windowNumber: window.windowNumber,
-        context: nil, eventNumber: 2, clickCount: 1, pressure: 0))
-    NSApp.postEvent(up, atStart: false)
-    window.sendEvent(down)
+    try clickTestWindow(window, at: location)
     try await Task.sleep(for: .milliseconds(50))
   }
   let scroll: NSScrollView

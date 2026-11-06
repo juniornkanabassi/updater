@@ -12,7 +12,8 @@ esac
 # Restrict formatting to project-owned Swift files, excluding build outputs and dependencies.
 files=()
 while IFS= read -r -d '' file; do
-  [[ -f "$file" ]] && files+=("$file")
+  # Keep the proven Video Prompter guard test verbatim (only its import differs).
+  [[ "$file" != Tests/TestOffscreenTests.swift && -f "$file" ]] && files+=("$file")
 done < <(git ls-files --cached --others --exclude-standard -z -- 'Latest/*.swift' 'Tests/*.swift' 'UpdateInstaller/*.swift' 'UpdaterCLI/*.swift' 'script/*.swift')
 
 if [[ "${1:-}" != --check ]]; then

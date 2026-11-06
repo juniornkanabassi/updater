@@ -18,7 +18,7 @@ Reviews here follow the JuniorOS `03 Skills/Review workflow.md`. This project's 
 
 ## Validation
 
-- Run checks appropriate to implementation changes; use `./script/test.sh` for fast background app checks. Foreground interaction and visual tests are opt-in with `./script/test.sh --ui`; run them for affected UI behavior. Keep benchmarks separate. Repeat or broaden checks only for new changes, failures, or unresolved concerns.
+- Run checks appropriate to implementation changes; use `./script/test.sh` for fast background app checks. Invisible interaction and visual tests are opt-in with `./script/test.sh --ui`; run them for affected UI behavior. Keep benchmarks separate. Repeat or broaden checks only for new changes, failures, or unresolved concerns.
 - For UI changes, verify production appearance and affected interactions. For scrolling changes, cover key repeat, reversal, list edges, multiline rows, pinned headers, and mouse targeting. Compare original and candidate on the same system before updating visual references.
 - Compare performance on the same hardware with a representative workload. Report unmet targets; a passing benchmark alone does not establish correct interaction behavior.
 
@@ -28,3 +28,5 @@ Reviews here follow the JuniorOS `03 Skills/Review workflow.md`. This project's 
 - A replacement request authorizes shipping relevant unshipped changes. Check the latest published release against the current version first. If this fork has no published releases, fetch `origin/master` and use its version and source revision as the published-source fallback. Keep an already newer version; bump once only when relevant unshipped changes need a new version, and update release notes. Commit and push successfully before rebuilding and replacing. If already shipped, avoid an unnecessary bump or commit.
 - Replacement does not run tests, visual comparisons, benchmarks, evaluations, or audits unless separately requested. Implementation validation belongs to the implementation task; replacement requires the build and installed-bundle verification.
 - After replacement, verify the installed version and running app path.
+
+Tests and launch checks must never show windows or take focus: the TestOffscreen guard is a dependency of every test target, and real-app checks pass the invisible flag. Never use open, computer use or a visible Simulator in tests (6 Nov 2026).

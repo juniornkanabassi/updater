@@ -23,7 +23,7 @@ for argument in "$@"; do
     --help)
       echo "Usage: $0 [--integration|--ui|--all] [--coverage] [-only-testing:target/class/method]"
       echo "Default: unhosted unit tests. --integration: background app-hosted checks."
-      echo "--ui: foreground app-hosted window/input checks. --all: all three, sequentially."
+      echo "--ui: invisible app-hosted window/input checks. --all: all three, sequentially."
       exit 0 ;;
     *) echo "Unknown argument: $argument" >&2; exit 2 ;;
   esac
@@ -109,7 +109,6 @@ run_lane() {
     selected_target="${selected_target%%/*}"
     [[ "$selected_target" != "$target" ]] || arguments+=("$filter")
   done
-  [[ "$lane" != ui ]] || echo "UI tests open production windows and may take keyboard focus."
   echo "Running $lane tests (coverage=$COVERAGE)"
 
   xcodebuild \

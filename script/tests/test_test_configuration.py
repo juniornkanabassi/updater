@@ -58,17 +58,28 @@ class TestConfigurationTest(unittest.TestCase):
             path = self.paths[ref]
             self.assertTrue(path.is_file(), path)
             self.assertNotIn("import SwiftUI", path.read_text(), path)
-            self.assertNotIn("import AppKit", path.read_text(), path)
+            if path.name != "TestOffscreenTests.swift":
+                self.assertNotIn("import AppKit", path.read_text(), path)
         scheme = ET.parse(ROOT / "Latest.xcodeproj/xcshareddata/xcschemes/Latest Unit Tests.xcscheme")
         self.assertEqual([ref.attrib["BlueprintName"] for ref in scheme.findall(".//BuildableReference")],
                          ["Latest Unit Tests", "Latest Unit Tests"])
+
+    def test_every_test_bundle_compiles_the_offscreen_guard(self):
+        for target in self.targets.values():
+            if target["productType"] != "com.apple.product-type.bundle.unit-test":
+                continue
+            names = {self.paths[ref].name for ref in self.sources(target)}
+            self.assertLessEqual({"TestOffscreen.m", "TestOffscreenTests.swift"}, names)
+            for config in self.configurations(target):
+                self.assertEqual(config["SWIFT_OBJC_BRIDGING_HEADER"],
+                                 "Tests/TestOffscreen/include/TestOffscreen.h")
 
     def test_moved_tests_have_one_owner_and_shared_fixtures_resolve_in_both_modules(self):
         unit = self.sources(self.targets["Latest Unit Tests"])
         hosted = self.sources(self.targets["Latest Tests"])
         shared_tests = {self.paths[ref].name for ref in unit & hosted
                         if self.paths[ref].is_relative_to(ROOT / "Tests")}
-        self.assertEqual(shared_tests, {"ModelFixtures.swift"})
+        self.assertEqual(shared_tests, {"ModelFixtures.swift", "TestOffscreen.m", "TestOffscreenTests.swift"})
         for config in self.configurations(self.targets["Latest Tests"]):
             self.assertIn("LATEST_HOSTED_TESTS", config["SWIFT_ACTIVE_COMPILATION_CONDITIONS"])
 

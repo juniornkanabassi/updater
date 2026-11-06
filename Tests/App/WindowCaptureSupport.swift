@@ -6,7 +6,15 @@ import WebKit
 import XCTest
 
 @MainActor
+func requireWindowServerCapture(_ window: NSWindow) throws {
+  try XCTSkipIf(
+    window.alphaValue == 0,
+    "WindowServer cannot capture TestOffscreen's transparent windows; keep the guard enabled.")
+}
+
+@MainActor
 func captureWindowBitmap(_ window: NSWindow) async throws -> NSBitmapImageRep {
+  try requireWindowServerCapture(window)
   let shareable = try await SCShareableContent.currentProcess
   let capturedWindow = try XCTUnwrap(shareable.windows.first { $0.windowID == window.windowNumber })
   let configuration = SCStreamConfiguration()

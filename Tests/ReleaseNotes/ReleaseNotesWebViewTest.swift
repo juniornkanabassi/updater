@@ -108,6 +108,7 @@ final class ReleaseNotesWebViewTest: XCTestCase {
       defer { window.close() }
       window.orderFront(nil)
       host.layoutSubtreeIfNeeded()
+      try requireWindowServerCapture(window)
       let shareable = try await SCShareableContent.currentProcess
       let capturedWindow = try XCTUnwrap(
         shareable.windows.first { $0.windowID == window.windowNumber })

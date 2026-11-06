@@ -38,7 +38,8 @@ final class TransactionJournalTest: XCTestCase {
     // posix_spawn and waitpid directly: the test reaps the child itself, so nothing depends
     // on a run loop to notice the exit.
     let arguments = [
-      try XCTUnwrap(Bundle.main.executablePath), "--journal-crash-probe", scene.root.path,
+      try XCTUnwrap(Bundle.main.executablePath), "--agent-screen", "--journal-crash-probe",
+      scene.root.path,
       scene.target.path, scene.candidate.path, phase,
     ]
     let pid = try spawn(arguments)

@@ -28,7 +28,7 @@ elif [[ -n "${2:-}" ]]; then
 fi
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BUILD_DIR="$ROOT_DIR/build"
+BUILD_DIR="${UPDATER_BUILD_DIR:-$ROOT_DIR/build}"
 DERIVED_DATA="$BUILD_DIR/DerivedData"
 MODULE_CACHE="$BUILD_DIR/ModuleCache"
 RESULT_BUNDLE="$BUILD_DIR/Latest.xcresult"
@@ -57,35 +57,44 @@ xcodebuild \
   "${SIGNING_ARGS[@]}" \
   build
 
-open_app() {
-  /usr/bin/open -n "$APP_BUNDLE"
+launch_app() {
+  LLVM_PROFILE_FILE="$BUILD_DIR/app-%p.profraw" "$APP_BUNDLE/Contents/MacOS/$APP_NAME" --agent-screen > "$BUILD_DIR/app-launch.log" 2>&1 &
+  APP_PID=$!
+}
+stop_check() {
+  if [[ -n "${APP_PID:-}" ]]; then
+    kill -TERM "$APP_PID" 2>/dev/null || true
+    wait "$APP_PID" 2>/dev/null || true
+  fi
 }
 
 case "$MODE" in
   run)
-    open_app
+    launch_app
     ;;
   --debug|debug)
-    lldb -- "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
+    LLVM_PROFILE_FILE="$BUILD_DIR/app-%p.profraw" lldb -- "$APP_BUNDLE/Contents/MacOS/$APP_NAME" --agent-screen
     ;;
   --logs|logs)
-    open_app
+    launch_app
     /usr/bin/log stream --info --style compact --predicate "process == \"$APP_NAME\""
     ;;
   --telemetry|telemetry)
-    open_app
+    launch_app
     /usr/bin/log stream --info --style compact --predicate "subsystem == \"$BUNDLE_ID\""
     ;;
   --verify|verify)
-    open_app
+    trap stop_check EXIT
+    launch_app
     sleep 2
-    pgrep -x "$APP_NAME" >/dev/null
+    kill -0 "$APP_PID"
     ;;
   --uat|uat)
     # UAT must exercise the same discovery and update-checking services as the
     # shipping app. Deterministic fixtures remain test-only.
-    open_app
+    trap stop_check EXIT
+    launch_app
     sleep 4
-    pgrep -x "$APP_NAME" >/dev/null
+    kill -0 "$APP_PID"
     ;;
 esac
