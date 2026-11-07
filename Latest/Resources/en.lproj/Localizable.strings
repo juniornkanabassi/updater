@@ -116,7 +116,7 @@
 "UpdateAction" = "Update";
 
 /* Title of alert stating that an error occurred during an app update. The placeholder %@ will be replaced with the name of the app. */
-"UpdateErrorAlertTitle" = "An error occurred while updating %@.";
+"UpdateErrorAlertTitle" = "Couldn’t Update %@";
 
 /* Short description of error stating that update info could not be retrieved for a given app. */
 "UpdateInfoUnavailableError" = "Update Information Unavailable";

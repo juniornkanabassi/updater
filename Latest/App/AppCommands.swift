@@ -121,7 +121,7 @@ struct LatestCommands: Commands {
     }
 
     CommandMenu("Updates") {
-      Button("Check Installed Apps") {
+      Button("Check for Updates") {
         appCommands.reload()
       }
       .keyboardShortcut("r")

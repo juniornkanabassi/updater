@@ -16,6 +16,50 @@ import XCTest
 
 @MainActor
 final class AppDependencyBoundaryTest: XCTestCase {
+  func testVerifiedUpdateReceiptsSurviveFilteringAndExcludeOtherOutcomes() async throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let history = UpdateHistoryStore(fileURL: directory.appendingPathComponent("history.jsonl"))
+    let original = makeTestApp(name: "Receipt Fixture", version: "1", remoteVersion: "2")
+    let installed = makeTestApp(name: "Receipt Fixture", version: "2")
+    let success = UpdateHistoryEntry(
+      before: original.bundle, after: installed.bundle, outcome: .updated(from: "1", to: "2"))
+    history.record(success)
+    let receipt = UpdateReceiptModel(history: history)
+    XCTAssertNil(receipt.message, "Past history must not create a new completion banner")
+    let otherOutcomes: [UpdateOutcome] = [
+      .noChange(reason: nil), .failed(reason: "Not installed", logPath: nil),
+      .handedOff, .needsQuit, .needsPermission(kind: "appManagement"),
+    ]
+    for outcome in otherOutcomes {
+      history.record(
+        UpdateHistoryEntry(before: original.bundle, after: original.bundle, outcome: outcome))
+    }
+    try await Task.sleep(for: .milliseconds(30))
+    XCTAssertNil(receipt.message)
+    history.record(success)
+    for _ in 0..<100 where receipt.count != 1 { try await Task.sleep(for: .milliseconds(5)) }
+    XCTAssertEqual(receipt.count, 1)
+    XCTAssertEqual(receipt.message, "Updated Receipt Fixture to 2.")
+    let settings = try isolatedAppListSettings(for: self)
+    let list = UpdatesListViewModel(
+      snapshot: AppListSnapshot(withApps: [original], filterQuery: nil, settings: settings),
+      settings: settings)
+    list.select(original)
+    list.setSearchQuery("No match")
+    XCTAssertNil(list.selectedApp)
+    XCTAssertEqual(receipt.count, 1, "Filtering and selection never dismiss a receipt")
+    history.record(success)
+    for _ in 0..<100 where receipt.count != 2 { try await Task.sleep(for: .milliseconds(5)) }
+    XCTAssertEqual(receipt.count, 2)
+    XCTAssertTrue(receipt.message?.contains("2 updates completed") == true)
+    receipt.dismiss()
+    XCTAssertNil(receipt.message)
+    history.record(success)
+    for _ in 0..<100 where receipt.count != 1 { try await Task.sleep(for: .milliseconds(5)) }
+    XCTAssertEqual(receipt.count, 1, "Dismissal starts a new completion count")
+  }
+
   func testMultipleSelectionUpdatesAutomaticAppsAndSurvivesFiltering() throws {
     let first = makeTestApp(name: "Alpha", version: "1", remoteVersion: "2")
     let second = makeTestApp(name: "Beta", version: "1", remoteVersion: "2")

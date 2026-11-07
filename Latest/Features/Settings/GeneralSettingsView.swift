@@ -17,6 +17,8 @@ struct GeneralSettingsView: View {
   @AppStorage(BackgroundCheckInterval.storageKey)
   private var checkIntervalHours = BackgroundCheckInterval.defaultValue.rawValue
   @AppStorage(MenuBarViewModel.showsItemKey) private var showsMenuBarItem = true
+  @AppStorage(AppStoreUpdateSettings.alwaysPerformManualUpdates.rawValue)
+  private var alwaysOpenAppStore = false
 
   var body: some View {
     Form {
@@ -62,8 +64,15 @@ struct GeneralSettingsView: View {
         )
       }
 
-      if viewModel.showsInstallHelperBanner {
-        Section("App Store") {
+      Section("App Store") {
+        preferenceOption(
+          title: "Always open App Store",
+          description:
+            "Open the App Store for its updates instead of installing them here. Turn this off to use Updater's helper.",
+          isOn: $alwaysOpenAppStore
+        )
+        .accessibilityIdentifier("settings.appStore.manual")
+        if viewModel.showsInstallHelperBanner {
           LabeledContent {
             Button("Enable") { viewModel.registerInstallHelper() }
           } label: {
@@ -75,7 +84,6 @@ struct GeneralSettingsView: View {
       }
     }
     .formStyle(.grouped)
-    .scrollDisabled(true)
     .onAppear {
       viewModel.refreshInstallHelperAvailability()
     }

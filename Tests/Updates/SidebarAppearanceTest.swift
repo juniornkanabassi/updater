@@ -139,7 +139,10 @@ final class SidebarAppearanceTest: XCTestCase {
     XCTAssertTrue(row.contains(frame), "The version must fit inside its native row")
     let font = NSFont.monospacedDigitSystemFont(
       ofSize: NSFont.preferredFont(forTextStyle: .subheadline).pointSize, weight: .regular)
-    let requiredWidth = (app.versionSummary as NSString).size(withAttributes: [.font: font]).width
+    let visibleVersion =
+      app.updateAvailable
+      ? app.localizedVersionInformation?.rawNew ?? app.versionSummary : app.versionSummary
+    let requiredWidth = (visibleVersion as NSString).size(withAttributes: [.font: font]).width
     XCTAssertGreaterThanOrEqual(frame.width + 1, requiredWidth, "The full version must fit")
   }
 }

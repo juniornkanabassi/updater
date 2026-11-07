@@ -37,6 +37,6 @@ enum VisualMetrics {
   // The app header sits below the native window toolbar.
   static let detailHeaderVerticalPadding: CGFloat = Space.sm
   static let detailHeaderHeight: CGFloat = detailIconSize + (detailHeaderVerticalPadding * 2)
-  static let detailHeaderHorizontalPadding: CGFloat = Space.xxl
+  nonisolated static let detailHeaderHorizontalPadding: CGFloat = Space.xxl
 
 }

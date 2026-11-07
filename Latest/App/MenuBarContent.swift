@@ -156,7 +156,7 @@ struct MenuBarContentView: View {
       }
       .disabled(!model.canUpdateAll)
       .accessibilityHint("Installs every update under Ready to Update")
-      Button("Check Now") { checking.checkForUpdates() }
+      Button("Check for Updates") { checking.checkForUpdates() }
         .disabled(checking.isRunning)
       Divider()
       Button("Open Updater") { MainWindow.show() }

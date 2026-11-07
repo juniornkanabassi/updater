@@ -18,4 +18,4 @@ Use system text styles and semantic colours. Space provides the 4, 8, 12, 16, 20
 
 ## Verification
 
-`script/check.sh` runs the normal three correctness lanes, the full-app grid lint and the light/dark snapshot inventory check. Snapshot fixtures render production views with injected data and services. Test windows are transparent and never activate. Each test host has a disposable home and temporary directory; no real app is updated. Native material and active-window appearance remain distinct from offscreen rendering evidence.
+`script/check.sh` runs the normal three correctness lanes, the full-app grid lint and the light/dark snapshot inventory check. Snapshot fixtures render production views with injected data and services. Test windows are transparent and never activate. Each test host has a disposable home and control-data directory; no real app is updated. Native material and active-window appearance remain distinct from offscreen rendering evidence.

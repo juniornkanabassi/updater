@@ -48,6 +48,10 @@ final class UpdateHistoryStore: Sendable {
     fileURL: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
       .appendingPathComponent("Updater/history.jsonl"))
 
+  /// Posted after the record and cache are committed and the history lock is released.
+  static let didRecordNotification = Notification.Name("Updater.UpdateHistoryStore.didRecord")
+  static let entryKey = "entry"
+
   let fileURL: URL
   /// Latest entry per app path, loaded from disk on first use.
   private let latest = Mutex<[String: UpdateHistoryEntry]?>(nil)
@@ -77,6 +81,8 @@ final class UpdateHistoryStore: Sendable {
         try? line.write(to: fileURL)
       }
     }
+    NotificationCenter.default.post(
+      name: Self.didRecordNotification, object: self, userInfo: [Self.entryKey: entry])
   }
 
   func latestEntry(for appURL: URL) -> UpdateHistoryEntry? {

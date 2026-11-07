@@ -43,6 +43,7 @@ struct UpdatesScrollList: View {
       }
     }
     .listStyle(.sidebar)
+    .background(SidebarScrollConfiguration())
     .focused(focus, equals: .list)
     .contextMenu(forSelectionType: App.Bundle.Identifier.self) { identifiers in
       let apps = viewModel.apps(for: identifiers)

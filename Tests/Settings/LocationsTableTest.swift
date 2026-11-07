@@ -70,6 +70,69 @@ private final class SelectionBox {
 
 extension LocationsTableTest {
   @MainActor
+  func testGeneralSettingsMakesManualAppStoreChoiceVisibleAndReversible() async throws {
+    let enhancedAccessibility = NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface")
+    let previousAccessibility = NSApp.accessibilityAttributeValue(enhancedAccessibility) ?? false
+    NSApp.accessibilitySetValue(true, forAttribute: enhancedAccessibility)
+    defer {
+      NSApp.accessibilitySetValue(previousAccessibility, forAttribute: enhancedAccessibility)
+    }
+    let suite = "GeneralAppStore.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removeTestPersistentDomain(forName: suite) }
+    let key = AppStoreUpdateSettings.alwaysPerformManualUpdates.rawValue
+    defaults.set(true, forKey: key)
+    let helper = HelperRegistrationFixture()
+    helper.enabled = true
+    let store = UndoDirectoryStore()
+    let model = SettingsViewModel(
+      settings: try isolatedAppListSettings(for: self), installHelperService: helper,
+      directoryStoreFactory: { _ in store })
+    XCTAssertFalse(model.showsInstallHelperBanner)
+    let host = NSHostingView(
+      rootView: GeneralSettingsView(viewModel: model).defaultAppStorage(defaults))
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 520, height: 720),
+      styleMask: [.titled], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    window.alphaValue = 0
+    window.contentView = host
+    defer { window.close() }
+    host.layoutSubtreeIfNeeded()
+    try await Task.sleep(for: .milliseconds(150))
+    var seen = Set<ObjectIdentifier>()
+    func manualToggle(in value: Any) -> NSObject? {
+      guard let object = value as? NSObject, seen.insert(ObjectIdentifier(object)).inserted else {
+        return nil
+      }
+      let element = SidebarAccessibilityElement(object: object)
+      if element.accessibilityIdentifier() == "settings.appStore.manual" { return object }
+      for child in element.accessibilityChildren() ?? [] {
+        if let match = manualToggle(in: child) { return match }
+      }
+      for child in (object as? NSView)?.subviews ?? [] {
+        if let match = manualToggle(in: child) { return match }
+      }
+      return nil
+    }
+    let toggle = try XCTUnwrap(
+      manualToggle(in: host), "The choice must stay visible with an enabled helper")
+    let press = NSSelectorFromString("accessibilityPerformPress")
+    XCTAssertTrue(toggle.responds(to: press))
+    typealias Press = @convention(c) (AnyObject, Selector) -> Bool
+    let performPress = unsafeBitCast(toggle.method(for: press), to: Press.self)
+    // SwiftUI's inactive AX element reports false even when its action changes the binding.
+    _ = performPress(toggle, press)
+    try await Task.sleep(for: .milliseconds(30))
+    XCTAssertFalse(defaults.bool(forKey: key), "The existing manual-update key must be reversible")
+    _ = performPress(toggle, press)
+    try await Task.sleep(for: .milliseconds(30))
+    XCTAssertTrue(defaults.bool(forKey: key))
+    XCTAssertEqual(window.alphaValue, 0)
+    XCTAssertFalse(window.isKeyWindow)
+  }
+
+  @MainActor
   func testLocationsPaneHasOnlyTheTableScrollViewOffscreen() async throws {
     let store = UndoDirectoryStore()
     for index in 0..<30 {

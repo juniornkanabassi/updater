@@ -1,6 +1,7 @@
 // Copyright © 2026 Junior Nkana Bassi. Licensed under GPL-3.0; see LICENSE.md.
 
 import Foundation
+import Synchronization
 import XCTest
 
 #if LATEST_HOSTED_TESTS
@@ -50,6 +51,27 @@ final class UpdateHistoryStoreTest: XCTestCase {
     reloaded.record(UpdateHistoryEntry(before: app, after: app, outcome: .needsQuit))
     XCTAssertEqual(
       UpdateHistoryStore(fileURL: file).latestEntry(for: app.fileURL)?.outcome, .needsQuit)
+  }
+
+  func testRecordNotifiesAfterUnlockAndMakesTheRecordedEntryReadable() throws {
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let store = UpdateHistoryStore(fileURL: directory.appendingPathComponent("history.jsonl"))
+    let app = bundle("/tmp/History notification.app")
+    let entry = UpdateHistoryEntry(before: app, after: app, outcome: .noChange(reason: nil))
+    let received = Mutex<UpdateHistoryEntry?>(nil)
+    let token = NotificationCenter.default.addObserver(
+      forName: UpdateHistoryStore.didRecordNotification, object: store, queue: nil
+    ) { notification in
+      // A synchronous observer can re-enter the store only after record releases its mutex.
+      let readable = store.latestEntry(for: app.fileURL)
+      let published = notification.userInfo?[UpdateHistoryStore.entryKey] as? UpdateHistoryEntry
+      XCTAssertEqual(readable, published)
+      received.withLock { $0 = published }
+    }
+    defer { NotificationCenter.default.removeObserver(token) }
+    store.record(entry)
+    XCTAssertEqual(received.withLock { $0 }, entry)
   }
 
   /// Sol R11: a recorded outcome describes one product at one full version (short + build).

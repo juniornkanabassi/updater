@@ -2,6 +2,7 @@
 
 import AppKit
 import SwiftUI
+import WebKit
 import XCTest
 
 @testable import Latest
@@ -94,13 +95,23 @@ final class Round6VisualTest: XCTestCase {
 
     let detail = CGSize(width: 560, height: 420)
     let goodnotes = try XCTUnwrap(store.apps.first { $0.name == "Goodnotes" })
+    let receipt = UpdateReceiptModel(history: history)
     history.record(
       UpdateHistoryEntry(
         before: goodnotes.bundle, after: goodnotes.bundle,
         outcome: .updated(from: "7.1.30", to: "7.1.32")))
 
+    for _ in 0..<100 where receipt.message == nil {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    let confirmation = try XCTUnwrap(receipt.message)
     for dark in [false, true] {
       let suffix = dark ? "dark" : "light"
+      try await render(
+        VStack(spacing: 0) {
+          UpdateReceiptBanner(message: confirmation, dismiss: {})
+          Spacer()
+        }, size: CGSize(width: 560, height: 200), dark: dark, name: "update-confirmation-\(suffix)")
       for name in [
         "Shottr", "Goodnotes", "Adobe Premiere Pro 2026", "Discord", "OBS", "Google Chrome",
         "Final Cut Pro", "Updater", "Raycast", "Audio Hijack",
@@ -186,7 +197,8 @@ final class Round6VisualTest: XCTestCase {
         XCTAssertGreaterThan(fitting.height, 200, "settings-\(tab) height")
         try await render(
           SettingsRootView(viewModel: settingsModel, permissionsModel: permissions)
-            .defaultAppStorage(defaults), size: CGSize(width: 520, height: 560),
+            .defaultAppStorage(defaults),
+          size: CGSize(width: 520, height: max(240, ceil(fitting.height))),
           dark: dark, window: true, name: "settings-\(tab)-\(suffix)")
       }
 
@@ -316,6 +328,13 @@ final class Round6VisualTest: XCTestCase {
       try await Task.sleep(for: .milliseconds(80))
       host.contentView?.layoutSubtreeIfNeeded()
       if let content = host.contentView { materialiseTables(in: content) }
+    }
+    if name.hasPrefix("detail-notes") {
+      let web = try XCTUnwrap(host.contentView?.descendant(of: WKWebView.self))
+      try await waitForWebPaint(web)
+      let text = try await web.evaluateJavaScript("document.body.innerText") as? String
+      XCTAssertTrue(text?.contains("Fixture release notes") == true)
+      host.contentView?.layoutSubtreeIfNeeded()
     }
     // The frame view draws the titlebar and toolbar as well as the content.
     let view = try XCTUnwrap(window ? host.contentView?.superview : host.contentView)

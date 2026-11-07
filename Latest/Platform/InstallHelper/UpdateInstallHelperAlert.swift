@@ -215,6 +215,12 @@ struct UpdateInstallHelperContent: View {
         }
       }
       Toggle("Always open App Store", isOn: $alwaysOpenAppStore)
+      Text(
+        "Open the App Store for every App Store update instead of installing here. Change this in Settings, General, App Store."
+      )
+      .font(.caption)
+      .foregroundStyle(.secondary)
+      .fixedSize(horizontal: false, vertical: true)
       Divider()
       HStack {
         Button("Cancel", role: .cancel) { presenter.cancel() }

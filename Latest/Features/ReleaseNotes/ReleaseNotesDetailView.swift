@@ -9,6 +9,7 @@
 //  Licensed under GPL-3.0; see LICENSE.md.
 
 import AppKit
+import Combine
 import SwiftUI
 
 struct ReleaseNotesDetailView: View {
@@ -96,6 +97,7 @@ struct ReleaseNotesDetailSurface: View {
   var updating: any AppUpdating = AppUpdateService.shared
   var overview = DetailOverview.chooseApp
   var history = UpdateHistoryStore.shared
+  @State private var lastResult: UpdateHistoryEntry?
 
   init(
     app: App?, contentState: ReleaseNotesDetailContentState,
@@ -107,6 +109,7 @@ struct ReleaseNotesDetailSurface: View {
     self.updating = updating
     self.overview = overview
     self.history = history
+    _lastResult = State(initialValue: app.flatMap { history.latestEntry(for: $0.fileURL) })
   }
 
   var body: some View {
@@ -117,12 +120,35 @@ struct ReleaseNotesDetailSurface: View {
           UpdateSummaryView(app: app, presentation: presentation, updating: updating)
         }
         .id(ObjectIdentifier(app))
+        if let lastResult {
+          LabeledContent("Last result") {
+            Text(lastResult.displaySummary)
+              .textSelection(.enabled)
+              .accessibilityLabel(
+                lastResult.displaySummary.replacingOccurrences(of: "→", with: "to"))
+          }
+          .font(.callout)
+          .padding(.horizontal, VisualMetrics.detailHeaderHorizontalPadding)
+          .padding(.bottom, Space.md)
+          .accessibilityIdentifier("detail.lastResult")
+        }
         Divider()
       }
       content
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .background(Color(nsColor: .textBackgroundColor))
+    .onChange(of: app.map(ObjectIdentifier.init)) { _, _ in refreshLastResult() }
+    .onReceive(
+      NotificationCenter.default.publisher(
+        for: UpdateHistoryStore.didRecordNotification, object: history
+      )
+      .receive(on: DispatchQueue.main)
+    ) { _ in refreshLastResult() }
+  }
+
+  private func refreshLastResult() {
+    lastResult = app.flatMap { history.latestEntry(for: $0.fileURL) }
   }
 
   private var content: some View {
@@ -136,7 +162,7 @@ struct ReleaseNotesDetailSurface: View {
         switch contentState {
         case .message:
           // No notes for this version: the facts about the app take their place.
-          AppInfoPanel(app: app, lastResult: history.latestEntry(for: app.fileURL))
+          AppInfoPanel(app: app)
         case .loading:
           ProgressView()
             .controlSize(.regular)
@@ -192,6 +218,7 @@ struct ReleaseNotesHeaderView: View {
           .help(app.name)
 
         Text(versionLine)
+          .accessibilityLabel(versionLine.replacingOccurrences(of: "→", with: "to"))
           .font(.subheadline.monospacedDigit())
           .foregroundStyle(.secondary)
           .lineLimit(1)
@@ -315,7 +342,6 @@ private struct UpdateSummaryView: View {
 /// Shown instead of release notes when there are none: versions, route, place and last result.
 private struct AppInfoPanel: View {
   let app: App
-  let lastResult: UpdateHistoryEntry?
 
   var body: some View {
     ScrollView {
@@ -335,9 +361,6 @@ private struct AppInfoPanel: View {
           "Location",
           (app.fileURL.deletingLastPathComponent().path as NSString)
             .abbreviatingWithTildeInPath)
-        if let lastResult {
-          row("Last update", lastResult.displaySummary)
-        }
       }
       .font(.callout)
       .padding(.horizontal, VisualMetrics.detailHeaderHorizontalPadding)

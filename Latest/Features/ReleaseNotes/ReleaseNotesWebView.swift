@@ -100,7 +100,7 @@ enum ReleaseNotesWebDocument {
       <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
       <style>
       :root { color-scheme: light dark; overscroll-behavior: none; }
-      body { margin: 0; padding: 14px 20px; font: 13px/1.6 -apple-system, sans-serif;
+      body { margin: 0; padding: \(Int(Space.lg))px \(Int(VisualMetrics.detailHeaderHorizontalPadding))px; font: 13px/1.6 -apple-system, sans-serif;
         color: CanvasText; background: transparent; overflow-wrap: anywhere; }
       main { white-space: pre-wrap; }
       a { color: -apple-system-blue; }

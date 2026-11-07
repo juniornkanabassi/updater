@@ -126,6 +126,7 @@
 		52EF00102FFB000000000001 /* SidebarUpdateStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52EF00112FFB000000000001 /* SidebarUpdateStatus.swift */; };
 		52F001012FE2000000000001 /* AppPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52F000012FE2000000000001 /* AppPresentation.swift */; };
 		52F001022FE2000000000001 /* ReleaseNotesProviderSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52F000022FE2000000000001 /* ReleaseNotesProviderSupport.swift */; };
+		52F001032FE2000000000001 /* SidebarScrollConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52F000032FE2000000000001 /* SidebarScrollConfiguration.swift */; };
 		52F001042FE2000000000001 /* ReleaseNotesSourceCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52F000042FE2000000000001 /* ReleaseNotesSourceCatalog.swift */; };
 		52F001052FE2000000000001 /* ElectronReleaseNotesSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52F000052FE2000000000001 /* ElectronReleaseNotesSource.swift */; };
 		52F001062FE2000000000001 /* ReleaseNotesMarkup+Preparation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52F000062FE2000000000001 /* ReleaseNotesMarkup+Preparation.swift */; };
@@ -512,6 +513,7 @@
 		52EF00112FFB000000000001 /* SidebarUpdateStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarUpdateStatus.swift; sourceTree = "<group>"; };
 		52F000012FE2000000000001 /* AppPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppPresentation.swift; sourceTree = "<group>"; };
 		52F000022FE2000000000001 /* ReleaseNotesProviderSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseNotesProviderSupport.swift; sourceTree = "<group>"; };
+		52F000032FE2000000000001 /* SidebarScrollConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarScrollConfiguration.swift; sourceTree = "<group>"; };
 		52F000042FE2000000000001 /* ReleaseNotesSourceCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseNotesSourceCatalog.swift; sourceTree = "<group>"; };
 		52F000052FE2000000000001 /* ElectronReleaseNotesSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ElectronReleaseNotesSource.swift; sourceTree = "<group>"; };
 		52F000062FE2000000000001 /* ReleaseNotesMarkup+Preparation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReleaseNotesMarkup+Preparation.swift"; sourceTree = "<group>"; };
@@ -983,6 +985,7 @@
 				52E000012FE1000000000001 /* ApplicationWorkspace.swift */,
 				4AB14676CE854DE4B96BC291 /* AppLifecycle.swift */,
 				5058BA3921202BA7003F332B /* IconCache.swift */,
+				52F000032FE2000000000001 /* SidebarScrollConfiguration.swift */,
 			);
 			path = AppKit;
 			sourceTree = "<group>";
@@ -1599,6 +1602,7 @@
 				98849C45CA55E4F4E92740CB /* ChromeReleaseNotesExtractor.swift in Sources */,
 				52F001012FE2000000000001 /* AppPresentation.swift in Sources */,
 				52F001022FE2000000000001 /* ReleaseNotesProviderSupport.swift in Sources */,
+				52F001032FE2000000000001 /* SidebarScrollConfiguration.swift in Sources */,
 				52F001042FE2000000000001 /* ReleaseNotesSourceCatalog.swift in Sources */,
 				52F001052FE2000000000001 /* ElectronReleaseNotesSource.swift in Sources */,
 				52F001062FE2000000000001 /* ReleaseNotesMarkup+Preparation.swift in Sources */,

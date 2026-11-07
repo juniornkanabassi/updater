@@ -2,6 +2,7 @@ import importlib.util
 from pathlib import Path
 import struct
 import tempfile
+import time
 import unittest
 import zlib
 
@@ -27,6 +28,10 @@ class SnapshotGateTest(unittest.TestCase):
 
     def test_full_paired_inventory_passes(self):
         gate.check(self.root)
+
+    def test_stale_output_cannot_pass_a_new_run(self):
+        with self.assertRaisesRegex(ValueError, 'Stale snapshot'):
+            gate.check(self.root, time.time() + 1)
 
     def test_missing_dark_surface_fails(self):
         (self.root / 'main-window-dark.png').unlink()

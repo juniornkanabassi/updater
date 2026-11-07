@@ -6,7 +6,7 @@ import sys
 import zlib
 
 PAGES = {
-    'main-window', 'native-sidebar', 'helper-setup', 'helper-approval', 'helper-failure', 'about', 'licenses', 'settings-general', 'settings-locations',
+    'main-window', 'update-confirmation', 'native-sidebar', 'helper-setup', 'helper-approval', 'helper-failure', 'about', 'licenses', 'settings-general', 'settings-locations',
     'settings-permissions', 'detail-loading', 'detail-notes',
     'overview-up-to-date', 'overview-partial', 'overview-checking', 'overview-offline',
     'overview-no-matches', 'overview-first-run', 'overview-no-selection',
@@ -14,11 +14,13 @@ PAGES = {
       'discord', 'obs', 'google-chrome', 'final-cut-pro', 'updater', 'raycast', 'audio-hijack')),
 }
 
-def check(folder):
+def check(folder, started_at=None):
     for page in sorted(PAGES):
         hashes = []
         for mode in ('light', 'dark'):
             path = folder / f'{page}-{mode}.png'
+            if started_at is not None and path.stat().st_mtime < started_at:
+                raise ValueError(f'Stale snapshot: {path}')
             data = path.read_bytes()
             if data[:8] != b'\x89PNG\r\n\x1a\n':
                 raise ValueError(f'Invalid PNG: {path}')
@@ -42,9 +44,12 @@ def check(folder):
             hashes.append(hashlib.sha256(data).hexdigest())
         if hashes[0] == hashes[1]:
             raise ValueError(f'Light and dark snapshots are identical: {page}')
-    if not (folder / 'menu-bar.txt').read_text().strip():
+    menu = folder / 'menu-bar.txt'
+    if started_at is not None and menu.stat().st_mtime < started_at:
+        raise ValueError('Stale menu structure')
+    if not menu.read_text().strip():
         raise ValueError('Missing menu structure')
     print(f'PASS snapshots: {len(PAGES)} surfaces in light and dark, plus menu structure')
 
 if __name__ == '__main__':
-    check(Path(sys.argv[1]))
+    check(Path(sys.argv[1]), float(sys.argv[2]) if len(sys.argv) > 2 else None)
