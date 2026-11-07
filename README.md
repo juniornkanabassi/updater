@@ -14,6 +14,7 @@ Requires Xcode 26.5 or later and `ripgrep`. Development and CI use `main`; CI us
 brew install ripgrep
 ./script/build_and_run.sh
 ./script/test.sh
+./script/check.sh # full offscreen UI, integration, light/dark snapshots and grid gate
 ./script/format.sh --check
 ./script/lint.sh
 ```
@@ -73,8 +74,10 @@ Obsidian's installed version comes from its ASAR payload; Delta's comes from val
 detail states, Settings tabs, About and Licences to `$UPDATER_BUILD_DIR/snapshots`
 (default `build/snapshots`). The runner forwards this path to the test host.
 Direct Xcode runs render the same checks without saving PNGs unless `UPDATER_BUILD_DIR` is set.
-The main-content fixture uses the production sidebar and detail surface with disposable data;
-it does not render the root window chrome. Offscreen captures cannot establish active-window
+The main-window fixture uses the production split view and detail surface with disposable data.
+The full council gate is `./script/check.sh`: it runs all three test lanes, requires all 29
+surfaces in both appearances, and rejects incomplete or corrupt snapshot output.
+Every test host uses a disposable home and temporary directory. Design rules are in [docs/DESIGN.md](docs/DESIGN.md). Offscreen captures cannot establish active-window
 appearance or keyboard behaviour. Keep existing visual baselines until a same-system
 original/candidate comparison has been reviewed.
 

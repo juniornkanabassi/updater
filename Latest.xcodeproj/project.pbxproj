@@ -126,7 +126,6 @@
 		52EF00102FFB000000000001 /* SidebarUpdateStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52EF00112FFB000000000001 /* SidebarUpdateStatus.swift */; };
 		52F001012FE2000000000001 /* AppPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52F000012FE2000000000001 /* AppPresentation.swift */; };
 		52F001022FE2000000000001 /* ReleaseNotesProviderSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52F000022FE2000000000001 /* ReleaseNotesProviderSupport.swift */; };
-		52F001032FE2000000000001 /* SidebarScrollConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52F000032FE2000000000001 /* SidebarScrollConfiguration.swift */; };
 		52F001042FE2000000000001 /* ReleaseNotesSourceCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52F000042FE2000000000001 /* ReleaseNotesSourceCatalog.swift */; };
 		52F001052FE2000000000001 /* ElectronReleaseNotesSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52F000052FE2000000000001 /* ElectronReleaseNotesSource.swift */; };
 		52F001062FE2000000000001 /* ReleaseNotesMarkup+Preparation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52F000062FE2000000000001 /* ReleaseNotesMarkup+Preparation.swift */; };
@@ -174,7 +173,6 @@
 		B19FFBF5C471F9724704AE54 /* ReleaseNotesHTMLExtraction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FDE96FFFEC9B3854A230E64 /* ReleaseNotesHTMLExtraction.swift */; };
 		A20261008000000000000011 /* SidebarRenderingTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20261008000000000000012 /* SidebarRenderingTest.swift */; };
 		B3641FA81C414F40B4717F15 /* SidebarAppearanceTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7E6CF3DAEC2C29A3BA56545 /* SidebarAppearanceTest.swift */; };
-		B38425DE61AA4DA792862AA2 /* SidebarLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D0800BCF76F4DFA96007B2F /* SidebarLayout.swift */; };
 		B951B0013000000000000001 /* Task+Cancellation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B951B0023000000000000001 /* Task+Cancellation.swift */; };
 		BA7CB9F9A9958E9DB93C3B78 /* SidebarInputFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61302AFC0E5ACDAF9CD960DF /* SidebarInputFixture.swift */; };
 		C3EE1C0E7A384BAB4F0EFE2D /* SidebarInteractionTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E2D81739D6F59AAF79D6518 /* SidebarInteractionTest.swift */; };
@@ -514,7 +512,6 @@
 		52EF00112FFB000000000001 /* SidebarUpdateStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarUpdateStatus.swift; sourceTree = "<group>"; };
 		52F000012FE2000000000001 /* AppPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppPresentation.swift; sourceTree = "<group>"; };
 		52F000022FE2000000000001 /* ReleaseNotesProviderSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseNotesProviderSupport.swift; sourceTree = "<group>"; };
-		52F000032FE2000000000001 /* SidebarScrollConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarScrollConfiguration.swift; sourceTree = "<group>"; };
 		52F000042FE2000000000001 /* ReleaseNotesSourceCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseNotesSourceCatalog.swift; sourceTree = "<group>"; };
 		52F000052FE2000000000001 /* ElectronReleaseNotesSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ElectronReleaseNotesSource.swift; sourceTree = "<group>"; };
 		52F000062FE2000000000001 /* ReleaseNotesMarkup+Preparation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReleaseNotesMarkup+Preparation.swift"; sourceTree = "<group>"; };
@@ -538,7 +535,6 @@
 		78AD204DA0DFBA620BD9B469 /* ToolbarProgressTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolbarProgressTest.swift; sourceTree = "<group>"; };
 		7BD24E3B8825086A233D1784 /* LocationsTableTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationsTableTest.swift; sourceTree = "<group>"; };
 		7CCF35F698578974F2170F54 /* Latest Unit Tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Latest Unit Tests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
-		7D0800BCF76F4DFA96007B2F /* SidebarLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarLayout.swift; sourceTree = "<group>"; };
 		7FF1FE8305D9274EA12CFDF7 /* UpdateCheckSchedulingTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateCheckSchedulingTest.swift; sourceTree = "<group>"; };
 		843BF790E40A841BAE9F49BC /* ModelFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelFixtures.swift; sourceTree = "<group>"; };
 		8A873D313BACF2FD42FD97A5 /* ComponentAppearanceTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComponentAppearanceTest.swift; sourceTree = "<group>"; };
@@ -844,7 +840,6 @@
 				51A0000F2FC3000000000001 /* UpdateSectionHeaderView.swift */,
 				51A000092FC3000000000001 /* UpdatesListViewModel.swift */,
 				51A000112FC3000000000001 /* UpdatesSidebarView.swift */,
-				7D0800BCF76F4DFA96007B2F /* SidebarLayout.swift */,
 				A0FA00000000000000000002 /* UpdatesScrollList.swift */,
 				52A000072FE0000000000001 /* UpdatesToolbar.swift */,
 			);
@@ -988,7 +983,6 @@
 				52E000012FE1000000000001 /* ApplicationWorkspace.swift */,
 				4AB14676CE854DE4B96BC291 /* AppLifecycle.swift */,
 				5058BA3921202BA7003F332B /* IconCache.swift */,
-				52F000032FE2000000000001 /* SidebarScrollConfiguration.swift */,
 			);
 			path = AppKit;
 			sourceTree = "<group>";
@@ -1537,7 +1531,6 @@
 				51A001102FC3000000000001 /* UpdateRowView.swift in Sources */,
 				51F100052FD0000000000001 /* MigrationTelemetry.swift in Sources */,
 				51A001112FC3000000000001 /* UpdatesSidebarView.swift in Sources */,
-				B38425DE61AA4DA792862AA2 /* SidebarLayout.swift in Sources */,
 				A0FA00000000000000000001 /* UpdatesScrollList.swift in Sources */,
 				51A001142FC3000000000001 /* ReleaseNotesDetailView.swift in Sources */,
 				51F100072FD0000000000001 /* ReleaseNotesDetailViewModel.swift in Sources */,
@@ -1606,7 +1599,6 @@
 				98849C45CA55E4F4E92740CB /* ChromeReleaseNotesExtractor.swift in Sources */,
 				52F001012FE2000000000001 /* AppPresentation.swift in Sources */,
 				52F001022FE2000000000001 /* ReleaseNotesProviderSupport.swift in Sources */,
-				52F001032FE2000000000001 /* SidebarScrollConfiguration.swift in Sources */,
 				52F001042FE2000000000001 /* ReleaseNotesSourceCatalog.swift in Sources */,
 				52F001052FE2000000000001 /* ElectronReleaseNotesSource.swift in Sources */,
 				52F001062FE2000000000001 /* ReleaseNotesMarkup+Preparation.swift in Sources */,

@@ -13,6 +13,7 @@ struct ObservedUpdatePresentation<Content: View>: View {
 
   private struct ObservationKey: Equatable {
     let app: App.Bundle.Identifier
+    let instance: ObjectIdentifier
     let service: ObjectIdentifier
   }
 
@@ -22,7 +23,8 @@ struct ObservedUpdatePresentation<Content: View>: View {
   }
 
   private var key: ObservationKey {
-    ObservationKey(app: app.identifier, service: ObjectIdentifier(updating))
+    ObservationKey(
+      app: app.identifier, instance: ObjectIdentifier(app), service: ObjectIdentifier(updating))
   }
 
   private var presentation: UpdateActionPresentation {

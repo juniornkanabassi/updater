@@ -83,3 +83,13 @@ func makeTestApp(
   )
   return App(bundle: bundle, update: .success(update), isIgnored: false)
 }
+
+#if LATEST_HOSTED_TESTS
+  @MainActor
+  func setTestManualAppStorePreference(_ value: Bool) {
+    var domain = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
+    domain[AppStoreUpdateSettings.alwaysPerformManualUpdates.rawValue] = value
+    UserDefaults.standard.setVolatileDomain(domain, forName: UserDefaults.argumentDomain)
+    NotificationCenter.default.post(name: UserDefaults.didChangeNotification, object: nil)
+  }
+#endif

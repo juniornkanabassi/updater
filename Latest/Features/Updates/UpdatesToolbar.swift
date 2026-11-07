@@ -44,7 +44,7 @@ struct UpdateAllToolbarButton: View {
   var body: some View {
     Button(action: action) {
       Text(count > 0 ? "Update All (\(count))" : "Update All")
-        .padding(.horizontal, 4)
+        .padding(.horizontal, Space.xs)
     }
     .buttonStyle(.borderedProminent)
     .disabled(count == 0)

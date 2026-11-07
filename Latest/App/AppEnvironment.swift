@@ -58,7 +58,8 @@ final class AppEnvironment: ObservableObject {
         settings: settings,
         appProvider: coordinator.appProvider,
         workspace: workspace,
-        updating: updating
+        updating: updating,
+        bulkUpdateService: updateCheckingService
       )
     let settingsViewModel =
       settingsViewModel

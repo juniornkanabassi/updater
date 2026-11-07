@@ -17,14 +17,11 @@ struct UpdateSectionHeaderView: View {
 
   var body: some View {
     Text(Self.title(for: section))
+      .accessibilityAddTraits(.isHeader)
       .lineLimit(1)
       .truncationMode(.tail)
       .frame(maxWidth: .infinity, alignment: .leading)
-      .frame(height: VisualMetrics.sectionHeaderHeight - 10)
-      .padding(.leading, 22)
-      .padding(.trailing, 38)
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
-      .offset(y: 1.5)
+
   }
 
   private static let numberFormatter = NumberFormatter()
@@ -52,7 +49,7 @@ struct UpdateSectionHeaderView: View {
 
   private static func styled(_ text: String, count: Bool) -> AttributedString {
     var text = AttributedString(text)
-    text.font = .system(size: count ? 11 : 13, weight: count ? .bold : .medium)
+    text.font = count ? .subheadline.bold() : .headline
     text.foregroundColor = Color(nsColor: count ? .tertiaryLabelColor : .secondaryLabelColor)
     return text
   }

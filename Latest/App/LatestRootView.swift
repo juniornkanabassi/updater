@@ -11,52 +11,49 @@ import SwiftUI
 
 struct LatestRootView: View {
   let environment: AppEnvironment
+  private let detailViewModel: ReleaseNotesDetailViewModel
+  private let history: UpdateHistoryStore
 
   @FocusState private var focus: SidebarFocus?
   @ObservedObject private var updatesViewModel: UpdatesListViewModel
-  init(environment: AppEnvironment) {
+  @ObservedObject private var searchFocusController: SearchFocusController
+  @State private var columnVisibility = NavigationSplitViewVisibility.all
+  init(
+    environment: AppEnvironment,
+    detailViewModel: ReleaseNotesDetailViewModel = ReleaseNotesDetailViewModel(),
+    history: UpdateHistoryStore = .shared
+  ) {
     self.environment = environment
+    self.detailViewModel = detailViewModel
+    self.history = history
     _updatesViewModel = ObservedObject(wrappedValue: environment.updatesListViewModel)
+    _searchFocusController = ObservedObject(wrappedValue: environment.searchFocusController)
   }
 
   var body: some View {
-    HStack(spacing: 0) {
+    NavigationSplitView(columnVisibility: $columnVisibility) {
       UpdatesSidebarView(
         viewModel: updatesViewModel,
         searchFocusController: environment.searchFocusController
       )
-      .frame(width: VisualMetrics.sidebarIdealWidth)
-      .frame(maxHeight: .infinity)
-      .overlay(alignment: .trailing) {
-        Divider().ignoresSafeArea(.container, edges: .top)
-      }
-
-      ReleaseNotesDetailView(updatesViewModel: updatesViewModel)
-        .frame(minWidth: VisualMetrics.detailMinWidth)
-        .overlay(alignment: .top) {
-          Rectangle()
-            .fill(Color(nsColor: .separatorColor))
-            .frame(height: 1)
-            .allowsHitTesting(false)
-        }
+      .navigationSplitViewColumnWidth(min: 260, ideal: VisualMetrics.sidebarIdealWidth, max: 480)
+    } detail: {
+      ReleaseNotesDetailView(
+        updatesViewModel: updatesViewModel,
+        detailViewModel: detailViewModel, history: history
+      )
+      .frame(minWidth: VisualMetrics.detailMinWidth)
+      .navigationTitle("Updates")
     }
     .environment(\.windowFocus, $focus)
+    .onChange(of: searchFocusController.request) { _, request in
+      if request != nil { columnVisibility = .all }
+    }
+    .onAppear {
+      if searchFocusController.hasPendingRequest { columnVisibility = .all }
+    }
     .modifier(UpdateInstallHelperPresentation())
-    .navigationTitle("Updater")
-    .toolbar(removing: .title)
-    .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
     .toolbar {
-      ToolbarItem(placement: .navigation) {
-        Text(NSLocalizedString("Updates", comment: "Main toolbar title"))
-          .font(.system(size: 15, weight: .semibold))
-          // Navigation placement starts 96 points from the window's leading edge.
-          .padding(
-            .leading,
-            VisualMetrics.sidebarIdealWidth + VisualMetrics.detailHeaderHorizontalPadding - 96
-          )
-          .accessibilityIdentifier("toolbar.title")
-      }
-      .sharedBackgroundVisibility(.hidden)
       UpdatesToolbar(
         service: environment.updateCheckingService, summary: environment.menuBar,
         reload: { environment.commands.reload() },

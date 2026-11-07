@@ -172,54 +172,62 @@ final class UpdateInstallHelperAlert: ObservableObject {
 struct UpdateInstallHelperPresentation: ViewModifier {
   @ObservedObject var presenter: UpdateInstallHelperAlert = .shared
   @Environment(\.scenePhase) private var scenePhase
-  @AppStorage(AppStoreUpdateSettings.alwaysPerformManualUpdates.rawValue)
-  private var alwaysOpenAppStore = false
-
   func body(content: Content) -> some View {
     content
       .sheet(
         isPresented: $presenter.isPresented,
         onDismiss: { if !presenter.isPresented { presenter.cancel() } }
       ) {
-        VStack(alignment: .leading, spacing: 20) {
-          HStack(spacing: 12) {
-            Image(systemName: "shippingbox")
-              .font(.system(size: 28)).foregroundStyle(.secondary)
-            Text(presenter.title).font(.title2.bold())
-          }
-          Text(presenter.message).fixedSize(horizontal: false, vertical: true)
-          if presenter.isChecking {
-            HStack(spacing: 10) {
-              ProgressView().controlSize(.small)
-              Text("Checking and repairing helper…").foregroundStyle(.secondary)
-            }
-          }
-          if let details = presenter.errorDetails {
-            DisclosureGroup("Details") {
-              Text(details)
-                .font(.caption).textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-          }
-          Toggle("Always open App Store", isOn: $alwaysOpenAppStore)
-          Divider()
-          HStack {
-            Button("Cancel", role: .cancel) { presenter.cancel() }
-              .keyboardShortcut(.cancelAction)
-            Spacer()
-            Button("Open App Store") { presenter.openAppStore() }
-            Button(presenter.primaryTitle) { presenter.enableHelper() }
-              .keyboardShortcut(.defaultAction)
-              .disabled(presenter.isChecking)
-          }
-        }
-        .padding(24)
-        .frame(width: 460, alignment: .leading)
-        .interactiveDismissDisabled(presenter.isChecking)
+        UpdateInstallHelperContent(presenter: presenter)
       }
       .onChange(of: scenePhase) { _, phase in
         if phase == .active { presenter.resumeIfAvailable() }
       }
+  }
+}
+
+/// The sheet content also renders directly in the offscreen appearance check.
+struct UpdateInstallHelperContent: View {
+  @ObservedObject var presenter: UpdateInstallHelperAlert
+  @AppStorage(AppStoreUpdateSettings.alwaysPerformManualUpdates.rawValue)
+  private var alwaysOpenAppStore = false
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 20) {
+      HStack(spacing: 12) {
+        Image(systemName: "shippingbox")
+          .font(.system(size: 28)).foregroundStyle(.secondary)
+        Text(presenter.title).font(.title2.bold())
+      }
+      Text(presenter.message).fixedSize(horizontal: false, vertical: true)
+      if presenter.isChecking {
+        HStack(spacing: Space.md) {
+          ProgressView().controlSize(.small)
+          Text("Checking and repairing helper…").foregroundStyle(.secondary)
+        }
+      }
+      if let details = presenter.errorDetails {
+        DisclosureGroup("Details") {
+          Text(details)
+            .font(.caption).textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+      }
+      Toggle("Always open App Store", isOn: $alwaysOpenAppStore)
+      Divider()
+      HStack {
+        Button("Cancel", role: .cancel) { presenter.cancel() }
+          .keyboardShortcut(.cancelAction)
+        Spacer()
+        Button("Open App Store") { presenter.openAppStore() }
+        Button(presenter.primaryTitle) { presenter.enableHelper() }
+          .keyboardShortcut(.defaultAction)
+          .disabled(presenter.isChecking)
+      }
+    }
+    .padding(24)
+    .frame(width: 460, alignment: .leading)
+    .interactiveDismissDisabled(presenter.isChecking)
   }
 }

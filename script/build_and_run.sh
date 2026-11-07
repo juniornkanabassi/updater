@@ -58,7 +58,9 @@ xcodebuild \
   build
 
 launch_app() {
-  LLVM_PROFILE_FILE="$BUILD_DIR/app-%p.profraw" "$APP_BUNDLE/Contents/MacOS/$APP_NAME" --agent-screen > "$BUILD_DIR/app-launch.log" 2>&1 &
+  CHECK_HOME="$(mktemp -d "$BUILD_DIR/check-home.XXXXXX")"
+  mkdir -p "$CHECK_HOME/data" "$CHECK_HOME/tmp"
+  CFFIXED_USER_HOME="$CHECK_HOME" UPDATER_HOME="$CHECK_HOME/data" TMPDIR="$CHECK_HOME/tmp/" LLVM_PROFILE_FILE="$BUILD_DIR/app-%p.profraw" "$APP_BUNDLE/Contents/MacOS/$APP_NAME" --agent-screen > "$BUILD_DIR/app-launch.log" 2>&1 &
   APP_PID=$!
 }
 stop_check() {
@@ -66,6 +68,7 @@ stop_check() {
     kill -TERM "$APP_PID" 2>/dev/null || true
     wait "$APP_PID" 2>/dev/null || true
   fi
+  [[ -z "${CHECK_HOME:-}" ]] || /bin/rm -rf "$CHECK_HOME"
 }
 
 case "$MODE" in

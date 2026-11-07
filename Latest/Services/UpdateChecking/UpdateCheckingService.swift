@@ -80,23 +80,32 @@ final class UpdateCheckingService: NSObject, ObservableObject, UpdateCheckProgre
   ) -> [App] {
     apps.filter { app in
       // The manual-update preference turns App Store installs into a hand-off.
-      app.capability.isAutomatic && !isUpdating(app)
+      app.updateAvailable && !app.isIgnored && app.capability.isAutomatic && !isUpdating(app)
         && !(app.bundle.source == .appStore && alwaysUsesManualAppStoreUpdates)
     }
   }
 
+  func updateCandidates(from apps: [App]) -> [App] {
+    Self.updateAllCandidates(
+      from: apps, isUpdating: updating.isUpdating,
+      alwaysUsesManualAppStoreUpdates: appStoreUpdateService.alwaysUsesManualUpdates)
+  }
+
   func updateAll() {
-    let apps = updateAllCandidates
+    update(updateAllCandidates) { [weak self] in self?.updateAll() }
+  }
+
+  /// All bulk entry points share eligibility and one recoverable helper preflight.
+  func update(_ selection: [App], retry: @escaping () -> Void) {
+    let apps = updateCandidates(from: selection)
 
     if apps.contains(where: { $0.bundle.source == .appStore }) {
       do {
         try appStoreUpdateService.verifyAvailability()
       } catch {
         guard let updatesPage = ExternalURL.updatesPage else { return }
-        (helperAlert ?? .shared).prepare(fallbackURL: updatesPage, error: error) {
-          [weak self] in
-          self?.updateAll()
-        }
+        (helperAlert ?? .shared).prepare(
+          fallbackURL: updatesPage, error: error, update: retry)
         return
       }
     }

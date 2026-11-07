@@ -9,17 +9,15 @@
 //  Licensed under GPL-3.0; see LICENSE.md.
 
 import AppKit
-import Observation
 import SwiftUI
 
-/// SwiftUI row state shared by selection presentation.
-@MainActor
-@Observable
-final class UpdateRowSelection {
-  enum Style {
+/// Value semantics let unchanged native-list rows retain their presentation.
+struct UpdateRowSelection: Equatable {
+  enum Style: Equatable {
     case unselected, inactive, active
   }
   var style = Style.unselected
+  init(style: Style = .unselected) { self.style = style }
   var isSelected: Bool { style != .unselected }
   var usesActiveSelectionColors: Bool { style == .active }
 }
@@ -29,14 +27,14 @@ struct UpdateRowView: View {
   let selection: UpdateRowSelection
   let updating: any AppUpdating
   let accessibilityLabel: String
-  private let icon: NSImage
+  @State private var icon: NSImage?
   @Environment(\.controlActiveState) private var controlActiveState
 
   init(app: App, selection: UpdateRowSelection, date: String, updating: any AppUpdating) {
     self.app = app
     self.selection = selection
     self.updating = updating
-    icon = IconCache.shared.iconImmediately(for: app)
+    _icon = State(initialValue: IconCache.shared.cachedIcon(for: app))
     accessibilityLabel = [
       app.name, app.localizedVersionInformation?.combined(includeNew: app.updateAvailable), date,
       app.routeShortDescription,
@@ -46,23 +44,31 @@ struct UpdateRowView: View {
 
   var body: some View {
     ObservedUpdatePresentation(app: app, updating: updating) { presentation in
-      HStack(spacing: 10) {
-        Image(nsImage: icon)
-          .resizable()
-          .scaledToFit()
-          .frame(width: 40, height: 40)
-          .opacity(controlActiveState == .inactive ? 0.5 : 1)
-          .accessibilityHidden(true)
+      HStack(spacing: Space.sm) {
+        Group {
+          if let icon {
+            Image(nsImage: icon).resizable().scaledToFit()
+          } else {
+            Image(systemName: "app").resizable().scaledToFit().foregroundStyle(.secondary)
+          }
+        }
+        .frame(width: 40, height: 40)
+        .opacity(controlActiveState == .inactive ? 0.5 : 1)
+        .accessibilityHidden(true)
 
-        VStack(alignment: .leading, spacing: 1) {
+        VStack(alignment: .leading, spacing: Space.xs) {
           Text(verbatim: app.name)
-            .font(.system(size: 13, weight: .semibold))
+            .font(.headline)
+            .help(app.name)
             .modifier(UpdateRowTextStyle(selection: selection, secondary: false))
+            .accessibilityIdentifier("updates.title.\(app.identifier)")
           Text(verbatim: app.versionSummary)
-            .font(.system(size: 11).monospacedDigit())
+            .font(.subheadline.monospacedDigit())
+            .help(app.versionSummary)
             .modifier(UpdateRowTextStyle(selection: selection, secondary: true))
+            .accessibilityIdentifier("updates.version.\(app.identifier)")
           statusLine(presentation)
-            .font(.system(size: 11))
+            .font(.subheadline)
         }
         .lineLimit(1)
         .truncationMode(.tail)
@@ -71,11 +77,16 @@ struct UpdateRowView: View {
         SidebarUpdateStatus(
           app: app, presentation: presentation, selection: selection, updating: updating)
       }
-      .padding(.trailing, 36)
       .frame(maxWidth: .infinity, maxHeight: .infinity)
-      .overlay(alignment: .bottom) {
-        UpdateRowSeparator(selection: selection)
-      }
+
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel(accessibilityLabel)
+    .task(id: IconCache.shared.cacheKey(for: app)) {
+      icon = IconCache.shared.cachedIcon(for: app)
+      let image = await IconCache.shared.icon(for: app)
+      guard !Task.isCancelled else { return }
+      icon = image
     }
   }
 
@@ -110,19 +121,5 @@ private struct UpdateRowTextStyle: ViewModifier {
       Color(
         nsColor: selection.usesActiveSelectionColors
           ? .alternateSelectedControlTextColor : (secondary ? .secondaryLabelColor : .labelColor)))
-  }
-}
-
-private struct UpdateRowSeparator: View {
-  let selection: UpdateRowSelection
-
-  var body: some View {
-    Rectangle()
-      .fill(Color(nsColor: .separatorColor))
-      .frame(height: 1)
-      .padding(.leading, 50)
-      .padding(.trailing, 36)
-      .opacity(selection.isSelected ? 0 : 1)
-      .accessibilityHidden(true)
   }
 }

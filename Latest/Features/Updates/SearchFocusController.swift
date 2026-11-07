@@ -14,6 +14,8 @@ import Combine
 @MainActor
 final class SearchFocusController: ObservableObject {
   @Published private(set) var request: UInt?
+  private var dismissedRequest: UInt?
+  var hasPendingRequest: Bool { request != nil && request != dismissedRequest }
   private weak var previousWindow: NSWindow?
   private weak var previousResponder: NSResponder?
 
@@ -39,4 +41,13 @@ final class SearchFocusController: ObservableObject {
     if let view = responder as? NSView, view.window !== window { return false }
     return window.makeFirstResponder(responder)
   }
+
+  @discardableResult
+  func consumeRequest() -> Bool {
+    guard hasPendingRequest else { return false }
+    dismissedRequest = request
+    return true
+  }
+
+  func dismissRequest() { dismissedRequest = request }
 }

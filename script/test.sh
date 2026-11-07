@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export PYTHONDONTWRITEBYTECODE=1
 
 MODE=unit
 COVERAGE=NO
@@ -47,8 +48,15 @@ BUILD_DIR="${UPDATER_BUILD_DIR:-$ROOT_DIR/build}" # override to keep build produ
 DERIVED_DATA="$BUILD_DIR/DerivedData"
 MODULE_CACHE="$BUILD_DIR/ModuleCache"
 export TEST_RUNNER_UPDATER_BUILD_DIR="$BUILD_DIR"
+export TEST_RUNNER_UPDATER_SNAPSHOT_DIR="${UPDATER_SNAPSHOT_DIR:-$BUILD_DIR/snapshots}"
 RUN_ID="$(date +%Y%m%d-%H%M%S)-$$"
 mkdir -p "$BUILD_DIR" "$MODULE_CACHE"
+# Isolate every test host from the owner's preferences, saved state and temporary data.
+TEST_HOME="$(mktemp -d "$BUILD_DIR/test-home.XXXXXX")"
+mkdir -p "$TEST_HOME/Library/Preferences" "$TEST_HOME/tmp" "$TEST_HOME/data"
+export TEST_RUNNER_CFFIXED_USER_HOME="$TEST_HOME"
+export TEST_RUNNER_TMPDIR="$TEST_HOME/tmp/"
+export TEST_RUNNER_UPDATER_HOME="$TEST_HOME/data"
 
 # cfprefsd can recreate empty plists as the test process exits. Remove only the
 # UUID suites this invocation records, after every test writer has stopped.
@@ -57,29 +65,32 @@ export UPDATER_TEST_DEFAULTS_MANIFEST="$DEFAULTS_MANIFEST"
 export TEST_RUNNER_UPDATER_TEST_DEFAULTS_MANIFEST="$DEFAULTS_MANIFEST"
 cleanup_test_defaults() {
   local result=$?
-  /usr/bin/python3 - "$DEFAULTS_MANIFEST" <<'PY_CLEANUP' || result=1
+  /usr/bin/python3 - "$DEFAULTS_MANIFEST" "$TEST_HOME" <<'PY_CLEANUP' || result=1
 from pathlib import Path
 import subprocess
+import os
 import sys
 import uuid
 
 manifest = Path(sys.argv[1])
+test_home = Path(sys.argv[2])
 for name in set(manifest.read_text().splitlines()):
     uuid.UUID(name.rsplit(".", 1)[-1])
     if "/" in name:
         raise ValueError("Invalid test defaults domain")
-    subprocess.run(["/usr/bin/defaults", "delete", name], capture_output=True)
-    (Path.home() / "Library/Preferences" / (name + ".plist")).unlink(missing_ok=True)
+    subprocess.run(["/usr/bin/defaults", "delete", name], capture_output=True,
+                   env=dict(os.environ, CFFIXED_USER_HOME=str(test_home)))
+    (test_home / "Library/Preferences" / (name + ".plist")).unlink(missing_ok=True)
 manifest.unlink()
 PY_CLEANUP
+  /bin/rm -rf "$TEST_HOME"
   exit "$result"
 }
 trap cleanup_test_defaults EXIT
 
 /usr/bin/python3 -m unittest discover -s "$ROOT_DIR/script/tests"
 "$ROOT_DIR/script/check_structure.sh"
-# The main list keeps its measured geometry; grid-check the migrated Settings views only.
-"$ROOT_DIR/script/grid-lint.sh" "$ROOT_DIR/Latest/Features/Settings"
+"$ROOT_DIR/script/grid-lint.sh" "$ROOT_DIR/Latest"
 
 run_lane() {
   local lane="$1" scheme='Updater' target='Latest Tests'

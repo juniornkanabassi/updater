@@ -16,6 +16,183 @@ import XCTest
 
 @MainActor
 final class AppDependencyBoundaryTest: XCTestCase {
+  func testMultipleSelectionUpdatesAutomaticAppsAndSurvivesFiltering() throws {
+    let first = makeTestApp(name: "Alpha", version: "1", remoteVersion: "2")
+    let second = makeTestApp(name: "Beta", version: "1", remoteVersion: "2")
+    let handoff = makeTestApp(
+      name: "Gamma", version: "1", remoteVersion: "2",
+      updateAction: .external(label: "Fixture Store") { _ in })
+    let settings = try isolatedAppListSettings(for: self)
+    let updating = BulkUpdating()
+    let model = UpdatesListViewModel(
+      snapshot: AppListSnapshot(
+        withApps: [first, second, handoff], filterQuery: nil, settings: settings),
+      settings: settings, updating: updating,
+      bulkUpdateService: UpdateCheckingService(
+        coordinator: StubCheckCoordinator(apps: []), appStoreUpdateService: StubAppStoreService(),
+        updating: updating))
+    model.select(Set([first.identifier, second.identifier, handoff.identifier]))
+    XCTAssertEqual(model.selectedAppIDs.count, 3)
+    model.updateSelection(model.selectedAppIDs)
+    XCTAssertEqual(Set(updating.updatedNames), Set(["Alpha", "Beta"]))
+    model.setSearchQuery("Beta")
+    XCTAssertEqual(model.selectedAppIDs, [second.identifier])
+    XCTAssertEqual(model.selectedApp?.identifier, second.identifier)
+    model.select(Set([handoff.identifier]))
+    XCTAssertTrue(model.selectedAppIDs.isEmpty, "Hidden rows cannot remain selected")
+  }
+
+  func testBulkSelectionSkipsIgnoredUnknownCurrentAndManualApps() throws {
+    let available = makeTestApp(name: "Available", version: "1", remoteVersion: "2")
+    let ignored = makeTestApp(name: "Ignored", version: "1", remoteVersion: "2")
+      .with(ignoredState: true)
+    let current = makeTestApp(name: "Current", version: "1")
+    let bundle = makeApp(source: .vendor).bundle
+    let unknown = App(
+      bundle: bundle,
+      update: .success(
+        App.Update(
+          app: bundle, remoteVersion: bundle.version, minimumOSVersion: nil, source: .vendor,
+          date: nil, releaseNotes: nil, updateAction: .builtIn { _ in },
+          availabilityUnknown: true)), isIgnored: false)
+    let apps = [available, ignored, current, unknown]
+    let (service, store, _, updating) = bulkService(apps: apps)
+    let settings = try isolatedAppListSettings(for: self)
+    let model = UpdatesListViewModel(
+      snapshot: AppListSnapshot(withApps: apps, filterQuery: nil, settings: settings),
+      settings: settings, updating: updating, bulkUpdateService: service)
+    let identifiers = Set(apps.map(\.identifier))
+    model.select(identifiers)
+    let commands = AppCommands(
+      updateCheckingService: service, updatesListViewModel: model,
+      searchFocusController: SearchFocusController(), settings: settings)
+    XCTAssertEqual(model.automaticUpdateCandidates(identifiers).map(\.name), ["Available"])
+    store.alwaysUsesManualUpdates = true
+    XCTAssertFalse(commands.canUpdateSelectedApp)
+    model.updateSelection(identifiers)
+    XCTAssertTrue(updating.updatedNames.isEmpty)
+    store.alwaysUsesManualUpdates = false
+    XCTAssertTrue(commands.canUpdateSelectedApp)
+    commands.updateSelectedApp()
+    XCTAssertEqual(updating.updatedNames, ["Available"])
+    XCTAssertEqual(store.preparations, 1)
+  }
+
+  func testBulkSelectionPreflightsOnceAndRetriesWholeBatchAfterRepair() async throws {
+    let preferences = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
+    setTestManualAppStorePreference(false)
+    defer {
+      UserDefaults.standard.setVolatileDomain(preferences, forName: UserDefaults.argumentDomain)
+    }
+    let apps = ["First", "Second", "Third"].map {
+      makeTestApp(name: $0, version: "1", remoteVersion: "2")
+    }
+    let store = StubAppStoreService()
+    store.availabilityError = .installHelperNotRegistered
+    let helper = HelperRegistrationFixture()
+    helper.enabled = true
+    let alert = UpdateInstallHelperAlert(
+      helper: helper, workspace: StubApplicationWorkspace())
+    defer { alert.cancel() }
+    let updating = BulkUpdating()
+    let service = UpdateCheckingService(
+      coordinator: StubCheckCoordinator(apps: apps), appStoreUpdateService: store,
+      updating: updating, helperAlert: alert)
+    let settings = try isolatedAppListSettings(for: self)
+    let model = UpdatesListViewModel(
+      snapshot: AppListSnapshot(withApps: apps, filterQuery: nil, settings: settings),
+      settings: settings, updating: updating, bulkUpdateService: service)
+    model.updateSelection(Set(apps.map(\.identifier)))
+    XCTAssertEqual(store.preparations, 1)
+    XCTAssertTrue(alert.isPresented)
+    XCTAssertTrue(updating.updatedNames.isEmpty)
+    store.availabilityError = nil
+    alert.enableHelper()
+    for _ in 0..<100 where alert.isPresented {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    XCTAssertFalse(alert.isPresented)
+    XCTAssertEqual(store.preparations, 2)
+    XCTAssertEqual(Set(updating.updatedNames), Set(apps.map(\.name)))
+    XCTAssertEqual(updating.bulkFlags, [true, true, true])
+  }
+
+  func testBulkRepairCannotBecomeASingleHandOffAfterFiltering() async throws {
+    let preferences = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
+    setTestManualAppStorePreference(false)
+    defer {
+      UserDefaults.standard.setVolatileDomain(preferences, forName: UserDefaults.argumentDomain)
+    }
+    let native = makeTestApp(name: "Native", version: "1", remoteVersion: "2")
+    let handoff = makeTestApp(
+      name: "Hand Off", version: "1", remoteVersion: "2",
+      updateAction: .external(label: "Fixture Store") { _ in })
+    let store = StubAppStoreService()
+    store.availabilityError = .installHelperNotRegistered
+    let helper = HelperRegistrationFixture()
+    helper.enabled = true
+    let alert = UpdateInstallHelperAlert(helper: helper, workspace: StubApplicationWorkspace())
+    defer { alert.cancel() }
+    let updating = BulkUpdating()
+    let service = UpdateCheckingService(
+      coordinator: StubCheckCoordinator(apps: [native, handoff]), appStoreUpdateService: store,
+      updating: updating, helperAlert: alert)
+    let settings = try isolatedAppListSettings(for: self)
+    let model = UpdatesListViewModel(
+      snapshot: AppListSnapshot(withApps: [native, handoff], filterQuery: nil, settings: settings),
+      settings: settings, updating: updating, bulkUpdateService: service)
+    model.updateSelection(Set([native.identifier, handoff.identifier]))
+    XCTAssertTrue(alert.isPresented)
+    model.setSearchQuery("Hand Off")
+    store.availabilityError = nil
+    alert.enableHelper()
+    for _ in 0..<100 where alert.isPresented {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    XCTAssertFalse(alert.isPresented)
+    XCTAssertTrue(updating.updatedNames.isEmpty, "Bulk repair must never execute a hand-off")
+    model.updateSelection(Set([native.identifier, handoff.identifier]))
+    XCTAssertTrue(
+      updating.updatedNames.isEmpty,
+      "An old multi-selection context menu must retain bulk policy after its rows are filtered")
+  }
+
+  func testRefreshKeepsMultipleSelectionAndDetailInAgreement() async throws {
+    let settings = try isolatedAppListSettings(for: self)
+    let first = makeTestApp(name: "Alpha", version: "1", remoteVersion: "2")
+    let retained = makeTestApp(name: "Beta", version: "1", remoteVersion: "2")
+    let unrelated = makeTestApp(name: "Aardvark", version: "1", remoteVersion: "2")
+    let model = UpdatesListViewModel(
+      snapshot: AppListSnapshot(withApps: [first, retained], filterQuery: nil, settings: settings),
+      settings: settings, appProvider: StubAppProvider(apps: [unrelated, retained]))
+    model.select(Set([first.identifier, retained.identifier]), isKeyboardSelection: true)
+    XCTAssertTrue(model.isKeyboardSelection)
+    model.startObserving()
+    defer { model.stopObserving() }
+    try await Task.sleep(for: .milliseconds(100))
+    XCTAssertEqual(model.selectedAppIDs, [retained.identifier])
+    XCTAssertTrue(model.selectedApp === retained)
+  }
+
+  func testAutomaticSelectionMovesHighlightWithDetailToNextUpdate() async throws {
+    let settings = try isolatedAppListSettings(for: self)
+    let first = makeTestApp(name: "Alpha", version: "1", remoteVersion: "2")
+    let current = makeTestApp(name: "Alpha", version: "1", remoteVersion: "1")
+    let next = makeTestApp(name: "Beta", version: "1", remoteVersion: "2")
+    let model = UpdatesListViewModel(
+      snapshot: AppListSnapshot(withApps: [first, next], filterQuery: nil, settings: settings),
+      settings: settings, appProvider: StubAppProvider(apps: [current, next]))
+    model.selectedApp = first
+    model.startObserving()
+    defer { model.stopObserving() }
+    try await Task.sleep(for: .milliseconds(100))
+    XCTAssertEqual(model.selectedAppIDs, [next.identifier])
+    XCTAssertTrue(model.selectedApp === next)
+    model.select(Set([current.identifier, next.identifier]))
+    model.select(next)
+    XCTAssertEqual(model.selectedAppIDs, [next.identifier])
+  }
+
   /// Update All runs only install/vendorTool apps; hand-offs stay per-app actions.
   func testBulkUpdateSkipsHandOffsWithoutOpeningAnything() {
     let apps = ["Wrapped One", "Wrapped Two"].map {
@@ -210,6 +387,42 @@ final class AppDependencyBoundaryTest: XCTestCase {
     XCTAssertFalse(settings.showInstalledUpdates)
   }
 
+  func testUpdateCommandRequiresKnownUpdateAndUsesSelectedAppOutsideFilter() throws {
+    let settings = try isolatedAppListSettings(for: self)
+    let bundle = makeApp(source: .vendor).bundle
+    let unknown = App(
+      bundle: bundle,
+      update: .success(
+        App.Update(
+          app: bundle, remoteVersion: bundle.version, minimumOSVersion: nil, source: .vendor,
+          date: nil, releaseNotes: nil, updateAction: .external(label: "Creative Cloud") { _ in },
+          availabilityUnknown: true)), isIgnored: false)
+    let available = makeTestApp(name: "Available", version: "1", remoteVersion: "2")
+    let updating = BulkUpdating()
+    let model = UpdatesListViewModel(
+      snapshot: AppListSnapshot(
+        withApps: [unknown, available], filterQuery: nil, settings: settings),
+      settings: settings, updating: updating)
+    let commands = AppCommands(
+      updateCheckingService: StubUpdateCheckingCommands(),
+      updatesListViewModel: model, searchFocusController: SearchFocusController(),
+      settings: settings)
+    XCTAssertFalse(unknown.updateAvailable)
+    XCTAssertTrue(unknown.isActionable)
+    model.select(unknown)
+    XCTAssertFalse(commands.canUpdateSelectedApp)
+    commands.updateSelectedApp()
+    XCTAssertTrue(updating.updatedNames.isEmpty)
+    model.select(available)
+    XCTAssertTrue(commands.canUpdateSelectedApp)
+    model.setSearchQuery("No match")
+    // An explicitly retained selection still owns the command, not the filtered rows.
+    model.selectedApp = available
+    XCTAssertTrue(commands.canUpdateSelectedApp)
+    commands.updateSelectedApp()
+    XCTAssertEqual(updating.updatedNames, [available.name])
+  }
+
   func testUpdaterHasNoSelfUpdateFeed() {
     XCTAssertNil(Bundle.main.object(forInfoDictionaryKey: "SUFeedURL"))
     XCTAssertNil(Bundle.main.object(forInfoDictionaryKey: "SUPublicEDKey"))
@@ -311,14 +524,23 @@ private final class StubCheckCoordinator: UpdateCheckCoordinating {
 private final class StubAppStoreService: AppStoreUpdateServicing {
   var alwaysUsesManualUpdates = false
   private(set) var preparations = 0
-  func verifyAvailability() throws(InstallHelperError) { preparations += 1 }
+  var availabilityError: InstallHelperError?
+  func verifyAvailability() throws(InstallHelperError) {
+    preparations += 1
+    if let availabilityError { throw availabilityError }
+  }
 }
 
 private final class BulkUpdating: AppUpdating {
   private let names = Mutex<[String]>([])
+  private let flags = Mutex<[Bool]>([])
+  var bulkFlags: [Bool] { flags.withLock { $0 } }
   var updatedNames: [String] { names.withLock { $0 } }
   func isUpdating(_ app: App) -> Bool { names.withLock { $0.contains(app.name) } }
-  func update(_ app: App, isBulkUpdate: Bool) { names.withLock { $0.append(app.name) } }
+  func update(_ app: App, isBulkUpdate: Bool) {
+    names.withLock { $0.append(app.name) }
+    flags.withLock { $0.append(isBulkUpdate) }
+  }
   func cancel(_ app: App) {}
   @MainActor func retryTermination(_ app: App) {}
   func state(for identifier: App.Bundle.Identifier) -> UpdateProgressState { .none }

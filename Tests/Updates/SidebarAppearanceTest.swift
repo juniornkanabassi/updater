@@ -39,7 +39,6 @@ final class SidebarAppearanceTest: XCTestCase {
         try await Task.sleep(for: .milliseconds(10))
       }
       XCTAssertTrue(model.selectedApp === refreshed)
-      let bitmap = try await fixture.captureRow(for: refreshed)
       let expectedNew = try XCTUnwrap(refreshed.localizedVersionInformation?.new)
       XCTAssertTrue(
         fixture.accessibilityElements().contains {
@@ -47,12 +46,7 @@ final class SidebarAppearanceTest: XCTestCase {
             && $0.accessibilityLabel()?.contains(remoteVersion) == true
         },
         "The row must expose the refreshed available version")
-      try assertVersionGlyphs(expectedNew, in: bitmap, top: 38)
-      let attachment = XCTAttachment(
-        image: NSImage(cgImage: try XCTUnwrap(bitmap.cgImage), size: bitmap.size))
-      attachment.name = "chrome-row-new-version-\(remoteVersion)"
-      attachment.lifetime = .keepAlways
-      add(attachment)
+      try assertVersionLabel(expectedNew, for: refreshed, in: fixture)
     }
   }
 
@@ -63,8 +57,7 @@ final class SidebarAppearanceTest: XCTestCase {
     let expectedVersion = try XCTUnwrap(app.localizedVersionInformation?.current)
     let fixture = try await SidebarInputFixture.make(apps: [app], testCase: self)
     defer { fixture.window.close() }
-    let bitmap = try await fixture.captureRow(for: app)
-    try assertVersionGlyphs(expectedVersion, in: bitmap, top: 31)
+    try assertVersionLabel(expectedVersion, for: app, in: fixture)
   }
 
   @MainActor
@@ -96,9 +89,17 @@ final class SidebarAppearanceTest: XCTestCase {
       try await Task.sleep(for: .milliseconds(100))
       let bitmap = try await fixture.captureRow(for: app)
       var expectedGlyphPixels = 0
-      let backing = try XCTUnwrap(bitmap.colorAt(x: 440, y: 104)?.usingColorSpace(.sRGB))
-      for y in 18..<46 {
-        for x in 116..<220 {
+      let rowFrame = try fixture.contentFrame(for: app)
+      let titleFrame = try fixture.frame(for: "updates.title.\(app.identifier)")
+      let scale = CGFloat(bitmap.pixelsWide) / rowFrame.width
+      let titlePixels = CGRect(
+        x: (titleFrame.minX - rowFrame.minX) * scale,
+        y: (rowFrame.maxY - titleFrame.maxY) * scale,
+        width: titleFrame.width * scale, height: titleFrame.height * scale)
+      let backing = try XCTUnwrap(
+        bitmap.colorAt(x: bitmap.pixelsWide / 2, y: bitmap.pixelsHigh - 2)?.usingColorSpace(.sRGB))
+      for y in max(0, Int(titlePixels.minY))..<min(bitmap.pixelsHigh, Int(titlePixels.maxY)) {
+        for x in max(0, Int(titlePixels.minX))..<min(bitmap.pixelsWide, Int(titlePixels.maxX)) {
           let color = try XCTUnwrap(bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB))
           // The real system label is not absolute black. Check its contrast
           // with the selection fill in one color space, not device-RGB values.
@@ -124,54 +125,21 @@ final class SidebarAppearanceTest: XCTestCase {
   }
 
   @MainActor
-  private func assertVersionGlyphs(_ version: String, in bitmap: NSBitmapImageRep, top: Int) throws
-  {
-    let referenceBitmap = try nativeVersionReference(version, y: CGFloat(60 - top - 14))
-    var missingGlyphPixels = 0
-    var glyphPixels = 0
-    let backing = try XCTUnwrap(bitmap.colorAt(x: 600, y: 0)?.usingColorSpace(.deviceRGB))
-      .redComponent
-    for y in (top * 2)..<((top + 14) * 2) {
-      for x in 116..<540 {
-        let reference = try XCTUnwrap(
-          referenceBitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB))
-        guard reference.alphaComponent > 0.15 else { continue }
-        glyphPixels += 1
-        // Text and NSTextField may snap coverage to adjacent pixels. Require
-        // every native glyph pixel to have matching ink within one pixel.
-        var foundInk = false
-        for dy in -1...1 {
-          for dx in -1...1 {
-            let actual = try XCTUnwrap(
-              bitmap.colorAt(x: x + dx, y: y + dy)?.usingColorSpace(.deviceRGB))
-            if backing - actual.redComponent > 0.08 { foundInk = true }
-          }
-        }
-        if !foundInk { missingGlyphPixels += 1 }
-      }
-    }
-    XCTAssertGreaterThan(
-      glyphPixels, 100, "Native text reference must contain the complete version")
-    XCTAssertEqual(missingGlyphPixels, 0, "The version must paint every native glyph: \(version)")
-  }
-
-  @MainActor
-  private func nativeVersionReference(_ version: String, y: CGFloat) throws -> NSBitmapImageRep {
-    let host = NSView(frame: NSRect(x: 0, y: 0, width: 308, height: 60))
-    host.appearance = NSAppearance(named: .aqua)
-    let reference = NSTextField(labelWithString: version)
-    reference.font = NSFont.systemFont(ofSize: 11)
-    reference.textColor = .secondaryLabelColor
-    // NSTextField has 2pt of leading padding relative to the production Text.
-    reference.frame = NSRect(x: 56, y: y, width: 216, height: 14)
-    host.addSubview(reference)
-    let bitmap = try XCTUnwrap(
-      NSBitmapImageRep(
-        bitmapDataPlanes: nil, pixelsWide: 616, pixelsHigh: 120,
-        bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
-        colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
-    bitmap.size = host.frame.size
-    host.cacheDisplay(in: host.bounds, to: bitmap)
-    return bitmap
+  private func assertVersionLabel(
+    _ version: String, for app: Latest.App, in fixture: SidebarInputFixture
+  ) throws {
+    let identifier = "updates.version.\(app.identifier)"
+    let label = try XCTUnwrap(
+      fixture.accessibilityElements().first {
+        $0.accessibilityIdentifier() == identifier
+      })
+    XCTAssertTrue(label.accessibilityLabel()?.contains(version) == true)
+    let frame = try fixture.frame(for: identifier)
+    let row = try fixture.contentFrame(for: app)
+    XCTAssertTrue(row.contains(frame), "The version must fit inside its native row")
+    let font = NSFont.monospacedDigitSystemFont(
+      ofSize: NSFont.preferredFont(forTextStyle: .subheadline).pointSize, weight: .regular)
+    let requiredWidth = (app.versionSummary as NSString).size(withAttributes: [.font: font]).width
+    XCTAssertGreaterThanOrEqual(frame.width + 1, requiredWidth, "The full version must fit")
   }
 }

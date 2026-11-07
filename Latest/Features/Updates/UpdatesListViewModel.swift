@@ -23,6 +23,7 @@ private final class UpdatesSelection {
     var isKeyboardSelection = false
   }
   private var value = Value(app: nil)
+  var identifiers: Set<App.Bundle.Identifier> = []
   var app: App? {
     get { value.app }
     set { set(newValue, isKeyboardSelection: false) }
@@ -30,6 +31,7 @@ private final class UpdatesSelection {
   var isKeyboardSelection: Bool { value.isKeyboardSelection }
 
   func set(_ app: App?, isKeyboardSelection: Bool) {
+    identifiers = Set(app.map { [$0.identifier] } ?? [])
     guard value.app !== app || value.isKeyboardSelection != isKeyboardSelection else { return }
     value = Value(app: app, isKeyboardSelection: isKeyboardSelection)
   }
@@ -46,6 +48,40 @@ final class UpdatesListViewModel: ObservableObject {
     get { selection.app }
     set { selection.app = newValue }
   }
+  var selectedAppIDs: Set<App.Bundle.Identifier> { selection.identifiers }
+
+  func apps(for identifiers: Set<App.Bundle.Identifier>) -> [App] {
+    snapshot.sections.flatMap(\.apps).filter { identifiers.contains($0.identifier) }
+  }
+
+  func select(_ identifiers: Set<App.Bundle.Identifier>, isKeyboardSelection: Bool = false) {
+    let apps = apps(for: identifiers)
+    let primary = apps.first { $0.identifier == selectedApp?.identifier } ?? apps.first
+    select(primary, isKeyboardSelection: isKeyboardSelection)
+    selection.identifiers = Set(apps.map(\.identifier))
+  }
+
+  func automaticUpdateCandidates(_ identifiers: Set<App.Bundle.Identifier>) -> [App] {
+    bulkUpdateService.updateCandidates(from: apps(for: identifiers))
+  }
+
+  func updateSelection(_ identifiers: Set<App.Bundle.Identifier>) {
+    let selected = apps(for: identifiers)
+    if identifiers.count == 1, let app = selected.first {
+      guard app.updateAvailable, !updating.isUpdating(app) else { return }
+      update(app)
+    } else {
+      updateBulkSelection(identifiers)
+    }
+  }
+
+  /// A repair retry keeps the original bulk intent even if filtering leaves one hand-off.
+  private func updateBulkSelection(_ identifiers: Set<App.Bundle.Identifier>) {
+    bulkUpdateService.update(apps(for: identifiers)) { [weak self] in
+      self?.updateBulkSelection(identifiers)
+    }
+  }
+
   var isKeyboardSelection: Bool { selection.isKeyboardSelection }
   /// The user picked the selection; automatic choices may still move to the first update.
   private var userChoseSelection = false
@@ -76,19 +112,22 @@ final class UpdatesListViewModel: ObservableObject {
   private let appProvider: any AppProviding
   private let workspace: any ApplicationWorkspace
   let updating: any AppUpdating
+  private let bulkUpdateService: UpdateCheckingService
 
   init(
     snapshot: AppListSnapshot? = nil,
     settings: any AppListSettingsProviding = AppListSettings.shared,
     appProvider: any AppProviding = UpdateCheckCoordinator.shared.appProvider,
     workspace: any ApplicationWorkspace = MacApplicationWorkspace.shared,
-    updating: any AppUpdating = AppUpdateService.shared
+    updating: any AppUpdating = AppUpdateService.shared,
+    bulkUpdateService: UpdateCheckingService? = nil
   ) {
     self.settings = settings
     self.observedPreferences = ListPreferences(settings)
     self.appProvider = appProvider
     self.workspace = workspace
     self.updating = updating
+    self.bulkUpdateService = bulkUpdateService ?? UpdateCheckingService(updating: updating)
     self.snapshot =
       snapshot
       ?? AppListSnapshot(
@@ -151,7 +190,11 @@ final class UpdatesListViewModel: ObservableObject {
 
   func select(_ app: App?, isKeyboardSelection: Bool = false) {
     userChoseSelection = app != nil
-    guard app?.identifier != selectedApp?.identifier else { return }
+    if app === selectedApp && selection.identifiers == Set(app.map { [$0.identifier] } ?? [])
+      && selection.isKeyboardSelection == isKeyboardSelection
+    {
+      return
+    }
     if let app, app !== selectedApp {
       MigrationTelemetry.shared.selectionStarted(appName: app.name)
     }
@@ -201,6 +244,15 @@ final class UpdatesListViewModel: ObservableObject {
   /// installed app (such as Updater itself); with none, the detail pane shows the overview.
   /// A selection the user made stays until it leaves the list.
   private func maintainSelectionAfterSnapshotChange() {
+    if selectedAppIDs.count > 1 {
+      let retained = apps(for: selectedAppIDs)
+      if !retained.isEmpty {
+        let primary = retained.first { $0.identifier == selectedApp?.identifier } ?? retained[0]
+        selection.set(primary, isKeyboardSelection: false)
+        selection.identifiers = Set(retained.map(\.identifier))
+        return
+      }
+    }
     let firstActionable = snapshot.sections.lazy.flatMap(\.apps).first(where: \.isActionable)
     if let selectedApp, snapshot.firstIndex(of: selectedApp) != nil {
       let refreshedApp = snapshot.app(withIdentifier: selectedApp.identifier)

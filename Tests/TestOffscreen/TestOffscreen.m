@@ -31,6 +31,7 @@ static void swap(Class type, SEL original, SEL replacement) {
 @implementation NSApplication (TestOffscreen)
 - (void)testOffscreen_activateIgnoringOtherApps:(BOOL)flag {}
 - (void)testOffscreen_activate {}
+- (void)testOffscreen_noResponderFor:(SEL)selector {}
 @end
 
 __attribute__((constructor)) static void installTestOffscreen(void) {
@@ -42,4 +43,5 @@ __attribute__((constructor)) static void installTestOffscreen(void) {
   swap(window, @selector(makeKeyAndOrderFront:), @selector(testOffscreen_makeKeyAndOrderFront:));
   swap(app, @selector(activateIgnoringOtherApps:), @selector(testOffscreen_activateIgnoringOtherApps:));
   swap(app, @selector(activate), @selector(testOffscreen_activate));
+  swap(app, @selector(noResponderFor:), @selector(testOffscreen_noResponderFor:));
 }

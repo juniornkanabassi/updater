@@ -1,73 +1,73 @@
-//
-//  IconCache.swift
-//  Latest
-//
-//  Created by Max Langer on 12.08.18.
-//  Copyright © 2018 Max Langer. All rights reserved.
-//
+// Copyright © 2018 Max Langer. Licensed under GPL-3.0; see LICENSE.md.
 
 import AppKit
 
-/// A cache for app icons.
+/// Keeps display-sized icons; filesystem access and rasterisation stay off the UI thread.
 @MainActor
-class IconCache {
-
-  /// The shared cache object.
+final class IconCache {
   static let shared = IconCache()
+  private let cache = NSCache<NSString, NSImage>()
+  private var pending: [String: Task<NSImage, Never>] = [:]
+  // A serial worker bounds expensive AppKit/icon-service work even during fast scrolling.
+  private let worker = DispatchQueue(label: "Updater.icons", qos: .utility)
 
-  /// Initializes the cache.
   private init() {
-    self.cache = NSCache()
-    self.cache.countLimit = 256
-    self.cache.totalCostLimit = 64 * 1_024 * 1_024
+    cache.countLimit = 256
+    cache.totalCostLimit = 16 * 1_024 * 1_024
   }
 
-  /// The object storing app images.
-  private let cache: NSCache<NSString, NSImage>
-  private var missingApplicationIcon: NSImage?
-
-  /// Loads an icon before a row is displayed, avoiding a blank first frame.
-  func iconImmediately(for app: App) -> NSImage {
-    loadIcon(for: app)
-  }
-
-  /// Returns an icon after an asynchronous scheduling boundary. SwiftUI tasks
-  /// use this form so a cache hit cannot mutate view state during rendering.
-  func icon(for app: App) async -> NSImage {
-    await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-      DispatchQueue.main.async {
-        continuation.resume()
+  func icon(for app: App, pointSize: CGFloat = 40) async -> NSImage {
+    let key = cacheKey(for: app, pointSize: pointSize)
+    if let image = cache.object(forKey: key as NSString) { return image }
+    if let task = pending[key] { return await task.value }
+    let path = app.fileURL.standardizedFileURL.path
+    let pixels = Int(ceil(pointSize * 2))
+    let task = Task<NSImage, Never> {
+      await withCheckedContinuation { continuation in
+        worker.async {
+          let image = autoreleasepool {
+            Self.loadIcon(path: path, pointSize: pointSize, pixels: pixels)
+          }
+          continuation.resume(returning: image)
+        }
       }
     }
-    return loadIcon(for: app)
+    pending[key] = task
+    let image = await task.value
+    cache.setObject(image, forKey: key as NSString, cost: pixels * pixels * 4)
+    pending[key] = nil
+    return image
   }
 
-  private func loadIcon(for app: App) -> NSImage {
-    let cacheKey = cacheKey(for: app)
-    if let icon = cache.object(forKey: cacheKey) { return icon }
-
-    // Discovery results normally point to real bundles. Fixtures, stale
-    // volumes, and benchmark rows can point at missing paths; asking
-    // NSWorkspace to rediscover the same generic icon for every such path
-    // blocks scrolling and needlessly fills the cache with identical images.
-    guard FileManager.default.fileExists(atPath: app.fileURL.path) else {
-      if let missingApplicationIcon {
-        return missingApplicationIcon
-      }
-      let icon = NSWorkspace.shared.icon(forFile: app.fileURL.path)
-      missingApplicationIcon = icon
-      return icon
-    }
-
-    let icon = NSWorkspace.shared.icon(forFile: app.fileURL.path)
-    let pixelCount = max(Int(icon.size.width * icon.size.height), 1)
-    self.cache.setObject(icon, forKey: cacheKey, cost: pixelCount * 4)
-    return icon
+  /// Memory-only lookup keeps a warm row's first frame free of placeholders.
+  func cachedIcon(for app: App, pointSize: CGFloat = 40) -> NSImage? {
+    cache.object(forKey: cacheKey(for: app, pointSize: pointSize) as NSString)
   }
 
-  private func cacheKey(for app: App) -> NSString {
-    "\(app.fileURL.standardizedFileURL.path)\u{0}\(app.bundle.modificationDate.timeIntervalSinceReferenceDate)"
-      as NSString
+  /// Stable across metadata refreshes, but invalidates when the bundle changes on disk.
+  func cacheKey(for app: App, pointSize: CGFloat = 40) -> String {
+    let path = app.fileURL.standardizedFileURL.path
+    return
+      "\(path)\u{0}\(app.bundle.modificationDate.timeIntervalSinceReferenceDate)\u{0}\(Int(ceil(pointSize * 2)))"
   }
 
+  nonisolated private static func loadIcon(path: String, pointSize: CGFloat, pixels: Int) -> NSImage
+  {
+    assert(!Thread.isMainThread, "Icon loading must stay off the UI thread")
+    let source = NSWorkspace.shared.icon(forFile: path)
+    guard
+      let bitmap = NSBitmapImageRep(
+        bitmapDataPlanes: nil, pixelsWide: pixels, pixelsHigh: pixels,
+        bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+        colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
+      let context = NSGraphicsContext(bitmapImageRep: bitmap)
+    else { return NSImage(size: NSSize(width: pointSize, height: pointSize)) }
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = context
+    source.draw(in: NSRect(x: 0, y: 0, width: pixels, height: pixels))
+    NSGraphicsContext.restoreGraphicsState()
+    let image = NSImage(size: NSSize(width: pointSize, height: pointSize))
+    image.addRepresentation(bitmap)
+    return image
+  }
 }

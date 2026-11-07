@@ -79,6 +79,9 @@ jobs:
           set -o pipefail
           ./script/test.sh --ui 2>&1 | tee build/ci-ui-tests.log
 
+      - name: Verify light and dark snapshot inventory
+        run: python3 script/check_snapshots.py build/snapshots
+
       - name: Preserve test results and visual diagnostics
         if: always()
         uses: actions/upload-artifact@v7
@@ -89,6 +92,7 @@ jobs:
             build/lint*.log
             build/*.xcresult
             build/production-visuals/**/*.png
+            build/snapshots/*
             build/visual-diagnostics/*.png
             build/detail-capsule-*/*.png
           if-no-files-found: warn

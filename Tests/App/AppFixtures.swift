@@ -94,7 +94,6 @@ func makeLatestTestWindow(
 func makeLatestTestWindow<Content: View>(
   content: Content, dark: Bool = false, activate: Bool = true, testCase: XCTestCase
 ) async throws -> NSWindow {
-  try requireUITests()
   let originalAppearanceName = NSApp.appearance?.name.rawValue
   testCase.addTeardownBlock {
     await MainActor.run {

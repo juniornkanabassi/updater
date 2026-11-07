@@ -50,17 +50,28 @@ final class AppCommands {
   }
 
   var canUpdateSelectedApp: Bool {
-    guard let selectedApp else { return false }
-    return selectedApp.updateAvailable && !updatesListViewModel.updating.isUpdating(selectedApp)
+    if selectedAppCount == 1 {
+      guard let selectedApp else { return false }
+      return selectedApp.updateAvailable && !updatesListViewModel.updating.isUpdating(selectedApp)
+    }
+    return !updatesListViewModel.automaticUpdateCandidates(
+      updatesListViewModel.selectedAppIDs
+    ).isEmpty
   }
+
+  var selectedAppCount: Int { updatesListViewModel.selectedAppIDs.count }
 
   var canOpenSelectedApp: Bool {
     selectedApp != nil
   }
 
   func updateSelectedApp() {
-    guard let selectedApp, canUpdateSelectedApp else { return }
-    updatesListViewModel.update(selectedApp)
+    guard canUpdateSelectedApp else { return }
+    if selectedAppCount == 1, let selectedApp {
+      updatesListViewModel.update(selectedApp)
+      return
+    }
+    updatesListViewModel.updateSelection(updatesListViewModel.selectedAppIDs)
   }
 
   func openSelectedApp() {
@@ -130,7 +141,14 @@ struct LatestCommands: Commands {
         appCommands.focusSearch()
       }
       .keyboardShortcut("f")
+      Button("Search Apps") {
+        appCommands.focusSearch()
+      }
+      .keyboardShortcut("f", modifiers: [.command, .option])
     }
+
+    SidebarCommands()
+    ToolbarCommands()
 
     CommandGroup(after: .sidebar) {
       Menu("Sort By") {
@@ -202,6 +220,7 @@ private struct SelectedAppCommandButtons: View {
   }
 
   private var updateSelectedTitle: String {
+    if appCommands.selectedAppCount > 1 { return "Update Selected Apps" }
     guard let app = appCommands.selectedApp else {
       return NSLocalizedString("UpdateAction", comment: "Action to update a given app.")
     }

@@ -37,13 +37,16 @@ struct SidebarInputFixture {
   }
 
   func contentFrame(for app: Latest.App) throws -> CGRect {
+    try frame(for: "updates.app.\(app.identifier)")
+  }
+
+  func frame(for identifier: String) throws -> CGRect {
     let row = try XCTUnwrap(
       accessibilityElements().first {
-        $0.accessibilityIdentifier() == "updates.app.\(app.identifier)"
+        $0.accessibilityIdentifier() == identifier
           && $0.accessibilityFrame().intersects(window.frame)
       })
-    // SwiftUI's source-list content begins 16pt inside the full-width AX row.
-    return window.convertFromScreen(row.accessibilityFrame()).offsetBy(dx: 16, dy: 0)
+    return window.convertFromScreen(row.accessibilityFrame())
   }
 
   func captureRow(for app: Latest.App) async throws -> NSBitmapImageRep {
@@ -57,24 +60,39 @@ struct SidebarInputFixture {
 
   func clickProgress(for app: Latest.App) async throws {
     let frame = try contentFrame(for: app)
-    let location = CGPoint(x: frame.minX + 264, y: frame.midY - 10)
-    try clickTestWindow(window, at: location)
+    let control = try XCTUnwrap(
+      accessibilityElements().first {
+        $0.accessibilityIdentifier() == "updates.progress"
+          && frame.intersects(window.convertFromScreen($0.accessibilityFrame()))
+      })
+    let controlFrame = window.convertFromScreen(control.accessibilityFrame())
+    let location = CGPoint(x: controlFrame.midX, y: controlFrame.midY)
+    let down = try XCTUnwrap(
+      NSEvent.mouseEvent(
+        with: .leftMouseDown, location: location, modifierFlags: [],
+        timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+        context: nil, eventNumber: 1, clickCount: 1, pressure: 1))
+    let up = try XCTUnwrap(
+      NSEvent.mouseEvent(
+        with: .leftMouseUp, location: location, modifierFlags: [],
+        timestamp: down.timestamp + 0.05, windowNumber: window.windowNumber,
+        context: nil, eventNumber: 2, clickCount: 1, pressure: 0))
+    NSApp.postEvent(up, atStart: false)
+    window.sendEvent(down)
     try await Task.sleep(for: .milliseconds(50))
   }
   let scroll: NSScrollView
+  let table: NSTableView
 
   init(window: NSWindow, model: UpdatesListViewModel) throws {
     self.window = window
     self.model = model
-    func find(_ view: NSView) -> NSScrollView? {
-      if let scroll = view as? NSScrollView,
-        scroll.convert(scroll.bounds, to: window.contentView).minX < 308
-      {
-        return scroll
-      }
-      return view.subviews.lazy.compactMap { find($0) }.first
-    }
-    scroll = try XCTUnwrap(window.contentView.flatMap { find($0) })
+    table = try XCTUnwrap(window.contentView?.descendant(of: NSTableView.self))
+    scroll = try XCTUnwrap(table.enclosingScrollView)
+  }
+
+  func searchField() throws -> NSSearchField {
+    try XCTUnwrap(accessibilityElements().compactMap { $0.object as? NSSearchField }.first)
   }
 
   var selectedRow: Int {
@@ -82,18 +100,8 @@ struct SidebarInputFixture {
   }
 
   func rowRect(_ index: Int) -> CGRect {
-    var entry = 0
-    var y: CGFloat = 0
-    for section in model.snapshot.sections {
-      if index == entry { return CGRect(x: 0, y: y, width: 308, height: 27) }
-      let count = section.apps.count
-      if index > entry && index <= entry + count {
-        return CGRect(x: 0, y: y + 37 + CGFloat(index - entry - 1) * 60, width: 308, height: 60)
-      }
-      entry += count + 1
-      y += 37 + CGFloat(count) * 60
-    }
-    return .zero
+    guard index >= 0 && index < table.numberOfRows else { return .zero }
+    return table.convert(table.rect(ofRow: index), to: scroll.documentView)
   }
 
   func focus() throws {
@@ -102,7 +110,7 @@ struct SidebarInputFixture {
     let row = model.snapshot.entries.indices.first {
       if case .app = model.snapshot.entries[$0] {
         let rect = rowRect($0)
-        return rect.minY >= y + 27 && rect.maxY <= y + scroll.contentSize.height
+        return rect.minY >= y && rect.maxY <= y + scroll.contentSize.height
       }
       return false
     }

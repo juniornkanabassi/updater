@@ -16,6 +16,7 @@ struct UpdatesSidebarView: View {
   @ObservedObject var searchFocusController: SearchFocusController
   @FocusState private var focus: SidebarFocus?
   @Environment(\.windowFocus) private var windowFocus
+  @State private var searchPresented = false
   @State private var previousFocus = SidebarFocus.list
 
   private var activeFocus: FocusState<SidebarFocus?>.Binding { windowFocus ?? $focus }
@@ -26,20 +27,37 @@ struct UpdatesSidebarView: View {
   }
 
   var body: some View {
-    VStack(spacing: 0) {
-      UpdatesSidebarHeaderView(
-        viewModel: viewModel, searchFocusController: searchFocusController,
-        focus: activeFocus, restoreFocus: restorePreviousFocus
+    UpdatesScrollList(viewModel: viewModel, focus: activeFocus)
+      .searchable(
+        text: Binding(get: { viewModel.searchQuery }, set: { viewModel.setSearchQuery($0) }),
+        isPresented: $searchPresented,
+        placement: .sidebar,
+        prompt: "Search Apps"
       )
-      // Keep the glass shadow above the scrolling content so the first
-      // opaque section header does not cut it off at the search/list seam.
-      .zIndex(1)
-      UpdatesScrollList(viewModel: viewModel, focus: activeFocus)
-    }
-    .onChange(of: activeFocus.wrappedValue) { _, new in
-      if let new, new != .search { previousFocus = new }
-    }
-    .background(Color(nsColor: .windowBackgroundColor).ignoresSafeArea(.container, edges: .top))
+      .searchFocused(activeFocus, equals: .search)
+      .onChange(of: searchFocusController.request, initial: true) { _, _ in
+        if searchFocusController.consumeRequest() {
+          searchPresented = true
+          activeFocus.wrappedValue = .search
+        }
+      }
+
+      .onExitCommand {
+        guard activeFocus.wrappedValue == .search else { return }
+        searchFocusController.dismissRequest()
+        searchPresented = false
+        activeFocus.wrappedValue = nil
+        let request = searchFocusController.request
+        Task { @MainActor in
+          guard searchFocusController.request == request,
+            activeFocus.wrappedValue == nil
+          else { return }
+          restorePreviousFocus()
+        }
+      }
+      .onChange(of: activeFocus.wrappedValue) { _, new in
+        if let new, new != .search { previousFocus = new }
+      }
   }
 
   private func restorePreviousFocus() {
@@ -56,62 +74,4 @@ enum SidebarFocus: Hashable {
 
 extension EnvironmentValues {
   @Entry var windowFocus: FocusState<SidebarFocus?>.Binding?
-}
-
-struct UpdatesSidebarHeaderView: View {
-  @ObservedObject var viewModel: UpdatesListViewModel
-  @ObservedObject var searchFocusController: SearchFocusController
-  let focus: FocusState<SidebarFocus?>.Binding
-  let restoreFocus: () -> Void
-
-  var body: some View {
-    HStack(spacing: 1) {
-      Image(systemName: "magnifyingglass")
-        .font(.system(size: 14))
-        .foregroundStyle(.secondary)
-        .frame(width: 16)
-        .offset(x: -1.5)
-        .accessibilityHidden(true)
-
-      TextField(
-        "Search",
-        // An explicit setter avoids an actor-isolation thunk crash in Xcode 26.6.
-        text: Binding(
-          get: { viewModel.searchQuery },
-          set: { viewModel.setSearchQuery($0) }
-        )
-      )
-      .textFieldStyle(.plain)
-      .font(.system(size: 13))
-      .focused(focus, equals: .search)
-      .accessibilityIdentifier("updates.search")
-      .accessibilityLabel("Search Apps")
-      .onExitCommand {
-        focus.wrappedValue = nil
-        Task { @MainActor in restoreFocus() }
-      }
-
-      if !viewModel.searchQuery.isEmpty {
-        Button {
-          viewModel.setSearchQuery("")
-        } label: {
-          Image(systemName: "xmark.circle.fill")
-            .font(.system(size: 13))
-            .foregroundStyle(.secondary)
-            .offset(x: 2.5)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Clear Search")
-      }
-    }
-    .padding(.horizontal, 7)
-    .frame(height: 28)
-    .glassEffect(.regular, in: .capsule)
-    .padding(.horizontal, 12)
-    .padding(.vertical, 8)
-    .onChange(of: searchFocusController.request, initial: true) { _, request in
-      guard request != nil else { return }
-      focus.wrappedValue = .search
-    }
-  }
 }

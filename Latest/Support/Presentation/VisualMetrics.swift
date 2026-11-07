@@ -21,12 +21,8 @@ enum Space {
 
 @MainActor
 enum VisualMetrics {
-  /// The original AppKit table resolves its prototype rows to 60 points at
-  /// runtime. Keep the production list on that measured cadence; the former
-  /// 65-point synthetic fixture made every following row drift farther down.
+  /// Minimum content height; the native list owns row insets and section spacing.
   static let appRowHeight: CGFloat = 60
-  static let sectionHeaderHeight: CGFloat = 27
-  static let sectionHeaderSpacing: CGFloat = 10
 
   static let mainWindowDefaultWidth: CGFloat = 768
   static let mainWindowDefaultHeight: CGFloat = 516
@@ -39,14 +35,8 @@ enum VisualMetrics {
   static let detailIconSize: CGFloat = 64
 
   // The app header sits below the native window toolbar.
-  static let detailHeaderVerticalPadding: CGFloat = 7.5
+  static let detailHeaderVerticalPadding: CGFloat = Space.sm
   static let detailHeaderHeight: CGFloat = detailIconSize + (detailHeaderVerticalPadding * 2)
-  static let detailHeaderHorizontalPadding: CGFloat = 24
-  // SwiftUI Text reserves more ascent space than the original NSTextField
-  // stack. These measured offsets align the visible glyph baselines while the
-  // header, icon, and action retain their native layout frames.
-  static let detailMetadataVerticalOffset: CGFloat = -7
-  static let detailMetadataLineVerticalCorrection: CGFloat = 1
-  static let detailTitleVerticalCorrection: CGFloat = 0
+  static let detailHeaderHorizontalPadding: CGFloat = Space.xxl
 
 }

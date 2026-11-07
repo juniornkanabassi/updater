@@ -201,7 +201,7 @@ final class SidebarInteractionTest: XCTestCase {
     try focusReleaseNotes()
     try await waitForFocus("initial release notes") { window.firstResponder === web }
     environment.commands.focusSearch()
-    let search = try XCTUnwrap(host.descendant(of: NSTextField.self))
+    let search = try fixture.searchField()
     try await waitForFocus("first Find") { search.currentEditor() === window.firstResponder }
     XCTAssertTrue(search.currentEditor() === window.firstResponder)
     environment.commands.focusSearch()
@@ -451,8 +451,7 @@ final class SidebarInteractionTest: XCTestCase {
     try await Task.sleep(for: .milliseconds(50))
     XCTAssertEqual(fixture.selectedRow, 2)
     XCTAssertTrue(fixture.model.isKeyboardSelection)
-    let search = try XCTUnwrap(
-      fixture.accessibilityElements().compactMap { $0.object as? NSTextField }.first)
+    let search = try fixture.searchField()
     let searchFrame = search.convert(search.bounds, to: nil)
     try clickTestWindow(fixture.window, at: CGPoint(x: searchFrame.midX, y: searchFrame.midY))
     try await Task.sleep(for: .milliseconds(50))
@@ -482,7 +481,7 @@ final class SidebarInteractionTest: XCTestCase {
       fixture.scroll.flashScrollers()
       try await Task.sleep(for: .milliseconds(100))
       XCTAssertEqual(try fixture.contentFrame(for: app), before)
-      XCTAssertEqual(fixture.scroll.contentSize.width, 308, accuracy: 0.5)
+      XCTAssertEqual(fixture.scroll.contentSize.width, fixture.table.bounds.width, accuracy: 0.5)
       for (position, delta) in [
         (CGFloat(0), Int32(1000)), (CGFloat.greatestFiniteMagnitude, Int32(-1000)),
       ] {

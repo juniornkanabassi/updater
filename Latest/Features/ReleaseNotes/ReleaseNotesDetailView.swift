@@ -14,12 +14,15 @@ import SwiftUI
 struct ReleaseNotesDetailView: View {
   @ObservedObject var updatesViewModel: UpdatesListViewModel
   @StateObject private var detailViewModel: ReleaseNotesDetailViewModel
+  private let history: UpdateHistoryStore
 
   init(
     updatesViewModel: UpdatesListViewModel,
-    detailViewModel: ReleaseNotesDetailViewModel = ReleaseNotesDetailViewModel()
+    detailViewModel: ReleaseNotesDetailViewModel = ReleaseNotesDetailViewModel(),
+    history: UpdateHistoryStore = .shared
   ) {
     self.updatesViewModel = updatesViewModel
+    self.history = history
     _detailViewModel = StateObject(wrappedValue: detailViewModel)
   }
 
@@ -28,7 +31,7 @@ struct ReleaseNotesDetailView: View {
       app: detailViewModel.app,
       contentState: detailViewModel.contentState,
       updating: updatesViewModel.updating,
-      overview: DetailOverview(snapshot: updatesViewModel.snapshot)
+      overview: DetailOverview(snapshot: updatesViewModel.snapshot), history: history
     )
     .task(id: updatesViewModel.selectedApp.map(ObjectIdentifier.init)) {
       detailViewModel.display(
@@ -168,7 +171,7 @@ struct ReleaseNotesHeaderView: View {
   }
 
   var body: some View {
-    HStack(spacing: 5) {
+    HStack(spacing: Space.sm) {
       Group {
         if let icon {
           Image(nsImage: icon)
@@ -186,29 +189,23 @@ struct ReleaseNotesHeaderView: View {
           .font(.title3.weight(.semibold))
           .lineLimit(1)
           .truncationMode(.tail)
-          .offset(y: VisualMetrics.detailTitleVerticalCorrection)
-          .frame(height: 19)
+          .help(app.name)
 
         Text(versionLine)
           .font(.subheadline.monospacedDigit())
-          .foregroundStyle(Color(nsColor: .secondaryLabelColor))
-          .offset(y: VisualMetrics.detailMetadataLineVerticalCorrection)
+          .foregroundStyle(.secondary)
           .lineLimit(1)
+        Text(
+          app.latestUpdateDate.map {
+            "Released \($0.formatted(.dateTime.year().month(.wide).day()))"
+          } ?? " "
+        )
+        .font(.subheadline)
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+        .accessibilityHidden(app.latestUpdateDate == nil)
       }
       .frame(maxWidth: .infinity, alignment: .leading)
-      // The optional date extends below the two-line block without recentering it.
-      .overlay(alignment: .topLeading) {
-        if let date = app.latestUpdateDate {
-          GeometryReader { geometry in
-            Text("Released \(date.formatted(.dateTime.year().month(.wide).day()))")
-              .font(.subheadline)
-              .foregroundStyle(Color(nsColor: .secondaryLabelColor))
-              .lineLimit(1)
-              .offset(y: geometry.size.height + VisualMetrics.detailMetadataLineVerticalCorrection)
-          }
-        }
-      }
-      .offset(y: VisualMetrics.detailMetadataVerticalOffset)
       .layoutPriority(1)
 
       UpdateActionView(app: app, updating: updating)
@@ -223,8 +220,10 @@ struct ReleaseNotesHeaderView: View {
     }
     .accessibilityElement(children: .contain)
     .accessibilityIdentifier("release-notes.header")
-    .task(id: appIdentity) {
-      let loadedIcon = await IconCache.shared.icon(for: app)
+    .task(id: IconCache.shared.cacheKey(for: app, pointSize: VisualMetrics.detailIconSize)) {
+      icon = IconCache.shared.cachedIcon(for: app, pointSize: VisualMetrics.detailIconSize)
+      let loadedIcon = await IconCache.shared.icon(
+        for: app, pointSize: VisualMetrics.detailIconSize)
       guard !Task.isCancelled else { return }
       icon = loadedIcon
     }
@@ -320,7 +319,7 @@ private struct AppInfoPanel: View {
 
   var body: some View {
     ScrollView {
-      Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16, verticalSpacing: 10) {
+      Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16, verticalSpacing: Space.md) {
         row("Installed", app.localizedVersionInformation?.rawCurrent ?? "Unknown")
         if app.availabilityUnknown {
           row("Available", "Unknown, only \(app.externalUpdaterName ?? "the vendor") knows")

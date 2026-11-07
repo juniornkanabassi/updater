@@ -9,6 +9,7 @@
 //  Licensed under GPL-3.0; see LICENSE.md.
 
 import Foundation
+import ObjectiveC
 import SwiftUI
 
 private var isRunningUnitTests: Bool {
@@ -46,6 +47,41 @@ extension NSWindow {
     }
   }
 }
+
+// A hidden app copy must be invisible before WindowServer receives an order request.
+// Test bundles have their own equivalent guard installed before XCTest starts.
+private func installAgentGuard() {
+  func replace(_ type: AnyClass, _ original: String, _ replacement: Selector) {
+    guard let old = class_getInstanceMethod(type, NSSelectorFromString(original)),
+      let new = class_getInstanceMethod(type, replacement)
+    else { return }
+    method_exchangeImplementations(old, new)
+  }
+  replace(NSWindow.self, "setAlphaValue:", #selector(NSWindow.agentSetAlpha(_:)))
+  replace(NSWindow.self, "orderWindow:relativeTo:", #selector(NSWindow.agentOrder(_:relativeTo:)))
+  replace(NSApplication.self, "activate", #selector(NSApplication.agentActivate))
+  replace(
+    NSApplication.self, "activateIgnoringOtherApps:",
+    #selector(NSApplication.agentActivateIgnoring(_:)))
+  replace(NSApplication.self, "noResponderFor:", #selector(NSApplication.agentNoResponder(_:)))
+}
+
+extension NSWindow {
+  @objc fileprivate func agentSetAlpha(_ value: CGFloat) { agentSetAlpha(0) }
+  @objc fileprivate func agentOrder(_ order: NSWindow.OrderingMode, relativeTo other: Int) {
+    alphaValue = 0
+    ignoresMouseEvents = true
+    agentOrder(order, relativeTo: other)
+  }
+}
+
+extension NSApplication {
+  @objc fileprivate func agentActivate() {}
+  @objc fileprivate func agentActivateIgnoring(_ flag: Bool) {}
+  @objc fileprivate func agentNoResponder(_ selector: Selector) {}
+}
+
+if CommandLine.arguments.contains("--agent-screen") { installAgentGuard() }
 
 if isRunningUnitTests || CommandLine.arguments.contains("--agent-screen") {
   NSWindow.keepEveryWindowInvisible()

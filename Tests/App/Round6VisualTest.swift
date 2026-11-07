@@ -6,19 +6,37 @@ import XCTest
 
 @testable import Latest
 
-/// Renders the Round 6 surfaces offscreen (never ordered on screen, never activated) and checks
+/// Renders production surfaces in transparent windows (never visible or activated) and checks
 /// each render has content. PNGs are written under the isolated build directory.
 @MainActor
 final class Round6VisualTest: XCTestCase {
-  static let outputDirectory = ProcessInfo.processInfo.environment["UPDATER_BUILD_DIR"].map {
-    URL(fileURLWithPath: $0).appendingPathComponent("snapshots")
-  }
+  static let outputDirectory: URL? = {
+    let environment = ProcessInfo.processInfo.environment
+    if let path = environment["UPDATER_SNAPSHOT_DIR"] { return URL(fileURLWithPath: path) }
+    return environment["UPDATER_BUILD_DIR"].map {
+      URL(fileURLWithPath: $0).appendingPathComponent("snapshots")
+    }
+  }()
 
   func testRendersMainWindowDetailStatesSettingsAndMenu() async throws {
     if let outputDirectory = Self.outputDirectory {
       try FileManager.default.createDirectory(
         at: outputDirectory, withIntermediateDirectories: true)
     }
+    let arguments = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
+    setTestManualAppStorePreference(false)
+    defer {
+      UserDefaults.standard.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain)
+    }
+    let process = ProcessInfo.processInfo.environment
+    let isolation = [
+      "fixedHome": process["CFFIXED_USER_HOME"] ?? "unset",
+      "controlHome": process["UPDATER_HOME"] ?? "unset",
+      "temporaryDirectory": FileManager.default.temporaryDirectory.path,
+    ]
+    try write(
+      JSONSerialization.data(withJSONObject: isolation, options: [.sortedKeys]),
+      name: "isolation.json")
     let defaultsName = "Round6Snapshots.\(UUID().uuidString)"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: defaultsName))
     defer { defaults.removeTestPersistentDomain(forName: defaultsName) }
@@ -39,6 +57,10 @@ final class Round6VisualTest: XCTestCase {
     environment.menuBar.refresh(with: store.apps)
     XCTAssertEqual(
       environment.menuBar.updateAllCount, 5, "Goodnotes, Notion, Word, Audio Hijack, Discord")
+    for app in store.apps {
+      _ = await IconCache.shared.icon(for: app)
+      _ = await IconCache.shared.icon(for: app, pointSize: VisualMetrics.detailIconSize)
+    }
     model.startObserving()
     defer { model.stopObserving() }
     try await Task.sleep(for: .milliseconds(200))
@@ -51,9 +73,23 @@ final class Round6VisualTest: XCTestCase {
     for dark in [false, true] {
       let suffix = dark ? "dark" : "light"
       try await render(
-        SnapshotMainContent(environment: environment, history: history),
+        LatestRootView(
+          environment: environment,
+          detailViewModel: ReleaseNotesDetailViewModel(
+            releaseNotesProvider: SnapshotNotesProvider()),
+          history: history),
         size: CGSize(width: 900, height: 640),
-        dark: dark, window: true, name: "main-content-\(suffix)")
+        dark: dark, window: true, mainScene: true, name: "main-window-\(suffix)")
+      let selected = model.selectedApp
+      model.select(nil)
+      // Native split-view material cannot be composited offscreen. Render the same
+      // production sidebar separately as component evidence, never as a patched window.
+      try await render(
+        UpdatesSidebarView(
+          viewModel: model, searchFocusController: environment.searchFocusController),
+        size: CGSize(width: VisualMetrics.sidebarIdealWidth, height: 640),
+        dark: dark, name: "native-sidebar-\(suffix)")
+      model.select(selected)
     }
 
     let detail = CGSize(width: 560, height: 420)
@@ -116,6 +152,22 @@ final class Round6VisualTest: XCTestCase {
       try await render(
         LicensesView(), size: CGSize(width: 640, height: 520),
         dark: dark, name: "licenses-\(suffix)")
+
+      for (name, error) in [
+        ("setup", InstallHelperError.installHelperNotRegistered),
+        ("approval", .installHelperRequiresApproval),
+        ("failure", .unavailable("The update helper did not respond.")),
+      ] {
+        let alert = UpdateInstallHelperAlert(
+          helper: HelperRegistrationFixture(), workspace: SnapshotWorkspace())
+        alert.prepare(fallbackURL: URL(string: "https://example.com")!, error: error, update: {})
+        XCTAssertTrue(alert.isPresented)
+        XCTAssertNotEqual(alert.title, name == "setup" ? "" : "Set Up App Store Updates")
+        try await render(
+          UpdateInstallHelperContent(presenter: alert).defaultAppStorage(defaults),
+          size: CGSize(width: 520, height: 360), dark: dark, name: "helper-\(name)-\(suffix)")
+        alert.cancel()
+      }
 
       let settingsModel = environment.settingsViewModel
       let permissions = PermissionsViewModel(
@@ -233,7 +285,8 @@ final class Round6VisualTest: XCTestCase {
   }
 
   private func render<Content: View>(
-    _ content: Content, size: CGSize, dark: Bool, window: Bool = false, name: String
+    _ content: Content, size: CGSize, dark: Bool, window: Bool = false, mainScene: Bool = false,
+    name: String
   ) async throws {
     let root =
       content
@@ -242,15 +295,22 @@ final class Round6VisualTest: XCTestCase {
       .environment(\.colorScheme, dark ? .dark : .light)
       .environment(\.locale, Locale(identifier: "en_GB"))
     let controller = NSHostingController(rootView: root)
-    let host = NSWindow(
-      contentRect: NSRect(origin: .zero, size: size),
-      styleMask: window
-        ? [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView] : [.borderless],
-      backing: .buffered, defer: false)
-    host.isReleasedWhenClosed = false
-    host.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
-    host.contentViewController = controller
+    let host: NSWindow
+    if mainScene {
+      host = try await makeLatestTestWindow(
+        content: root, dark: dark, activate: false, testCase: self)
+    } else {
+      host = NSWindow(
+        contentRect: NSRect(origin: .zero, size: size),
+        styleMask: window
+          ? [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView] : [.borderless],
+        backing: .buffered, defer: false)
+      host.isReleasedWhenClosed = false
+      host.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+      host.contentViewController = controller
+    }
     host.setContentSize(size)
+    host.orderFront(nil)  // TestOffscreen makes it transparent before it is ordered in.
     defer { host.close() }
     for _ in 0..<5 {
       try await Task.sleep(for: .milliseconds(80))
@@ -262,6 +322,11 @@ final class Round6VisualTest: XCTestCase {
     let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
     view.cacheDisplay(in: view.bounds, to: bitmap)
     XCTAssertGreaterThan(bitmap.pixelsWide, 0, name)
+    if name.hasPrefix("native-sidebar") {
+      let pixels = try rgba(bitmap)
+      let shades = Set(stride(from: 0, to: pixels.count, by: 4).map { pixels[$0] })
+      XCTAssertGreaterThan(shades.count, 8, "Native sidebar must contain rendered rows")
+    }
     try write(
       try XCTUnwrap(bitmap.representation(using: .png, properties: [:])), name: "\(name).png")
   }
@@ -432,31 +497,11 @@ private final class SnapshotCoordinator: UpdateCheckCoordinating {
   func run(hardRefresh: Bool, origin: UpdateCheckOrigin) {}
 }
 
-/// Render unchanged production child views without the root's live notes/history defaults.
-/// This covers main content; it does not claim to capture the production window chrome.
 @MainActor
-private struct SnapshotMainContent: View {
-  let environment: AppEnvironment
-  let history: UpdateHistoryStore
-  @FocusState private var focus: SidebarFocus?
-
-  var body: some View {
-    HStack(spacing: 0) {
-      UpdatesSidebarView(
-        viewModel: environment.updatesListViewModel,
-        searchFocusController: environment.searchFocusController
-      )
-      .frame(width: VisualMetrics.sidebarIdealWidth)
-      .frame(maxHeight: .infinity)
-      .overlay(alignment: .trailing) { Divider() }
-      ReleaseNotesDetailSurface(
-        app: environment.updatesListViewModel.selectedApp,
-        contentState: .message(ReleaseNotesMessage(error: LatestError.releaseNotesUnavailable)),
-        updating: environment.updatesListViewModel.updating, history: history
-      )
-      .frame(minWidth: VisualMetrics.detailMinWidth)
-    }
-    .environment(\.windowFocus, $focus)
+private final class SnapshotNotesProvider: ReleaseNotesProviding {
+  func releaseNotes(for app: Latest.App, with completion: @escaping ReleaseNotesProvider.Completion)
+  {
+    completion(.failure(LatestError.releaseNotesUnavailable))
   }
 }
 
@@ -464,4 +509,12 @@ private struct SnapshotMainContent: View {
 private final class SnapshotAppStoreService: AppStoreUpdateServicing {
   var alwaysUsesManualUpdates = false
   func verifyAvailability() throws(InstallHelperError) {}
+}
+
+@MainActor
+private final class SnapshotWorkspace: ApplicationWorkspace {
+  func setDockBadge(_ label: String?) {}
+  func openApplication(at url: URL) {}
+  func open(_ url: URL) {}
+  func revealInFinder(_ urls: [URL]) {}
 }
