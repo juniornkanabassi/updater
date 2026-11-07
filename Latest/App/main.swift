@@ -59,6 +59,9 @@ private func installAgentGuard() {
   }
   replace(NSWindow.self, "setAlphaValue:", #selector(NSWindow.agentSetAlpha(_:)))
   replace(NSWindow.self, "orderWindow:relativeTo:", #selector(NSWindow.agentOrder(_:relativeTo:)))
+  replace(NSWindow.self, "orderFront:", #selector(NSWindow.agentOrderFront(_:)))
+  replace(NSWindow.self, "orderFrontRegardless", #selector(NSWindow.agentOrderFrontRegardless))
+  replace(NSWindow.self, "makeKeyAndOrderFront:", #selector(NSWindow.agentMakeKeyAndOrderFront(_:)))
   replace(NSApplication.self, "activate", #selector(NSApplication.agentActivate))
   replace(
     NSApplication.self, "activateIgnoringOtherApps:",
@@ -69,9 +72,25 @@ private func installAgentGuard() {
 extension NSWindow {
   @objc fileprivate func agentSetAlpha(_ value: CGFloat) { agentSetAlpha(0) }
   @objc fileprivate func agentOrder(_ order: NSWindow.OrderingMode, relativeTo other: Int) {
+    agentHide()
+    agentOrder(order, relativeTo: other)
+  }
+  // The same three entry points Tests/TestOffscreen covers, so no order path reaches WindowServer visible.
+  @objc fileprivate func agentOrderFront(_ sender: Any?) {
+    agentHide()
+    agentOrderFront(sender)
+  }
+  @objc fileprivate func agentOrderFrontRegardless() {
+    agentHide()
+    agentOrderFrontRegardless()
+  }
+  @objc fileprivate func agentMakeKeyAndOrderFront(_ sender: Any?) {
+    agentHide()
+    agentMakeKeyAndOrderFront(sender)
+  }
+  private func agentHide() {
     alphaValue = 0
     ignoresMouseEvents = true
-    agentOrder(order, relativeTo: other)
   }
 }
 

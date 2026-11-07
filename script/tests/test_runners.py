@@ -59,6 +59,10 @@ class RunnerArgumentsTest(unittest.TestCase):
         unrelated.write_bytes(plistlib.dumps({"keep": True}))
         recorded_home = self.root / "recorded-home"
         self.environment["RECORDED_HOME"] = str(recorded_home)
+        # A stand-in for the owner's real home, where a writer that ignores CFFIXED_USER_HOME lands.
+        real_home = self.root / "home"
+        (real_home / "Library/Preferences").mkdir(parents=True)
+        self.environment["HOME"] = str(real_home)
         domain = "UpdaterRunnerTest." + str(uuid.uuid4())
         xcodebuild = self.root / "bin/xcodebuild"
         xcodebuild.write_text(
@@ -66,10 +70,12 @@ class RunnerArgumentsTest(unittest.TestCase):
             'printf "%s" "$TEST_RUNNER_CFFIXED_USER_HOME" > "$RECORDED_HOME"\n'
             f'printf "%s\\n" "{domain}" >> "$TEST_RUNNER_UPDATER_TEST_DEFAULTS_MANIFEST"\n'
             f'touch "$TEST_RUNNER_CFFIXED_USER_HOME/Library/Preferences/{domain}.plist"\n'
+            f'touch "$HOME/Library/Preferences/{domain}.plist"\n'
             'exit 42\n')
         result = self.run_script("test.sh")
         self.assertEqual(result.returncode, 42, result.stderr)
         self.assertFalse(Path(recorded_home.read_text()).exists())
+        self.assertFalse((real_home / f"Library/Preferences/{domain}.plist").exists())
         self.assertEqual(plistlib.loads(unrelated.read_bytes()), {"keep": True})
         self.assertEqual(list((self.root / "scratch").glob("test-defaults.*")), [])
 

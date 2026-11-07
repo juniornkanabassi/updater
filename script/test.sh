@@ -78,9 +78,11 @@ for name in set(manifest.read_text().splitlines()):
     uuid.UUID(name.rsplit(".", 1)[-1])
     if "/" in name:
         raise ValueError("Invalid test defaults domain")
-    subprocess.run(["/usr/bin/defaults", "delete", name], capture_output=True,
-                   env=dict(os.environ, CFFIXED_USER_HOME=str(test_home)))
-    (test_home / "Library/Preferences" / (name + ".plist")).unlink(missing_ok=True)
+    # Sweep the real home too: cfprefsd can persist a suite there despite CFFIXED_USER_HOME.
+    for home in (test_home, Path.home()):
+        subprocess.run(["/usr/bin/defaults", "delete", name], capture_output=True,
+                       env=dict(os.environ, CFFIXED_USER_HOME=str(home)))
+        (home / "Library/Preferences" / (name + ".plist")).unlink(missing_ok=True)
 manifest.unlink()
 PY_CLEANUP
   /bin/rm -rf "$TEST_HOME"
