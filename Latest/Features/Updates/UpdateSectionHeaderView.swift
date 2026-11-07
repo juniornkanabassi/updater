@@ -50,7 +50,7 @@ struct UpdateSectionHeaderView: View {
   private static func styled(_ text: String, count: Bool) -> AttributedString {
     var text = AttributedString(text)
     text.font = count ? .subheadline.bold() : .headline
-    text.foregroundColor = Color(nsColor: count ? .tertiaryLabelColor : .secondaryLabelColor)
+    text.foregroundColor = Color(nsColor: count ? .labelColor : .secondaryLabelColor)
     return text
   }
 }

@@ -10,7 +10,7 @@ The standard list owns keyboard navigation, range selection and context-menu tar
 
 ## Commands and feedback
 
-Find uses Command-F and Option-Command-F. Refresh and Update All remain in the toolbar and menus. Selected rows expose actions through their context menu. Progress, failures and hand-offs use text as well as symbols. Failed updates retain their reason and a recovery action. Existing appearance preferences remain available. View → Show contains all four list-visibility choices, named for the sidebar groups. The menu bar shares the sidebar categorisation, while its badge counts only known updates.
+Find uses Command-F and Option-Command-F. Refresh and Update All remain in the toolbar and menus. Selected rows expose actions through their context menu. Progress, failures and hand-offs use text as well as symbols. Failed updates retain their reason and retry directly through the guarded update service; permission recovery stays inline. Existing appearance preferences remain available. View → Show contains all four list-visibility choices, named for the sidebar groups. The menu bar shares the sidebar categorisation, while its badge counts only known updates.
 
 ## Visual rules
 

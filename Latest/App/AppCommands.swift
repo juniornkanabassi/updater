@@ -181,16 +181,13 @@ struct LatestCommands: Commands {
             "Show apps you update in the App Store, Creative Cloud, Terminal or the app itself.")
         Toggle("Up to Date", isOn: showInstalledApps)
           .keyboardShortcut("l", modifiers: [.command, .shift])
-          .help("Show installed apps with no update waiting, including Other Apps.")
+          .help("Show apps already verified up to date.")
         Toggle("Other Apps", isOn: otherApps)
+          .disabled(!appCommands.showInstalledUpdates)
           .help("Include apps Updater cannot check. Up to Date must also be shown.")
         Toggle("Ignored", isOn: showIgnoredApps)
           .keyboardShortcut("i", modifiers: [.command, .shift])
           .help("Show apps you have chosen to ignore.")
-        if !appCommands.showInstalledUpdates {
-          Text("Other Apps also requires Up to Date.")
-            .foregroundStyle(.secondary)
-        }
       }
     }
 

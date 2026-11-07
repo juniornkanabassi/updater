@@ -1,6 +1,7 @@
 // Copyright © 2026 Junior Nkana Bassi. Licensed under GPL-3.0; see LICENSE.md.
 
 import ServiceManagement
+import Synchronization
 import UserNotifications
 import XCTest
 
@@ -476,28 +477,36 @@ final class BackgroundTest: XCTestCase {
   func testNeedsPermissionFailureOffersSettingsAndKeepsRetry() async throws {
     let directory = try disposableDirectory()
     let history = UpdateHistoryStore(fileURL: directory.appendingPathComponent("history.jsonl"))
-    let app = makeTestApp(name: "Refused", version: "1", remoteVersion: "2")
+    let submissions = Mutex(0)
+    let app = makeTestApp(
+      name: "Refused", version: "1", remoteVersion: "2",
+      updateAction: .builtIn { _ in submissions.withLock { $0 += 1 } })
     history.record(
       UpdateHistoryEntry(
         before: app.bundle, after: app.bundle, outcome: .needsPermission(kind: "appManagement")))
     let queue = UpdateQueue(history: history) { _ in app.bundle }
     let workspace = StubApplicationWorkspace()
-    let model = UpdateActionViewModel(
-      app: app, workspace: workspace, updating: AppUpdateService(queue: queue))
-    model.performAction()
-    let permission = try XCTUnwrap(model.presentedError?.permission)
+    let updating = AppUpdateService(queue: queue)
+    let model = UpdateActionViewModel(app: app, workspace: workspace, updating: updating)
+    let permission = try XCTUnwrap(
+      UpdateActionViewModel.missingPermission(for: app, updating: updating))
     XCTAssertEqual(permission, .appManagement)
-    model.openSettings(for: permission)
+    let permissions = PermissionsViewModel(
+      probes: [:], history: { history.latestEntries() }, workspace: workspace)
+    permissions.openSettings(for: permission)
     XCTAssertEqual(workspace.openedURLs, [PermissionKind.appManagement.settingsURL])
     XCTAssertNil(PermissionKind(outcomeKind: "administrator"), "admin stays the brew hand-off")
-    model.presentedError = nil
+    guard case .failed = model.presentation else {
+      return XCTFail("Opening Settings must keep the recorded failure visible")
+    }
+    XCTAssertEqual(submissions.withLock { $0 }, 0)
     model.performAction()
-    XCTAssertNotNil(model.presentedError, "opening Settings does not clear the recorded failure")
-    let model2 = PermissionsViewModel(
-      probes: [:], history: { history.latestEntries() }, workspace: workspace)
-    await model2.refresh()
-    XCTAssertEqual(model2.state(of: .appManagement), .unknown)
-    XCTAssertNotNil(model2.notes[.appManagement])
+    XCTAssertEqual(submissions.withLock { $0 }, 1, "One Retry action submits through AppUpdating")
+    XCTAssertEqual(
+      history.latestEntry(for: app.fileURL)?.outcome, .needsPermission(kind: "appManagement"))
+    await permissions.refresh()
+    XCTAssertEqual(permissions.state(of: .appManagement), .unknown)
+    XCTAssertNotNil(permissions.notes[.appManagement])
   }
 }
 

@@ -161,7 +161,7 @@ private struct DirectoryLocationRow: View {
             .monospacedDigit()
         } else {
           Text("Unavailable")
-            .foregroundStyle(.secondary)
+            .foregroundStyle(.primary)
         }
       }
     }

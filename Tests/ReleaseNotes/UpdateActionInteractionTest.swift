@@ -10,6 +10,90 @@ import XCTest
 
 final class UpdateActionInteractionTest: XCTestCase {
   @MainActor
+  func testFailedDetailRetrySubmitsOnceWithoutOpeningADialog() async throws {
+    let enhanced = NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface")
+    let previous = NSApp.accessibilityAttributeValue(enhanced) ?? false
+    NSApp.accessibilitySetValue(true, forAttribute: enhanced)
+    defer { NSApp.accessibilitySetValue(previous, forAttribute: enhanced) }
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let history = UpdateHistoryStore(fileURL: directory.appendingPathComponent("history.jsonl"))
+    let submissions = Mutex(0)
+    let app = makeTestApp(
+      name: "Retry Fixture", version: "1", remoteVersion: "2",
+      updateAction: .builtIn { _ in submissions.withLock { $0 += 1 } })
+    history.record(
+      UpdateHistoryEntry(
+        before: app.bundle, after: app.bundle, outcome: .needsPermission(kind: "appManagement")))
+    let queue = UpdateQueue(history: history) { _ in app.bundle }
+    let host = NSHostingView(
+      rootView: ReleaseNotesDetailSurface(
+        app: app,
+        contentState: .message(ReleaseNotesMessage(title: nil, description: "No release notes")),
+        updating: AppUpdateService(queue: queue), history: history))
+    let window = NSWindow(
+      contentRect: NSRect(x: 0, y: 0, width: 560, height: 420),
+      styleMask: [.titled], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    window.alphaValue = 0
+    window.ignoresMouseEvents = true
+    window.contentView = host
+    defer { window.close() }
+    host.layoutSubtreeIfNeeded()
+    try await Task.sleep(for: .milliseconds(150))
+    func elements() -> [SidebarAccessibilityElement] {
+      var seen = Set<ObjectIdentifier>()
+      var result: [SidebarAccessibilityElement] = []
+      func visit(_ value: Any) {
+        guard let object = value as? NSObject, seen.insert(ObjectIdentifier(object)).inserted else {
+          return
+        }
+        let element = SidebarAccessibilityElement(object: object)
+        result.append(element)
+        for child in element.accessibilityChildren() ?? [] { visit(child) }
+        for child in (object as? NSView)?.subviews ?? [] { visit(child) }
+      }
+      visit(host)
+      return result
+    }
+    let retry = try XCTUnwrap(elements().first { $0.accessibilityIdentifier() == "update.retry" })
+    XCTAssertEqual(retry.accessibilityLabel(), "Retry updating Retry Fixture")
+    XCTAssertNotNil(
+      elements().first { $0.accessibilityLabel() == "Open System Settings for App Management" })
+    let press = NSSelectorFromString("accessibilityPerformPress")
+    XCTAssertTrue(retry.object.responds(to: press))
+    typealias Press = @convention(c) (AnyObject, Selector) -> Bool
+    let performPress = unsafeBitCast(retry.object.method(for: press), to: Press.self)
+    _ = performPress(retry.object, press)
+    try await Task.sleep(for: .milliseconds(30))
+    XCTAssertEqual(submissions.withLock { $0 }, 1, "One press must submit exactly one safe retry")
+    XCTAssertNil(window.attachedSheet, "Retry must not add a second confirmation dialog")
+    XCTAssertNil(NSApp.modalWindow)
+    XCTAssertEqual(
+      history.latestEntry(for: app.fileURL)?.outcome, .needsPermission(kind: "appManagement"))
+    XCTAssertNotNil(
+      elements().first { $0.accessibilityLabel() == "Open System Settings for App Management" })
+    XCTAssertEqual(window.alphaValue, 0)
+    XCTAssertFalse(window.isKeyWindow)
+  }
+
+  @MainActor
+  func testDirectRetryKeepsProtectedProgressAndQuitRetryRoutes() {
+    let app = makeTestApp(name: "Protected Fixture", version: "1", remoteVersion: "2")
+    let protected = ActionRoutingSpy(state: .installing)
+    let progress = UpdateActionViewModel(app: app, updating: protected)
+    progress.performAction()
+    XCTAssertEqual(protected.counts.update, 0)
+    XCTAssertEqual(protected.counts.cancel, 0, "Protected installation cannot be cancelled")
+    let waiting = ActionRoutingSpy(state: .waitingForQuit)
+    let quit = UpdateActionViewModel(app: app, updating: waiting)
+    quit.performAction()
+    XCTAssertEqual(waiting.counts.retryQuit, 1)
+    XCTAssertEqual(waiting.counts.update, 0, "Retry Quit must reuse the active update")
+    XCTAssertEqual(waiting.counts.cancel, 0)
+  }
+
+  @MainActor
   func testProgressControlsAdvanceAndCancelUnmeasuredTransfers() throws {
     try requireUITests()
     try runApplicationTest {
@@ -320,5 +404,25 @@ final class UpdateActionInteractionTest: XCTestCase {
         XCTAssertEqual(actions, 1, "\(filename) must invoke the displayed action exactly once")
       }
     }
+  }
+}
+
+private final class ActionRoutingSpy: AppUpdating {
+  let current: UpdateProgressState
+  private let calls = Mutex((update: 0, cancel: 0, retryQuit: 0))
+  var counts: (update: Int, cancel: Int, retryQuit: Int) { calls.withLock { $0 } }
+  init(state: UpdateProgressState) { current = state }
+  func isUpdating(_ app: Latest.App) -> Bool { true }
+  func update(_ app: Latest.App, isBulkUpdate: Bool) { calls.withLock { $0.update += 1 } }
+  func cancel(_ app: Latest.App) { calls.withLock { $0.cancel += 1 } }
+  @MainActor func retryTermination(_ app: Latest.App) { calls.withLock { $0.retryQuit += 1 } }
+  func state(for identifier: Latest.App.Bundle.Identifier) -> UpdateProgressState { current }
+  @MainActor func states(for identifier: Latest.App.Bundle.Identifier) -> AsyncStream<
+    UpdateProgressState
+  > {
+    AsyncStream { $0.finish() }
+  }
+  @MainActor func stateChanges(for identifier: Latest.App.Bundle.Identifier) -> UpdateStateFeed {
+    (current, states(for: identifier))
   }
 }

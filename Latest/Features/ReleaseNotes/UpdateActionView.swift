@@ -14,16 +14,8 @@ import SwiftUI
 
 @MainActor
 final class UpdateActionViewModel: ObservableObject {
-  struct PresentedError: Identifiable {
-    let id = UUID()
-    let description: String
-    /// The permission whose Settings pane fixes this failure, if any.
-    var permission: PermissionKind? = nil
-  }
-
   let app: App
   @Published private(set) var presentation: UpdateActionPresentation
-  @Published var presentedError: PresentedError?
 
   private var observationTask: Task<Void, Never>?
   private let workspace: any ApplicationWorkspace
@@ -58,7 +50,7 @@ final class UpdateActionViewModel: ObservableObject {
 
   func performAction() {
     switch presentation {
-    case .update:
+    case .update, .failed:
       updating.update(app)
     case .open:
       workspace.openApplication(at: app.fileURL)
@@ -66,29 +58,17 @@ final class UpdateActionViewModel: ObservableObject {
       if cancellable { updating.cancel(app) }
     case .retryTermination:
       updating.retryTermination(app)
-    case .failed(let description):
-      presentedError = PresentedError(description: description, permission: missingPermission)
     case .waiting:
       break
     }
   }
 
-  func retry() {
-    updating.update(app)
-  }
-
   /// A failure recorded as `needsPermission` that a System Settings pane can fix.
-  var missingPermission: PermissionKind? { Self.missingPermission(for: app, updating: updating) }
-
   static func missingPermission(for app: App, updating: any AppUpdating) -> PermissionKind? {
     guard case .error(let error) = updating.state(for: app.identifier),
       case .needsPermission(let kind)? = (error as? UpdateOutcomeError)?.outcome
     else { return nil }
     return PermissionKind(outcomeKind: kind)
-  }
-
-  func openSettings(for permission: PermissionKind) {
-    workspace.open(permission.settingsURL)
   }
 }
 
@@ -110,27 +90,6 @@ struct UpdateActionView: View {
       presentation: viewModel.presentation,
       performAction: viewModel.performAction
     )
-    .alert(
-      String.localizedStringWithFormat(
-        NSLocalizedString(
-          "UpdateErrorAlertTitle", comment: "Title of alert stating that an app update failed"),
-        viewModel.app.name),
-      isPresented: Binding(
-        get: { viewModel.presentedError != nil },
-        set: { if !$0 { viewModel.presentedError = nil } }),
-      presenting: viewModel.presentedError
-    ) { error in
-      // Retry stays available: granting the permission does not change the recorded failure,
-      // only a new attempt does.
-      Button(NSLocalizedString("RetryAction", comment: "Retry update")) { viewModel.retry() }
-      if let permission = error.permission {
-        Button("Open Settings") { viewModel.openSettings(for: permission) }
-          .accessibilityLabel("Open System Settings for \(permission.title)")
-      }
-      Button("Cancel", role: .cancel) {}
-    } message: { error in
-      Text(error.description)
-    }
   }
 }
 
@@ -213,11 +172,12 @@ private struct UpdateActionControl: View {
       .accessibilityHint(cancellable ? "Cancel update" : "")
       .accessibilityIdentifier("update.progress")
     case .failed:
-      // Opens the failure alert: Retry, Open Settings when a permission fixes it, or Cancel.
-      Button("Retry…", action: performAction)
+      Button("Retry", action: performAction)
         .buttonStyle(.bordered)
         .modifier(HeaderButtonMetrics())
+        .help("Retry updating \(app.name).")
         .accessibilityLabel("Retry updating \(app.name)")
+        .accessibilityIdentifier("update.retry")
     }
   }
 }

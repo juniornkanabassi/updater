@@ -66,7 +66,7 @@ struct RefreshToolbarButton: View {
     Button(action: action) {
       Label("Check for Updates", systemImage: "arrow.clockwise")
     }
-    .labelStyle(.iconOnly)
+    .labelStyle(.titleAndIcon)
     .help(
       NSLocalizedString(
         "CheckForUpdatesToolbarItemToolTip",
