@@ -247,6 +247,112 @@ final class BackgroundTest: XCTestCase {
     try await waitUntil { menu.canUpdateAll }
   }
 
+  func testMenuAndSidebarShareActionableGroupsWithoutCountingUnknownAdobeUpdates() throws {
+    let preferences = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
+    setTestManualAppStorePreference(false)
+    defer {
+      UserDefaults.standard.setVolatileDomain(preferences, forName: UserDefaults.argumentDomain)
+    }
+    let settings = try isolatedAppListSettings(for: self)
+    let native = makeTestApp(
+      name: "Native", version: "1", remoteVersion: "2",
+      updateAction: .conditional(
+        label: "App Store",
+        installs: {
+          !AppStoreUpdateSettings.alwaysPerformManualUpdates.active
+        }
+      ) { _ in })
+    let outsideBundle = App.Bundle(
+      version: Version(versionNumber: "1", buildNumber: nil), name: "Outside",
+      bundleIdentifier: "com.example.outside",
+      fileURL: URL(fileURLWithPath: "/Applications/Outside.app"),
+      source: .vendor, modificationDate: .distantPast)
+    let outside = App(
+      bundle: outsideBundle,
+      update: .success(
+        App.Update(
+          app: outsideBundle, remoteVersion: Version(versionNumber: "2", buildNumber: nil),
+          minimumOSVersion: nil, source: .vendor, date: nil, releaseNotes: nil,
+          updateAction: .external(label: "Its updater") { _ in })), isIgnored: false)
+    XCTAssertFalse(outside.usesBuiltInUpdater)
+    let adobeBundle = App.Bundle(
+      version: Version(versionNumber: "26", buildNumber: nil), name: "Adobe Premiere Pro",
+      bundleIdentifier: "com.adobe.PremierePro",
+      fileURL: URL(fileURLWithPath: "/Applications/Adobe Premiere Pro.app"),
+      source: .vendor, modificationDate: .distantPast)
+    let adobe = App(
+      bundle: adobeBundle,
+      update: .success(
+        App.Update(
+          app: adobeBundle, remoteVersion: adobeBundle.version, minimumOSVersion: nil,
+          source: .vendor,
+          date: nil, releaseNotes: nil, updateAction: .external(label: "Creative Cloud") { _ in },
+          availabilityUnknown: true)), isIgnored: false)
+    let ignored = makeTestApp(name: "Ignored", version: "1", remoteVersion: "2").with(
+      ignoredState: true)
+    let current = makeTestApp(name: "Current", version: "1", remoteVersion: "1")
+    let unknown = App(
+      bundle: App.Bundle(
+        version: Version(versionNumber: "1", buildNumber: nil), name: "Unsupported",
+        bundleIdentifier: "com.example.unsupported",
+        fileURL: URL(fileURLWithPath: "/tmp/Unsupported.app"),
+        source: .none, modificationDate: .distantPast), update: nil, isIgnored: false)
+    let apps = [native, outside, adobe, ignored, current, unknown]
+    let menu = MenuBarViewModel(
+      appProvider: StreamingProvider(apps: apps), settings: settings,
+      updateAllCandidates: {
+        UpdateCheckingService.updateAllCandidates(
+          from: apps, isUpdating: { _ in false },
+          alwaysUsesManualAppStoreUpdates: AppStoreUpdateSettings.alwaysPerformManualUpdates.active)
+      })
+
+    func assertAgreement(file: StaticString = #filePath, line: UInt = #line) {
+      menu.refresh(with: apps)
+      let snapshot = AppListSnapshot(withApps: apps, filterQuery: nil, settings: settings)
+      let expected = snapshot.sections.filter {
+        ["Ready to Update", "Needs You"].contains($0.section.title)
+      }
+      XCTAssertEqual(
+        menu.updateSections.map(\.section.title), expected.map(\.section.title), file: file,
+        line: line)
+      XCTAssertEqual(
+        menu.updateSections.map { $0.apps.map(\.identifier) },
+        expected.map { $0.apps.map(\.identifier) }, file: file, line: line)
+      XCTAssertFalse(
+        menu.updates.contains { $0.identifier == adobe.identifier },
+        "Unknown availability is not a waiting update", file: file, line: line)
+      XCTAssertFalse(
+        menu.updateSections.flatMap(\.apps).contains { $0.isIgnored }, file: file, line: line)
+    }
+    assertAgreement()
+    XCTAssertEqual(menu.updateSections.last?.apps.map(\.name), ["Adobe Premiere Pro", "Outside"])
+    XCTAssertEqual(menu.updates.count, 2)
+    XCTAssertEqual(menu.updateAllCount, 1)
+    settings.showIgnoredUpdates = false
+    settings.showInstalledUpdates = false
+    settings.includeUnsupportedApps = false
+    assertAgreement()
+    settings.includeAppsWithLimitedSupport = false
+    assertAgreement()
+    XCTAssertEqual(menu.updateSections.flatMap(\.apps).map(\.name), ["Native"])
+    setTestManualAppStorePreference(true)
+    assertAgreement()
+    // The existing App Store visibility exception survives manual hand-off mode.
+    // It moves to Needs You, remains visible, and is never offered to Update All.
+    XCTAssertTrue(native.usesBuiltInUpdater)
+    XCTAssertEqual(menu.updateSections.map(\.section.title), ["Needs You"])
+    XCTAssertEqual(menu.updateSections.flatMap(\.apps).map(\.name), ["Native"])
+    XCTAssertEqual(menu.updates.count, 1)
+    XCTAssertEqual(menu.updateAllCount, 0)
+    settings.includeAppsWithLimitedSupport = true
+    assertAgreement()
+    XCTAssertEqual(menu.updateSections.map(\.section.title), ["Needs You"])
+    XCTAssertEqual(
+      menu.updateSections.first?.apps.map(\.name), ["Adobe Premiere Pro", "Native", "Outside"])
+    XCTAssertEqual(menu.updates.count, 2)
+    XCTAssertEqual(menu.updateAllCount, 0)
+  }
+
   /// Sol R4-006: the helper sheet's "Always open App Store" toggle and the reset when the
   /// helper is enabled both write a plain defaults key; the menu follows it.
   func testMenuFollowsTheManualAppStorePreference() async throws {

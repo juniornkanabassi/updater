@@ -50,20 +50,6 @@ struct GeneralSettingsView: View {
         )
       }
 
-      Section("In the List") {
-        preferenceOption(
-          title: "Apps that update elsewhere",
-          description:
-            "Apps you finish updating in the App Store, Creative Cloud, Terminal or the app itself. They appear under Needs You.",
-          isOn: limitedSupportBinding
-        )
-        preferenceOption(
-          title: "Apps Updater can't check",
-          description: "Apps with no update information. They appear under Other Apps.",
-          isOn: unsupportedAppsBinding
-        )
-      }
-
       Section("App Store") {
         preferenceOption(
           title: "Always open App Store",
@@ -119,19 +105,5 @@ struct GeneralSettingsView: View {
       .controlSize(.mini)
       .accessibilityLabel(title)
       .accessibilityHint(description)
-  }
-
-  private var limitedSupportBinding: Binding<Bool> {
-    Binding(
-      get: { viewModel.includeAppsWithLimitedSupport },
-      set: { viewModel.includeAppsWithLimitedSupport = $0 }
-    )
-  }
-
-  private var unsupportedAppsBinding: Binding<Bool> {
-    Binding(
-      get: { viewModel.includeUnsupportedApps },
-      set: { viewModel.includeUnsupportedApps = $0 }
-    )
   }
 }

@@ -155,14 +155,24 @@ private struct DirectoryLocationRow: View {
           .frame(width: 16, height: 16)
           .accessibilityLabel("Counting applications")
       case .loaded(let details):
-        Text(details.appCount, format: .number)
-          .foregroundStyle(.secondary)
-          .monospacedDigit()
+        if details.isReachable {
+          Text(details.appCount, format: .number)
+            .foregroundStyle(.secondary)
+            .monospacedDigit()
+        } else {
+          Text("Unavailable")
+            .foregroundStyle(.secondary)
+        }
       }
     }
     .frame(maxWidth: .infinity, minHeight: 24)
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(accessibilityLabel)
+    .help(
+      isReachable == false
+        ? "Can't reach this folder. Check that its drive is connected and Updater has permission to read it."
+        : url.path
+    )
     .task(id: url) {
       loadState = .loading
       let details = await loadDetails(url)

@@ -105,6 +105,16 @@ final class AppCommands {
     get { settings.showIgnoredUpdates }
     set { settings.showIgnoredUpdates = newValue }
   }
+
+  var includeAppsWithLimitedSupport: Bool {
+    get { settings.includeAppsWithLimitedSupport }
+    set { settings.includeAppsWithLimitedSupport = newValue }
+  }
+
+  var includeUnsupportedApps: Bool {
+    get { settings.includeUnsupportedApps }
+    set { settings.includeUnsupportedApps = newValue }
+  }
 }
 
 struct LatestCommands: Commands {
@@ -165,10 +175,23 @@ struct LatestCommands: Commands {
         }
       }
 
-      Toggle("Show Installed Apps", isOn: showInstalledApps)
-        .keyboardShortcut("l", modifiers: [.command, .shift])
-      Toggle("Show Ignored Apps", isOn: showIgnoredApps)
-        .keyboardShortcut("i", modifiers: [.command, .shift])
+      Menu("Show") {
+        Toggle("Needs You", isOn: needsYou)
+          .help(
+            "Show apps you update in the App Store, Creative Cloud, Terminal or the app itself.")
+        Toggle("Up to Date", isOn: showInstalledApps)
+          .keyboardShortcut("l", modifiers: [.command, .shift])
+          .help("Show installed apps with no update waiting, including Other Apps.")
+        Toggle("Other Apps", isOn: otherApps)
+          .help("Include apps Updater cannot check. Up to Date must also be shown.")
+        Toggle("Ignored", isOn: showIgnoredApps)
+          .keyboardShortcut("i", modifiers: [.command, .shift])
+          .help("Show apps you have chosen to ignore.")
+        if !appCommands.showInstalledUpdates {
+          Text("Other Apps also requires Up to Date.")
+            .foregroundStyle(.secondary)
+        }
+      }
     }
 
     CommandGroup(after: .help) {
@@ -182,6 +205,20 @@ struct LatestCommands: Commands {
     Binding(
       get: { appCommands.showInstalledUpdates },
       set: { appCommands.showInstalledUpdates = $0 }
+    )
+  }
+
+  private var needsYou: Binding<Bool> {
+    Binding(
+      get: { appCommands.includeAppsWithLimitedSupport },
+      set: { appCommands.includeAppsWithLimitedSupport = $0 }
+    )
+  }
+
+  private var otherApps: Binding<Bool> {
+    Binding(
+      get: { appCommands.includeUnsupportedApps },
+      set: { appCommands.includeUnsupportedApps = $0 }
     )
   }
 

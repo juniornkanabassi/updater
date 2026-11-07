@@ -121,13 +121,16 @@ struct ReleaseNotesDetailSurface: View {
         }
         .id(ObjectIdentifier(app))
         if let lastResult {
-          LabeledContent("Last result") {
+          HStack(alignment: .firstTextBaseline, spacing: Space.sm) {
+            Text("Last result").foregroundStyle(.secondary)
             Text(lastResult.displaySummary)
               .textSelection(.enabled)
               .accessibilityLabel(
                 lastResult.displaySummary.replacingOccurrences(of: "→", with: "to"))
           }
           .font(.callout)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .padding(.leading, Space.xxl)
           .padding(.horizontal, VisualMetrics.detailHeaderHorizontalPadding)
           .padding(.bottom, Space.md)
           .accessibilityIdentifier("detail.lastResult")

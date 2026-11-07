@@ -431,6 +431,32 @@ final class AppDependencyBoundaryTest: XCTestCase {
     XCTAssertFalse(settings.showInstalledUpdates)
   }
 
+  func testAllFourVisibilityCommandsKeepTheirPersistedPreferenceKeys() throws {
+    let (settings, defaults, suiteName) = try makeSettings()
+    defer { defaults.removeTestPersistentDomain(forName: suiteName) }
+    let commands = AppCommands(
+      updateCheckingService: StubUpdateCheckingCommands(),
+      updatesListViewModel: UpdatesListViewModel(
+        settings: settings, appProvider: StubAppProvider(apps: []),
+        workspace: StubApplicationWorkspace()),
+      searchFocusController: SearchFocusController(), settings: settings)
+    for enabled in [false, true] {
+      commands.includeAppsWithLimitedSupport = enabled
+      commands.showInstalledUpdates = enabled
+      commands.includeUnsupportedApps = enabled
+      commands.showIgnoredUpdates = enabled
+      XCTAssertEqual(defaults.bool(forKey: "IncludeAppsWithLimitedSupportKey"), enabled)
+      XCTAssertEqual(defaults.bool(forKey: "ShowInstalledUpdatesKey"), enabled)
+      XCTAssertEqual(defaults.bool(forKey: "ShowUnsupportedUpdatesKey"), enabled)
+      XCTAssertEqual(defaults.bool(forKey: "ShowIgnoredUpdatesKey"), enabled)
+      let reloaded = AppListSettings(userDefaults: defaults)
+      XCTAssertEqual(reloaded.includeAppsWithLimitedSupport, enabled)
+      XCTAssertEqual(reloaded.showInstalledUpdates, enabled)
+      XCTAssertEqual(reloaded.includeUnsupportedApps, enabled)
+      XCTAssertEqual(reloaded.showIgnoredUpdates, enabled)
+    }
+  }
+
   func testUpdateCommandRequiresKnownUpdateAndUsesSelectedAppOutsideFilter() throws {
     let settings = try isolatedAppListSettings(for: self)
     let bundle = makeApp(source: .vendor).bundle

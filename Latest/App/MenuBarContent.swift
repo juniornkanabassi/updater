@@ -9,7 +9,10 @@ import SwiftUI
 final class MenuBarViewModel: ObservableObject {
   nonisolated static let showsItemKey = "ShowsMenuBarItem"
 
+  /// Known available updates only: unknown Adobe versions never inflate the badge.
   @Published private(set) var updates = [App]()
+  /// The sidebar's actionable sections, including apps that must be checked in their vendor.
+  @Published private(set) var updateSections = [AppListSnapshot.SectionContent]()
   /// What the last check found, for the line shown when nothing is waiting.
   @Published private(set) var summary = UpdateStatusSummary()
   /// How many apps Update All would start now (the window's toolbar shows it too).
@@ -77,6 +80,10 @@ final class MenuBarViewModel: ObservableObject {
     if let apps { self.apps = apps }
     updates = UpdateNotificationController.waitingUpdates(
       in: self.apps, includeExternal: settings.includeAppsWithLimitedSupport)
+    let snapshot = AppListSnapshot(withApps: self.apps, filterQuery: nil, settings: settings)
+    updateSections = snapshot.sections.filter { group in
+      group.apps.contains { !$0.isIgnored && $0.isActionable }
+    }
     updateAllCount = updateAllCandidates().count
     summary = UpdateStatusSummary(apps: self.apps)
   }
@@ -132,23 +139,17 @@ struct MenuBarContentView: View {
 
   var body: some View {
     Group {
-      let ready = model.updates.filter { $0.capability.isAutomatic }
-      let needsYou = model.updates.filter { !$0.capability.isAutomatic }
-      if model.updates.isEmpty {
+      if model.updateSections.isEmpty {
         Text(
           checking.isRunning
             ? "Checking for updates…"
             : model.summary.isAllCurrent ? "Everything is up to date" : model.summary.text)
       }
-      // Plain headers keep the menu free of the extra separators SwiftUI adds around Sections.
-      if !ready.isEmpty {
-        Text("Ready to Update")
-        rows(ready)
-      }
-      if !needsYou.isEmpty {
-        if !ready.isEmpty { Divider() }
-        Text("Needs You")
-        rows(needsYou)
+      // The same sections and ordering as the sidebar, without its non-actionable groups.
+      ForEach(model.updateSections) { group in
+        if group.id != model.updateSections.first?.id { Divider() }
+        Text(group.section.title)
+        rows(group.apps)
       }
       Divider()
       Button(model.updateAllCount > 0 ? "Update All (\(model.updateAllCount))" : "Update All") {
